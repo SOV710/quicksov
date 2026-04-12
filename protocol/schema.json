@@ -1,0 +1,728 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quicksov/protocol/schema.json",
+  "title": "quicksov IPC Protocol Schema",
+  "proto_version": "qsov/1",
+
+  "transport": {
+    "socket_type": "SOCK_STREAM",
+    "family": "AF_UNIX",
+    "path": "$XDG_RUNTIME_DIR/quicksov/daemon.sock",
+    "framing": {
+      "length_prefix": { "type": "uint32", "endian": "little" },
+      "payload_format": "messagepack",
+      "max_message_bytes": 16777216
+    }
+  },
+
+  "envelope": {
+    "type": "object",
+    "required": ["id", "kind", "topic"],
+    "properties": {
+      "id":      { "type": "integer", "minimum": 0 },
+      "kind":    { "type": "integer", "enum": [0, 1, 2, 3, 4, 5, 6] },
+      "topic":   { "type": "string" },
+      "action":  { "type": "string" },
+      "payload": {}
+    },
+    "kind_table": {
+      "0": "REQ",
+      "1": "REP",
+      "2": "ERR",
+      "3": "PUB",
+      "4": "ONESHOT",
+      "5": "SUB",
+      "6": "UNSUB"
+    }
+  },
+
+  "handshake": {
+    "timeout_ms": 2000,
+    "hello": {
+      "type": "object",
+      "required": ["proto_version", "client_name", "client_version"],
+      "properties": {
+        "proto_version":  { "type": "string" },
+        "client_name":    { "type": "string" },
+        "client_version": { "type": "string" }
+      }
+    },
+    "hello_ack": {
+      "type": "object",
+      "required": ["server_version", "capabilities", "session_id"],
+      "properties": {
+        "server_version": { "type": "string" },
+        "capabilities":   { "type": "array", "items": { "type": "string" } },
+        "session_id":     { "type": "integer" }
+      }
+    }
+  },
+
+  "error": {
+    "type": "object",
+    "required": ["code", "message"],
+    "properties": {
+      "code":    { "type": "string", "pattern": "^E_[A-Z_]+$" },
+      "message": { "type": "string" },
+      "details": {}
+    }
+  },
+
+  "error_codes": [
+    "E_PROTO_VERSION",
+    "E_PROTO_MALFORMED",
+    "E_HANDSHAKE_TIMEOUT",
+    "E_TOPIC_UNKNOWN",
+    "E_ACTION_UNKNOWN",
+    "E_ACTION_PAYLOAD",
+    "E_SERVICE_INTERNAL",
+    "E_SERVICE_UNAVAILABLE",
+    "E_PERMISSION",
+    "E_RATE_LIMITED",
+    "E_CANCELED"
+  ],
+
+  "topics": {
+
+    "battery": {
+      "state_snapshot": {
+        "type": "object",
+        "required": ["present", "on_battery", "level", "state"],
+        "properties": {
+          "present":           { "type": "boolean" },
+          "on_battery":        { "type": "boolean" },
+          "level":             { "type": "integer", "minimum": 0, "maximum": 100 },
+          "state":             { "type": "string", "enum": ["charging", "discharging", "empty", "fully_charged", "pending_charge", "pending_discharge", "unknown"] },
+          "time_to_empty_sec": { "type": ["integer", "null"] },
+          "time_to_full_sec":  { "type": ["integer", "null"] },
+          "power_profile":     { "type": "string", "enum": ["performance", "balanced", "power-saver", "unknown"] }
+        }
+      },
+      "actions": {
+        "set_power_profile": {
+          "request": {
+            "type": "object",
+            "required": ["profile"],
+            "properties": {
+              "profile": { "type": "string", "enum": ["performance", "balanced", "power-saver"] }
+            }
+          },
+          "response": { "type": "null" }
+        }
+      },
+      "backend": "UPower D-Bus"
+    },
+
+    "net.link": {
+      "state_snapshot": {
+        "type": "object",
+        "required": ["interfaces"],
+        "properties": {
+          "interfaces": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "kind", "operstate", "carrier"],
+              "properties": {
+                "name":      { "type": "string" },
+                "kind":      { "type": "string", "enum": ["wifi", "ethernet", "loopback", "other"] },
+                "operstate": { "type": "string", "enum": ["up", "down", "unknown", "dormant", "lowerlayerdown", "notpresent", "testing"] },
+                "carrier":   { "type": "boolean" },
+                "mac":       { "type": "string" },
+                "mtu":       { "type": "integer" },
+                "ipv4":      { "type": "array", "items": { "type": "string" } },
+                "ipv6":      { "type": "array", "items": { "type": "string" } },
+                "gateway":   { "type": ["string", "null"] },
+                "rx_bytes":  { "type": "integer" },
+                "tx_bytes":  { "type": "integer" }
+              }
+            }
+          }
+        }
+      },
+      "actions": {},
+      "backend": "rtnetlink (RTMGRP_LINK / RTMGRP_IPV4_IFADDR / RTMGRP_IPV6_IFADDR / RTMGRP_IPV4_ROUTE)"
+    },
+
+    "net.wifi": {
+      "state_snapshot": {
+        "type": "object",
+        "required": ["interface", "state"],
+        "properties": {
+          "interface":  { "type": "string" },
+          "state":      { "type": "string", "enum": ["disconnected", "scanning", "associating", "connected", "unknown"] },
+          "ssid":       { "type": ["string", "null"] },
+          "bssid":      { "type": ["string", "null"] },
+          "rssi_dbm":   { "type": ["integer", "null"] },
+          "signal_pct": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 },
+          "frequency":  { "type": ["integer", "null"] },
+          "saved_networks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ssid":     { "type": "string" },
+                "priority": { "type": "integer" },
+                "auto":     { "type": "boolean" }
+              }
+            }
+          },
+          "scan_results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ssid":       { "type": "string" },
+                "bssid":      { "type": "string" },
+                "rssi_dbm":   { "type": "integer" },
+                "signal_pct": { "type": "integer" },
+                "flags":      { "type": "array", "items": { "type": "string" } },
+                "frequency":  { "type": "integer" }
+              }
+            }
+          }
+        }
+      },
+      "actions": {
+        "scan": {
+          "request":  { "type": "object", "properties": {} },
+          "response": { "type": "null" }
+        },
+        "connect": {
+          "request": {
+            "type": "object",
+            "required": ["ssid"],
+            "properties": {
+              "ssid": { "type": "string" },
+              "psk":  { "type": "string" },
+              "save": { "type": "boolean" }
+            }
+          },
+          "response": { "type": "null" }
+        },
+        "disconnect": {
+          "request":  { "type": "object", "properties": {} },
+          "response": { "type": "null" }
+        },
+        "forget": {
+          "request": {
+            "type": "object",
+            "required": ["ssid"],
+            "properties": { "ssid": { "type": "string" } }
+          },
+          "response": { "type": "null" }
+        }
+      },
+      "backend": "wpa_supplicant ctrl socket at /var/run/wpa_supplicant/wlo1 (wpa_cli protocol)"
+    },
+
+    "bluetooth": {
+      "state_snapshot": {
+        "type": "object",
+        "required": ["powered", "discovering", "devices"],
+        "properties": {
+          "powered":     { "type": "boolean" },
+          "discovering": { "type": "boolean" },
+          "devices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "address":   { "type": "string" },
+                "name":      { "type": "string" },
+                "icon":      { "type": "string" },
+                "paired":    { "type": "boolean" },
+                "connected": { "type": "boolean" },
+                "trusted":   { "type": "boolean" },
+                "battery":   { "type": ["integer", "null"], "minimum": 0, "maximum": 100 }
+              }
+            }
+          }
+        }
+      },
+      "actions": {
+        "power": {
+          "request": {
+            "type": "object",
+            "required": ["on"],
+            "properties": { "on": { "type": "boolean" } }
+          },
+          "response": { "type": "null" }
+        },
+        "scan_start": { "request": { "type": "object", "properties": {} }, "response": { "type": "null" } },
+        "scan_stop":  { "request": { "type": "object", "properties": {} }, "response": { "type": "null" } },
+        "connect": {
+          "request": {
+            "type": "object",
+            "required": ["address"],
+            "properties": { "address": { "type": "string" } }
+          },
+          "response": { "type": "null" }
+        },
+        "disconnect": {
+          "request": {
+            "type": "object",
+            "required": ["address"],
+            "properties": { "address": { "type": "string" } }
+          },
+          "response": { "type": "null" }
+        },
+        "pair": {
+          "request": {
+            "type": "object",
+            "required": ["address"],
+            "properties": { "address": { "type": "string" } }
+          },
+          "response": { "type": "null" }
+        },
+        "forget": {
+          "request": {
+            "type": "object",
+            "required": ["address"],
+            "properties": { "address": { "type": "string" } }
+          },
+          "response": { "type": "null" }
+        }
+      },
+      "backend": "BlueZ D-Bus (org.bluez)"
+    },
+
+    "audio": {
+      "state_snapshot": {
+        "type": "object",
+        "required": ["default_sink", "default_source", "sinks", "sources"],
+        "properties": {
+          "default_sink":   { "type": "string" },
+          "default_source": { "type": "string" },
+          "sinks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id":          { "type": "integer" },
+                "name":        { "type": "string" },
+                "description": { "type": "string" },
+                "volume_pct":  { "type": "integer", "minimum": 0, "maximum": 150 },
+                "muted":       { "type": "boolean" }
+              }
+            }
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id":          { "type": "integer" },
+                "name":        { "type": "string" },
+                "description": { "type": "string" },
+                "volume_pct":  { "type": "integer", "minimum": 0, "maximum": 150 },
+                "muted":       { "type": "boolean" }
+              }
+            }
+          }
+        }
+      },
+      "actions": {
+        "set_volume": {
+          "request": {
+            "type": "object",
+            "required": ["sink_id", "volume_pct"],
+            "properties": {
+              "sink_id":    { "type": "integer" },
+              "volume_pct": { "type": "integer", "minimum": 0, "maximum": 150 }
+            }
+          },
+          "response": { "type": "null" }
+        },
+        "set_mute": {
+          "request": {
+            "type": "object",
+            "required": ["sink_id", "muted"],
+            "properties": {
+              "sink_id": { "type": "integer" },
+              "muted":   { "type": "boolean" }
+            }
+          },
+          "response": { "type": "null" }
+        },
+        "set_default_sink": {
+          "request": {
+            "type": "object",
+            "required": ["sink_id"],
+            "properties": { "sink_id": { "type": "integer" } }
+          },
+          "response": { "type": "null" }
+        }
+      },
+      "backend": "PipeWire"
+    },
+
+    "mpris": {
+      "state_snapshot": {
+        "type": "object",
+        "required": ["active_player", "players"],
+        "properties": {
+          "active_player": { "type": ["string", "null"] },
+          "players": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "bus_name":        { "type": "string" },
+                "identity":        { "type": "string" },
+                "playback_status": { "type": "string", "enum": ["Playing", "Paused", "Stopped"] },
+                "title":           { "type": "string" },
+                "artist":          { "type": "array", "items": { "type": "string" } },
+                "album":           { "type": "string" },
+                "art_url":         { "type": "string" },
+                "length_us":       { "type": "integer" },
+                "position_us":     { "type": "integer" }
+              }
+            }
+          }
+        }
+      },
+      "actions": {
+        "play_pause": {
+          "request":  { "type": "object", "properties": { "bus_name": { "type": "string" } } },
+          "response": { "type": "null" }
+        },
+        "next": {
+          "request":  { "type": "object", "properties": { "bus_name": { "type": "string" } } },
+          "response": { "type": "null" }
+        },
+        "prev": {
+          "request":  { "type": "object", "properties": { "bus_name": { "type": "string" } } },
+          "response": { "type": "null" }
+        },
+        "stop": {
+          "request":  { "type": "object", "properties": { "bus_name": { "type": "string" } } },
+          "response": { "type": "null" }
+        },
+        "seek": {
+          "request": {
+            "type": "object",
+            "required": ["offset_us"],
+            "properties": {
+              "bus_name":  { "type": "string" },
+              "offset_us": { "type": "integer" }
+            }
+          },
+          "response": { "type": "null" }
+        },
+        "set_position": {
+          "request": {
+            "type": "object",
+            "required": ["position_us"],
+            "properties": {
+              "bus_name":    { "type": "string" },
+              "position_us": { "type": "integer" }
+            }
+          },
+          "response": { "type": "null" }
+        },
+        "select_active": {
+          "request": {
+            "type": "object",
+            "required": ["bus_name"],
+            "properties": { "bus_name": { "type": "string" } }
+          },
+          "response": { "type": "null" }
+        }
+      },
+      "backend": "MPRIS D-Bus"
+    },
+
+    "notification": {
+      "state_snapshot": {
+        "type": "object",
+        "required": ["unread_count", "history"],
+        "properties": {
+          "unread_count": { "type": "integer" },
+          "history": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id":        { "type": "integer" },
+                "app_name":  { "type": "string" },
+                "summary":   { "type": "string" },
+                "body":      { "type": "string" },
+                "icon":      { "type": "string" },
+                "urgency":   { "type": "string", "enum": ["low", "normal", "critical"] },
+                "timestamp": { "type": "integer" },
+                "actions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id":    { "type": "string" },
+                      "label": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "events": {
+        "channel": "broadcast",
+        "new": {
+          "type": "object",
+          "description": "单条 notification 对象, 结构同 history 项"
+        },
+        "closed": {
+          "type": "object",
+          "required": ["id", "reason"],
+          "properties": {
+            "id":     { "type": "integer" },
+            "reason": { "type": "string", "enum": ["expired", "dismissed", "closed", "undefined"] }
+          }
+        }
+      },
+      "actions": {
+        "invoke_action": {
+          "request": {
+            "type": "object",
+            "required": ["id", "action_id"],
+            "properties": {
+              "id":        { "type": "integer" },
+              "action_id": { "type": "string" }
+            }
+          },
+          "response": { "type": "null" }
+        },
+        "dismiss": {
+          "request": {
+            "type": "object",
+            "required": ["id"],
+            "properties": { "id": { "type": "integer" } }
+          },
+          "response": { "type": "null" }
+        },
+        "dismiss_all": {
+          "request":  { "type": "object", "properties": {} },
+          "response": { "type": "null" }
+        },
+        "mark_read": {
+          "request":  { "type": "object", "properties": { "id": { "type": "integer" } } },
+          "response": { "type": "null" }
+        }
+      },
+      "backend": "daemon implements org.freedesktop.Notifications D-Bus server"
+    },
+
+    "tray": {
+      "state_snapshot": {
+        "type": "object",
+        "required": ["items"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id":      { "type": "string" },
+                "title":   { "type": "string" },
+                "icon":    { "type": "string" },
+                "tooltip": { "type": "string" },
+                "status":  { "type": "string", "enum": ["active", "passive", "needs_attention"] }
+              }
+            }
+          }
+        }
+      },
+      "actions": {
+        "activate": {
+          "request": {
+            "type": "object",
+            "required": ["id"],
+            "properties": {
+              "id": { "type": "string" },
+              "x":  { "type": "integer" },
+              "y":  { "type": "integer" }
+            }
+          },
+          "response": { "type": "null" }
+        },
+        "secondary_activate": {
+          "request": {
+            "type": "object",
+            "required": ["id"],
+            "properties": { "id": { "type": "string" } }
+          },
+          "response": { "type": "null" }
+        },
+        "scroll": {
+          "request": {
+            "type": "object",
+            "required": ["id", "delta", "orientation"],
+            "properties": {
+              "id":          { "type": "string" },
+              "delta":       { "type": "integer" },
+              "orientation": { "type": "string", "enum": ["horizontal", "vertical"] }
+            }
+          },
+          "response": { "type": "null" }
+        },
+        "open_menu": {
+          "request": {
+            "type": "object",
+            "required": ["id"],
+            "properties": { "id": { "type": "string" } }
+          },
+          "response": { "type": "null" }
+        }
+      },
+      "backend": "StatusNotifierItem host (org.kde.StatusNotifierWatcher / org.freedesktop.StatusNotifierWatcher)"
+    },
+
+    "niri": {
+      "state_snapshot": {
+        "type": "object",
+        "properties": {
+          "workspaces": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "idx":     { "type": "integer" },
+                "name":    { "type": ["string", "null"] },
+                "output":  { "type": "string" },
+                "focused": { "type": "boolean" },
+                "windows": { "type": "integer" }
+              }
+            }
+          },
+          "focused_window": {
+            "type": ["object", "null"],
+            "properties": {
+              "id":     { "type": "integer" },
+              "app_id": { "type": "string" },
+              "title":  { "type": "string" }
+            }
+          }
+        }
+      },
+      "actions": {
+        "focus_workspace": {
+          "request": {
+            "type": "object",
+            "required": ["idx"],
+            "properties": { "idx": { "type": "integer" } }
+          },
+          "response": { "type": "null" }
+        },
+        "run_action": {
+          "request": {
+            "type": "object",
+            "required": ["action"],
+            "properties": {
+              "action": { "type": "string" },
+              "args":   {}
+            }
+          },
+          "response": { "type": "null" }
+        }
+      },
+      "backend": "niri msg --json event-stream, $NIRI_SOCKET"
+    },
+
+    "weather": {
+      "state_snapshot": {
+        "type": "object",
+        "properties": {
+          "location": {
+            "type": "object",
+            "properties": {
+              "name":      { "type": "string" },
+              "latitude":  { "type": "number" },
+              "longitude": { "type": "number" }
+            }
+          },
+          "current": {
+            "type": "object",
+            "properties": {
+              "temperature_c": { "type": "number" },
+              "apparent_c":    { "type": "number" },
+              "humidity_pct":  { "type": "integer" },
+              "wind_kmh":      { "type": "number" },
+              "wmo_code":      { "type": "integer" },
+              "icon":          { "type": "string" },
+              "description":   { "type": "string" }
+            }
+          },
+          "hourly": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "time":          { "type": "string" },
+                "temperature_c": { "type": "number" },
+                "wmo_code":      { "type": "integer" }
+              }
+            }
+          },
+          "updated_at": { "type": "integer" },
+          "offline":    { "type": "boolean" }
+        }
+      },
+      "actions": {
+        "refresh": {
+          "request":  { "type": "object", "properties": {} },
+          "response": { "type": "null" }
+        }
+      },
+      "backend": "Open-Meteo HTTPS, default poll 600s"
+    },
+
+    "theme": {
+      "state_snapshot": {
+        "type": "object",
+        "description": "Parsed content of design-tokens.toml. Schema defined externally by design-tokens.toml structure."
+      },
+      "actions": {},
+      "backend": "design-tokens.toml file, inotify-watched"
+    },
+
+    "meta": {
+      "state_snapshot": {
+        "type": "object",
+        "properties": {
+          "server_version": { "type": "string" },
+          "uptime_sec":     { "type": "integer" },
+          "services": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "status":     { "type": "string", "enum": ["healthy", "degraded", "unavailable"] },
+                "last_error": { "type": ["string", "null"] }
+              }
+            }
+          },
+          "config_needs_restart": { "type": "boolean" }
+        }
+      },
+      "actions": {
+        "ping": {
+          "request": { "type": "object", "properties": {} },
+          "response": {
+            "type": "object",
+            "required": ["pong", "server_time"],
+            "properties": {
+              "pong":        { "type": "boolean" },
+              "server_time": { "type": "integer" }
+            }
+          }
+        },
+        "shutdown": {
+          "request":  { "type": "object", "properties": {} },
+          "response": { "type": "null" }
+        }
+      },
+      "backend": "daemon self"
+    }
+  }
+}
