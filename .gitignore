@@ -1,1 +1,7 @@
-/target
+debug
+target
+
+**/*.rs.bk
+
+/.claude/
+CLAUDE.md
