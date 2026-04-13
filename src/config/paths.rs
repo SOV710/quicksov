@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 SOV710
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use thiserror::Error;
 
 /// Errors encountered while expanding environment variables in path strings.

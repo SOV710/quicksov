@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 SOV710
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use rmpv::Value;
 use thiserror::Error;
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
