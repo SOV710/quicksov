@@ -4,14 +4,7 @@
 
   # Quicksov
 
-  <sub>
-  Personal quickshell configuration by <b>sov710</b><br>
-  Optimized for dual-screen layout (left secondary + center primary)<br>
-  Rust user-space daemon + UDS-based IPC service<br>
-  🚧 Under active development
-  </sub>
 
-  <br>
 
   [![Stand With Palestine](https://img.shields.io/badge/Stand_With-Palestine-007A3D?style=flat-square&labelColor=000000)](https://www.un.org/unispal/)
   [![License](https://img.shields.io/github/license/SOV710/quicksov?style=flat-square&labelColor=1a1b26&color=bb9af7)](LICENSE)
@@ -20,5 +13,13 @@
   [![Last Commit](https://img.shields.io/github/last-commit/SOV710/quicksov?style=flat-square&labelColor=1a1b26&color=7aa2f7)](https://github.com/SOV710/nvim-config/commits/main)
   [![Gentoo](https://img.shields.io/badge/Gentoo-Linux-54487A?style=flat-square&labelColor=1a1b26&logo=gentoo&logoColor=white)](https://www.gentoo.org)
 
-
 </div>
+
+> [!WARNING]  
+> This is **sov710’s personal quickshell configuration**.  
+>  
+> It is heavily tailored for a **dual-monitor layout** (left secondary + center primary) and includes deep, opinionated customization.  
+>  
+> The system is backed by a **pure user-space daemon written in Rust**, communicating via **UDS (Unix Domain Socket)** to provide internal services.  
+>  
+> The project is **actively under development** and is not yet stable or intended for general use.
