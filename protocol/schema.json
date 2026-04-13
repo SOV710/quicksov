@@ -19,10 +19,10 @@
     "type": "object",
     "required": ["id", "kind", "topic"],
     "properties": {
-      "id":      { "type": "integer", "minimum": 0 },
-      "kind":    { "type": "integer", "enum": [0, 1, 2, 3, 4, 5, 6] },
-      "topic":   { "type": "string" },
-      "action":  { "type": "string" },
+      "id": { "type": "integer", "minimum": 0 },
+      "kind": { "type": "integer", "enum": [0, 1, 2, 3, 4, 5, 6] },
+      "topic": { "type": "string" },
+      "action": { "type": "string" },
       "payload": {}
     },
     "kind_table": {
@@ -42,8 +42,8 @@
       "type": "object",
       "required": ["proto_version", "client_name", "client_version"],
       "properties": {
-        "proto_version":  { "type": "string" },
-        "client_name":    { "type": "string" },
+        "proto_version": { "type": "string" },
+        "client_name": { "type": "string" },
         "client_version": { "type": "string" }
       }
     },
@@ -52,8 +52,8 @@
       "required": ["server_version", "capabilities", "session_id"],
       "properties": {
         "server_version": { "type": "string" },
-        "capabilities":   { "type": "array", "items": { "type": "string" } },
-        "session_id":     { "type": "integer" }
+        "capabilities": { "type": "array", "items": { "type": "string" } },
+        "session_id": { "type": "integer" }
       }
     }
   },
@@ -62,7 +62,7 @@
     "type": "object",
     "required": ["code", "message"],
     "properties": {
-      "code":    { "type": "string", "pattern": "^E_[A-Z_]+$" },
+      "code": { "type": "string", "pattern": "^E_[A-Z_]+$" },
       "message": { "type": "string" },
       "details": {}
     }
@@ -83,19 +83,32 @@
   ],
 
   "topics": {
-
     "battery": {
       "state_snapshot": {
         "type": "object",
         "required": ["present", "on_battery", "level", "state"],
         "properties": {
-          "present":           { "type": "boolean" },
-          "on_battery":        { "type": "boolean" },
-          "level":             { "type": "integer", "minimum": 0, "maximum": 100 },
-          "state":             { "type": "string", "enum": ["charging", "discharging", "empty", "fully_charged", "pending_charge", "pending_discharge", "unknown"] },
+          "present": { "type": "boolean" },
+          "on_battery": { "type": "boolean" },
+          "level": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "state": {
+            "type": "string",
+            "enum": [
+              "charging",
+              "discharging",
+              "empty",
+              "fully_charged",
+              "pending_charge",
+              "pending_discharge",
+              "unknown"
+            ]
+          },
           "time_to_empty_sec": { "type": ["integer", "null"] },
-          "time_to_full_sec":  { "type": ["integer", "null"] },
-          "power_profile":     { "type": "string", "enum": ["performance", "balanced", "power-saver", "unknown"] }
+          "time_to_full_sec": { "type": ["integer", "null"] },
+          "power_profile": {
+            "type": "string",
+            "enum": ["performance", "balanced", "power-saver", "unknown"]
+          }
         }
       },
       "actions": {
@@ -104,7 +117,10 @@
             "type": "object",
             "required": ["profile"],
             "properties": {
-              "profile": { "type": "string", "enum": ["performance", "balanced", "power-saver"] }
+              "profile": {
+                "type": "string",
+                "enum": ["performance", "balanced", "power-saver"]
+              }
             }
           },
           "response": { "type": "null" }
@@ -124,17 +140,31 @@
               "type": "object",
               "required": ["name", "kind", "operstate", "carrier"],
               "properties": {
-                "name":      { "type": "string" },
-                "kind":      { "type": "string", "enum": ["wifi", "ethernet", "loopback", "other"] },
-                "operstate": { "type": "string", "enum": ["up", "down", "unknown", "dormant", "lowerlayerdown", "notpresent", "testing"] },
-                "carrier":   { "type": "boolean" },
-                "mac":       { "type": "string" },
-                "mtu":       { "type": "integer" },
-                "ipv4":      { "type": "array", "items": { "type": "string" } },
-                "ipv6":      { "type": "array", "items": { "type": "string" } },
-                "gateway":   { "type": ["string", "null"] },
-                "rx_bytes":  { "type": "integer" },
-                "tx_bytes":  { "type": "integer" }
+                "name": { "type": "string" },
+                "kind": {
+                  "type": "string",
+                  "enum": ["wifi", "ethernet", "loopback", "other"]
+                },
+                "operstate": {
+                  "type": "string",
+                  "enum": [
+                    "up",
+                    "down",
+                    "unknown",
+                    "dormant",
+                    "lowerlayerdown",
+                    "notpresent",
+                    "testing"
+                  ]
+                },
+                "carrier": { "type": "boolean" },
+                "mac": { "type": "string" },
+                "mtu": { "type": "integer" },
+                "ipv4": { "type": "array", "items": { "type": "string" } },
+                "ipv6": { "type": "array", "items": { "type": "string" } },
+                "gateway": { "type": ["string", "null"] },
+                "rx_bytes": { "type": "integer" },
+                "tx_bytes": { "type": "integer" }
               }
             }
           }
@@ -149,21 +179,34 @@
         "type": "object",
         "required": ["interface", "state"],
         "properties": {
-          "interface":  { "type": "string" },
-          "state":      { "type": "string", "enum": ["disconnected", "scanning", "associating", "connected", "unknown"] },
-          "ssid":       { "type": ["string", "null"] },
-          "bssid":      { "type": ["string", "null"] },
-          "rssi_dbm":   { "type": ["integer", "null"] },
-          "signal_pct": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 },
-          "frequency":  { "type": ["integer", "null"] },
+          "interface": { "type": "string" },
+          "state": {
+            "type": "string",
+            "enum": [
+              "disconnected",
+              "scanning",
+              "associating",
+              "connected",
+              "unknown"
+            ]
+          },
+          "ssid": { "type": ["string", "null"] },
+          "bssid": { "type": ["string", "null"] },
+          "rssi_dbm": { "type": ["integer", "null"] },
+          "signal_pct": {
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "maximum": 100
+          },
+          "frequency": { "type": ["integer", "null"] },
           "saved_networks": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "ssid":     { "type": "string" },
+                "ssid": { "type": "string" },
                 "priority": { "type": "integer" },
-                "auto":     { "type": "boolean" }
+                "auto": { "type": "boolean" }
               }
             }
           },
@@ -172,12 +215,12 @@
             "items": {
               "type": "object",
               "properties": {
-                "ssid":       { "type": "string" },
-                "bssid":      { "type": "string" },
-                "rssi_dbm":   { "type": "integer" },
+                "ssid": { "type": "string" },
+                "bssid": { "type": "string" },
+                "rssi_dbm": { "type": "integer" },
                 "signal_pct": { "type": "integer" },
-                "flags":      { "type": "array", "items": { "type": "string" } },
-                "frequency":  { "type": "integer" }
+                "flags": { "type": "array", "items": { "type": "string" } },
+                "frequency": { "type": "integer" }
               }
             }
           }
@@ -185,7 +228,7 @@
       },
       "actions": {
         "scan": {
-          "request":  { "type": "object", "properties": {} },
+          "request": { "type": "object", "properties": {} },
           "response": { "type": "null" }
         },
         "connect": {
@@ -194,14 +237,14 @@
             "required": ["ssid"],
             "properties": {
               "ssid": { "type": "string" },
-              "psk":  { "type": "string" },
+              "psk": { "type": "string" },
               "save": { "type": "boolean" }
             }
           },
           "response": { "type": "null" }
         },
         "disconnect": {
-          "request":  { "type": "object", "properties": {} },
+          "request": { "type": "object", "properties": {} },
           "response": { "type": "null" }
         },
         "forget": {
@@ -221,20 +264,24 @@
         "type": "object",
         "required": ["powered", "discovering", "devices"],
         "properties": {
-          "powered":     { "type": "boolean" },
+          "powered": { "type": "boolean" },
           "discovering": { "type": "boolean" },
           "devices": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "address":   { "type": "string" },
-                "name":      { "type": "string" },
-                "icon":      { "type": "string" },
-                "paired":    { "type": "boolean" },
+                "address": { "type": "string" },
+                "name": { "type": "string" },
+                "icon": { "type": "string" },
+                "paired": { "type": "boolean" },
                 "connected": { "type": "boolean" },
-                "trusted":   { "type": "boolean" },
-                "battery":   { "type": ["integer", "null"], "minimum": 0, "maximum": 100 }
+                "trusted": { "type": "boolean" },
+                "battery": {
+                  "type": ["integer", "null"],
+                  "minimum": 0,
+                  "maximum": 100
+                }
               }
             }
           }
@@ -249,8 +296,14 @@
           },
           "response": { "type": "null" }
         },
-        "scan_start": { "request": { "type": "object", "properties": {} }, "response": { "type": "null" } },
-        "scan_stop":  { "request": { "type": "object", "properties": {} }, "response": { "type": "null" } },
+        "scan_start": {
+          "request": { "type": "object", "properties": {} },
+          "response": { "type": "null" }
+        },
+        "scan_stop": {
+          "request": { "type": "object", "properties": {} },
+          "response": { "type": "null" }
+        },
         "connect": {
           "request": {
             "type": "object",
@@ -292,18 +345,22 @@
         "type": "object",
         "required": ["default_sink", "default_source", "sinks", "sources"],
         "properties": {
-          "default_sink":   { "type": "string" },
+          "default_sink": { "type": "string" },
           "default_source": { "type": "string" },
           "sinks": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "id":          { "type": "integer" },
-                "name":        { "type": "string" },
+                "id": { "type": "integer" },
+                "name": { "type": "string" },
                 "description": { "type": "string" },
-                "volume_pct":  { "type": "integer", "minimum": 0, "maximum": 150 },
-                "muted":       { "type": "boolean" }
+                "volume_pct": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 150
+                },
+                "muted": { "type": "boolean" }
               }
             }
           },
@@ -312,11 +369,15 @@
             "items": {
               "type": "object",
               "properties": {
-                "id":          { "type": "integer" },
-                "name":        { "type": "string" },
+                "id": { "type": "integer" },
+                "name": { "type": "string" },
                 "description": { "type": "string" },
-                "volume_pct":  { "type": "integer", "minimum": 0, "maximum": 150 },
-                "muted":       { "type": "boolean" }
+                "volume_pct": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 150
+                },
+                "muted": { "type": "boolean" }
               }
             }
           }
@@ -328,7 +389,7 @@
             "type": "object",
             "required": ["sink_id", "volume_pct"],
             "properties": {
-              "sink_id":    { "type": "integer" },
+              "sink_id": { "type": "integer" },
               "volume_pct": { "type": "integer", "minimum": 0, "maximum": 150 }
             }
           },
@@ -340,7 +401,7 @@
             "required": ["sink_id", "muted"],
             "properties": {
               "sink_id": { "type": "integer" },
-              "muted":   { "type": "boolean" }
+              "muted": { "type": "boolean" }
             }
           },
           "response": { "type": "null" }
@@ -368,15 +429,18 @@
             "items": {
               "type": "object",
               "properties": {
-                "bus_name":        { "type": "string" },
-                "identity":        { "type": "string" },
-                "playback_status": { "type": "string", "enum": ["Playing", "Paused", "Stopped"] },
-                "title":           { "type": "string" },
-                "artist":          { "type": "array", "items": { "type": "string" } },
-                "album":           { "type": "string" },
-                "art_url":         { "type": "string" },
-                "length_us":       { "type": "integer" },
-                "position_us":     { "type": "integer" }
+                "bus_name": { "type": "string" },
+                "identity": { "type": "string" },
+                "playback_status": {
+                  "type": "string",
+                  "enum": ["Playing", "Paused", "Stopped"]
+                },
+                "title": { "type": "string" },
+                "artist": { "type": "array", "items": { "type": "string" } },
+                "album": { "type": "string" },
+                "art_url": { "type": "string" },
+                "length_us": { "type": "integer" },
+                "position_us": { "type": "integer" }
               }
             }
           }
@@ -384,19 +448,31 @@
       },
       "actions": {
         "play_pause": {
-          "request":  { "type": "object", "properties": { "bus_name": { "type": "string" } } },
+          "request": {
+            "type": "object",
+            "properties": { "bus_name": { "type": "string" } }
+          },
           "response": { "type": "null" }
         },
         "next": {
-          "request":  { "type": "object", "properties": { "bus_name": { "type": "string" } } },
+          "request": {
+            "type": "object",
+            "properties": { "bus_name": { "type": "string" } }
+          },
           "response": { "type": "null" }
         },
         "prev": {
-          "request":  { "type": "object", "properties": { "bus_name": { "type": "string" } } },
+          "request": {
+            "type": "object",
+            "properties": { "bus_name": { "type": "string" } }
+          },
           "response": { "type": "null" }
         },
         "stop": {
-          "request":  { "type": "object", "properties": { "bus_name": { "type": "string" } } },
+          "request": {
+            "type": "object",
+            "properties": { "bus_name": { "type": "string" } }
+          },
           "response": { "type": "null" }
         },
         "seek": {
@@ -404,7 +480,7 @@
             "type": "object",
             "required": ["offset_us"],
             "properties": {
-              "bus_name":  { "type": "string" },
+              "bus_name": { "type": "string" },
               "offset_us": { "type": "integer" }
             }
           },
@@ -415,7 +491,7 @@
             "type": "object",
             "required": ["position_us"],
             "properties": {
-              "bus_name":    { "type": "string" },
+              "bus_name": { "type": "string" },
               "position_us": { "type": "integer" }
             }
           },
@@ -444,19 +520,22 @@
             "items": {
               "type": "object",
               "properties": {
-                "id":        { "type": "integer" },
-                "app_name":  { "type": "string" },
-                "summary":   { "type": "string" },
-                "body":      { "type": "string" },
-                "icon":      { "type": "string" },
-                "urgency":   { "type": "string", "enum": ["low", "normal", "critical"] },
+                "id": { "type": "integer" },
+                "app_name": { "type": "string" },
+                "summary": { "type": "string" },
+                "body": { "type": "string" },
+                "icon": { "type": "string" },
+                "urgency": {
+                  "type": "string",
+                  "enum": ["low", "normal", "critical"]
+                },
                 "timestamp": { "type": "integer" },
                 "actions": {
                   "type": "array",
                   "items": {
                     "type": "object",
                     "properties": {
-                      "id":    { "type": "string" },
+                      "id": { "type": "string" },
                       "label": { "type": "string" }
                     }
                   }
@@ -476,8 +555,11 @@
           "type": "object",
           "required": ["id", "reason"],
           "properties": {
-            "id":     { "type": "integer" },
-            "reason": { "type": "string", "enum": ["expired", "dismissed", "closed", "undefined"] }
+            "id": { "type": "integer" },
+            "reason": {
+              "type": "string",
+              "enum": ["expired", "dismissed", "closed", "undefined"]
+            }
           }
         }
       },
@@ -487,7 +569,7 @@
             "type": "object",
             "required": ["id", "action_id"],
             "properties": {
-              "id":        { "type": "integer" },
+              "id": { "type": "integer" },
               "action_id": { "type": "string" }
             }
           },
@@ -502,11 +584,14 @@
           "response": { "type": "null" }
         },
         "dismiss_all": {
-          "request":  { "type": "object", "properties": {} },
+          "request": { "type": "object", "properties": {} },
           "response": { "type": "null" }
         },
         "mark_read": {
-          "request":  { "type": "object", "properties": { "id": { "type": "integer" } } },
+          "request": {
+            "type": "object",
+            "properties": { "id": { "type": "integer" } }
+          },
           "response": { "type": "null" }
         }
       },
@@ -523,11 +608,14 @@
             "items": {
               "type": "object",
               "properties": {
-                "id":      { "type": "string" },
-                "title":   { "type": "string" },
-                "icon":    { "type": "string" },
+                "id": { "type": "string" },
+                "title": { "type": "string" },
+                "icon": { "type": "string" },
                 "tooltip": { "type": "string" },
-                "status":  { "type": "string", "enum": ["active", "passive", "needs_attention"] }
+                "status": {
+                  "type": "string",
+                  "enum": ["active", "passive", "needs_attention"]
+                }
               }
             }
           }
@@ -540,8 +628,8 @@
             "required": ["id"],
             "properties": {
               "id": { "type": "string" },
-              "x":  { "type": "integer" },
-              "y":  { "type": "integer" }
+              "x": { "type": "integer" },
+              "y": { "type": "integer" }
             }
           },
           "response": { "type": "null" }
@@ -559,9 +647,12 @@
             "type": "object",
             "required": ["id", "delta", "orientation"],
             "properties": {
-              "id":          { "type": "string" },
-              "delta":       { "type": "integer" },
-              "orientation": { "type": "string", "enum": ["horizontal", "vertical"] }
+              "id": { "type": "string" },
+              "delta": { "type": "integer" },
+              "orientation": {
+                "type": "string",
+                "enum": ["horizontal", "vertical"]
+              }
             }
           },
           "response": { "type": "null" }
@@ -587,9 +678,9 @@
             "items": {
               "type": "object",
               "properties": {
-                "idx":     { "type": "integer" },
-                "name":    { "type": ["string", "null"] },
-                "output":  { "type": "string" },
+                "idx": { "type": "integer" },
+                "name": { "type": ["string", "null"] },
+                "output": { "type": "string" },
                 "focused": { "type": "boolean" },
                 "windows": { "type": "integer" }
               }
@@ -598,9 +689,9 @@
           "focused_window": {
             "type": ["object", "null"],
             "properties": {
-              "id":     { "type": "integer" },
+              "id": { "type": "integer" },
               "app_id": { "type": "string" },
-              "title":  { "type": "string" }
+              "title": { "type": "string" }
             }
           }
         }
@@ -620,7 +711,7 @@
             "required": ["action"],
             "properties": {
               "action": { "type": "string" },
-              "args":   {}
+              "args": {}
             }
           },
           "response": { "type": "null" }
@@ -636,8 +727,8 @@
           "location": {
             "type": "object",
             "properties": {
-              "name":      { "type": "string" },
-              "latitude":  { "type": "number" },
+              "name": { "type": "string" },
+              "latitude": { "type": "number" },
               "longitude": { "type": "number" }
             }
           },
@@ -645,12 +736,12 @@
             "type": "object",
             "properties": {
               "temperature_c": { "type": "number" },
-              "apparent_c":    { "type": "number" },
-              "humidity_pct":  { "type": "integer" },
-              "wind_kmh":      { "type": "number" },
-              "wmo_code":      { "type": "integer" },
-              "icon":          { "type": "string" },
-              "description":   { "type": "string" }
+              "apparent_c": { "type": "number" },
+              "humidity_pct": { "type": "integer" },
+              "wind_kmh": { "type": "number" },
+              "wmo_code": { "type": "integer" },
+              "icon": { "type": "string" },
+              "description": { "type": "string" }
             }
           },
           "hourly": {
@@ -658,19 +749,19 @@
             "items": {
               "type": "object",
               "properties": {
-                "time":          { "type": "string" },
+                "time": { "type": "string" },
                 "temperature_c": { "type": "number" },
-                "wmo_code":      { "type": "integer" }
+                "wmo_code": { "type": "integer" }
               }
             }
           },
           "updated_at": { "type": "integer" },
-          "offline":    { "type": "boolean" }
+          "offline": { "type": "boolean" }
         }
       },
       "actions": {
         "refresh": {
-          "request":  { "type": "object", "properties": {} },
+          "request": { "type": "object", "properties": {} },
           "response": { "type": "null" }
         }
       },
@@ -691,13 +782,16 @@
         "type": "object",
         "properties": {
           "server_version": { "type": "string" },
-          "uptime_sec":     { "type": "integer" },
+          "uptime_sec": { "type": "integer" },
           "services": {
             "type": "object",
             "additionalProperties": {
               "type": "object",
               "properties": {
-                "status":     { "type": "string", "enum": ["healthy", "degraded", "unavailable"] },
+                "status": {
+                  "type": "string",
+                  "enum": ["healthy", "degraded", "unavailable"]
+                },
                 "last_error": { "type": ["string", "null"] }
               }
             }
@@ -712,13 +806,13 @@
             "type": "object",
             "required": ["pong", "server_time"],
             "properties": {
-              "pong":        { "type": "boolean" },
+              "pong": { "type": "boolean" },
               "server_time": { "type": "integer" }
             }
           }
         },
         "shutdown": {
-          "request":  { "type": "object", "properties": {} },
+          "request": { "type": "object", "properties": {} },
           "response": { "type": "null" }
         }
       },
