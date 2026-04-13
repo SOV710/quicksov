@@ -4,6 +4,15 @@
 
   # Quicksov
 
+  <sub>
+  Personal quickshell configuration by <b>sov710</b><br>
+  Optimized for dual-screen layout (left secondary + center primary)<br>
+  Rust user-space daemon + UDS-based IPC service<br>
+  🚧 Under active development
+  </sub>
+
+  <br>
+
   [![Stand With Palestine](https://img.shields.io/badge/Stand_With-Palestine-007A3D?style=flat-square&labelColor=000000)](https://www.un.org/unispal/)
   [![License](https://img.shields.io/github/license/SOV710/quicksov?style=flat-square&labelColor=1a1b26&color=bb9af7)](LICENSE)
   [![Quickshell](https://img.shields.io/badge/Quickshell-0.2.1-blue?style=flat-square&labelColor=1a1b26)](https://quickshell.org)
