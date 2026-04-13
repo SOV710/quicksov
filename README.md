@@ -1,6 +1,6 @@
 <div align="center">
 
-  <img src="logo.png" width="120">
+  <img src="https://preview.github.sov710.org/quicksov/logo.png" width="120">
 
   # Quicksov
 
