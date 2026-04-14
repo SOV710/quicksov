@@ -4,13 +4,13 @@
 
 //! `mpris` service — media player control via D-Bus MPRIS2.
 
-use rmpv::Value;
+use serde_json::Value;
 use tokio::sync::{mpsc, watch};
 use tracing::{debug, info, warn};
 
 use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
 use crate::config::Config;
-use crate::util::rmpv_map;
+use crate::util::json_map;
 
 use futures::StreamExt;
 
@@ -30,8 +30,8 @@ pub fn spawn(_cfg: &Config) -> ServiceHandle {
 }
 
 fn unavailable_snapshot() -> Value {
-    rmpv_map([
-        ("active_player", Value::Nil),
+    json_map([
+        ("active_player", Value::Null),
         ("players", Value::Array(vec![])),
     ])
 }
@@ -284,10 +284,10 @@ fn pick_active(players: &[PlayerInfo]) -> Option<String> {
 fn build_snapshot(state: &MprisState) -> Value {
     let active = match &state.active_player {
         Some(s) => Value::from(s.as_str()),
-        None => Value::Nil,
+        None => Value::Null,
     };
     let players: Vec<Value> = state.players.iter().map(player_to_value).collect();
-    rmpv_map([
+    json_map([
         ("active_player", active),
         ("players", Value::Array(players)),
     ])
@@ -295,7 +295,7 @@ fn build_snapshot(state: &MprisState) -> Value {
 
 fn player_to_value(p: &PlayerInfo) -> Value {
     let artists: Vec<Value> = p.artist.iter().map(|a| Value::from(a.as_str())).collect();
-    rmpv_map([
+    json_map([
         ("bus_name", Value::from(p.bus_name.as_str())),
         ("identity", Value::from(p.identity.as_str())),
         ("playback_status", Value::from(p.playback_status.as_str())),
@@ -355,7 +355,7 @@ async fn call_player_method(
         .call(method, &())
         .await
         .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
-    Ok(Value::Nil)
+    Ok(Value::Null)
 }
 
 async fn handle_seek(
@@ -372,7 +372,7 @@ async fn handle_seek(
         .call("Seek", &(offset,))
         .await
         .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
-    Ok(Value::Nil)
+    Ok(Value::Null)
 }
 
 async fn handle_set_position(
@@ -391,7 +391,7 @@ async fn handle_set_position(
         .call("SetPosition", &(track_id, pos))
         .await
         .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
-    Ok(Value::Nil)
+    Ok(Value::Null)
 }
 
 fn handle_select_active(payload: &Value, state: &mut MprisState) -> Result<Value, ServiceError> {
@@ -399,7 +399,7 @@ fn handle_select_active(payload: &Value, state: &mut MprisState) -> Result<Value
         msg: "missing 'bus_name' field".to_string(),
     })?;
     state.active_player = Some(bus.to_string());
-    Ok(Value::Nil)
+    Ok(Value::Null)
 }
 
 async fn player_proxy<'a>(
@@ -421,25 +421,11 @@ async fn player_proxy<'a>(
 // ---------------------------------------------------------------------------
 
 fn extract_str<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
-    if let Value::Map(pairs) = v {
-        for (k, val) in pairs {
-            if k.as_str() == Some(key) {
-                return val.as_str();
-            }
-        }
-    }
-    None
+    v.as_object()?.get(key)?.as_str()
 }
 
 fn extract_i64(v: &Value, key: &str) -> Option<i64> {
-    if let Value::Map(pairs) = v {
-        for (k, val) in pairs {
-            if k.as_str() == Some(key) {
-                return val.as_i64();
-            }
-        }
-    }
-    None
+    v.as_object()?.get(key)?.as_i64()
 }
 
 // ---------------------------------------------------------------------------
