@@ -73,7 +73,16 @@ pub async fn start_services(cfg: &Config, started_at: Instant) -> HashMap<String
             .cloned()
             .chain(std::iter::once("meta".to_string()))
             .collect();
-        map.insert("meta".into(), meta::spawn(started_at, running));
+        let screens_roles: std::collections::HashMap<String, String> = cfg
+            .screens
+            .mapping
+            .iter()
+            .map(|m| (m.match_name.clone(), m.role.clone()))
+            .collect();
+        map.insert(
+            "meta".into(),
+            meta::spawn(started_at, running, screens_roles),
+        );
     }
 
     map

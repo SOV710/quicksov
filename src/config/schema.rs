@@ -11,7 +11,6 @@ pub struct Config {
     pub daemon: DaemonConfig,
     /// Screen-to-role mapping; parsed but not acted on until a Niri service is active.
     #[serde(default)]
-    #[allow(dead_code)]
     pub screens: ScreensConfig,
     #[serde(default)]
     pub services: ServicesConfig,
@@ -46,7 +45,6 @@ fn default_socket_path_raw() -> String {
 }
 
 /// Screen-to-role mapping configuration.
-#[allow(dead_code)]
 #[derive(Debug, Deserialize, Default)]
 pub struct ScreensConfig {
     #[serde(default)]
@@ -54,7 +52,6 @@ pub struct ScreensConfig {
 }
 
 /// Maps a DRM connector name (e.g. `"DP-1"`) to a logical role (`"main"`, `"aux"`).
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct ScreenMapping {
     pub match_name: String,

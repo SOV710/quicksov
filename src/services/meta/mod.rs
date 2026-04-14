@@ -28,8 +28,12 @@ const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// `started_at` is the process-level start instant used to compute `uptime_sec`.
 /// `enabled_services` is the ordered list of all topics registered at startup;
 /// it populates the `services` map in the snapshot.
-pub fn spawn(started_at: Instant, enabled_services: Vec<String>) -> ServiceHandle {
-    let initial_snapshot = build_snapshot(started_at, &enabled_services);
+pub fn spawn(
+    started_at: Instant,
+    enabled_services: Vec<String>,
+    screens_roles: std::collections::HashMap<String, String>,
+) -> ServiceHandle {
+    let initial_snapshot = build_snapshot(started_at, &enabled_services, &screens_roles);
     let (state_tx, state_rx) = watch::channel(initial_snapshot);
     let (request_tx, request_rx) = mpsc::channel(16);
 
@@ -111,7 +115,11 @@ fn handle_ping(req: ServiceRequest) {
 // ---------------------------------------------------------------------------
 
 /// Build a complete `meta` state snapshot as an `rmpv::Value` map.
-fn build_snapshot(started_at: Instant, enabled_services: &[String]) -> Value {
+fn build_snapshot(
+    started_at: Instant,
+    enabled_services: &[String],
+    screens_roles: &std::collections::HashMap<String, String>,
+) -> Value {
     let uptime_sec = started_at.elapsed().as_secs();
 
     let services_map: Vec<(Value, Value)> = enabled_services
@@ -125,11 +133,19 @@ fn build_snapshot(started_at: Instant, enabled_services: &[String]) -> Value {
         })
         .collect();
 
+    let roles_map: Vec<(Value, Value)> = screens_roles
+        .iter()
+        .map(|(name, role)| (Value::from(name.as_str()), Value::from(role.as_str())))
+        .collect();
+
+    let screens_value = Value::Map(vec![(Value::from("roles"), Value::Map(roles_map))]);
+
     Value::Map(vec![
         (Value::from("server_version"), Value::from(SERVER_VERSION)),
         (Value::from("uptime_sec"), Value::from(uptime_sec)),
         (Value::from("services"), Value::Map(services_map)),
         (Value::from("config_needs_restart"), Value::Boolean(false)),
+        (Value::from("screens"), screens_value),
     ])
 }
 
