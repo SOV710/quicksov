@@ -10,16 +10,18 @@
 
 - **Socket**：Unix Domain Socket, `SOCK_STREAM`
 - **Path**：`$XDG_RUNTIME_DIR/quicksov/daemon.sock`
-- **Framing**：每条消息前 4 字节小端 `u32` 为 payload 字节长度，随后是 MessagePack 编码的 payload
+- **Encoding**：UTF-8 JSON
+- **Framing**：NDJSON — 每条消息一行 JSON，以 `\n` 结束
 
 ```
-┌─────────────────┬──────────────────────────┐
-│  u32 LE length  │  MessagePack payload     │
-└─────────────────┴──────────────────────────┘
+┌──────────────────────────────────┬─────┐
+│  JSON payload (UTF-8)            │ \n  │
+└──────────────────────────────────┴─────┘
 ```
 
-- **最大消息长度**：16 MiB (`length > 16 * 1024 * 1024` 视为 `E_PROTO_MALFORMED`，立即断连)
+- **最大消息长度**：16 MiB（单行 UTF-8 字节数；超过此限视为 `E_PROTO_MALFORMED`，立即断连）
 - **Proto version**：`qsov/1`
+- **整数范围**：所有出现在线协议中的整数必须落在 JavaScript safe integer 范围内（`-2^53+1` 至 `2^53-1`）
 
 ## 2. Envelope
 
@@ -35,7 +37,7 @@
     "kind":    { "type": "integer", "enum": [0,1,2,3,4,5,6], "description": "0=REQ 1=REP 2=ERR 3=PUB 4=ONESHOT 5=SUB 6=UNSUB" },
     "topic":   { "type": "string" },
     "action":  { "type": "string", "description": "REQ/ONESHOT 必填; REP/ERR/PUB 为空串" },
-    "payload": { "description": "任意 MessagePack 值, schema 由 (topic, action) 决定" }
+    "payload": { "description": "任意 JSON 值, schema 由 (topic, action) 决定" }
   }
 }
 ```
@@ -93,7 +95,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 | Code | 含义 |
 |---|---|
 | `E_PROTO_VERSION` | 协议主版本不匹配 |
-| `E_PROTO_MALFORMED` | framing / msgpack / envelope 字段错误 |
+| `E_PROTO_MALFORMED` | 消息格式错误（JSON 解析失败、行超长、envelope 缺字段） |
 | `E_HANDSHAKE_TIMEOUT` | 握手超时 |
 | `E_TOPIC_UNKNOWN` | topic 不存在或未启用 |
 | `E_ACTION_UNKNOWN` | topic 不支持该 action |

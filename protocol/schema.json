@@ -9,9 +9,10 @@
     "family": "AF_UNIX",
     "path": "$XDG_RUNTIME_DIR/quicksov/daemon.sock",
     "framing": {
-      "length_prefix": { "type": "uint32", "endian": "little" },
-      "payload_format": "messagepack",
-      "max_message_bytes": 16777216
+      "format": "ndjson",
+      "encoding": "utf-8",
+      "line_delimiter": "\\n",
+      "max_line_bytes": 16777216
     }
   },
 

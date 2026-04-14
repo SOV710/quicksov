@@ -249,7 +249,7 @@
         BlueZ D-Bus          → bt-service         ──┤
         PipeWire             → audio-service      ──┤
         Niri IPC             → niri-service       ──┼─→ IPC Router ─→ QML
-        Open-Meteo HTTP      → weather-service    ──┤     (UDS+msgpack)
+        Open-Meteo HTTP      → weather-service    ──┤     (UDS+NDJSON)
         Freedesktop D-Bus    → notif-service      ──┤
         MPRIS D-Bus          → mpris-service      ──┘
 ```
