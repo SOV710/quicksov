@@ -25,9 +25,6 @@ pub struct ServiceHandle {
 /// A request forwarded from the router to a service.
 ///
 /// All fields are populated by the router and consumed by the receiving service.
-/// Phase 1 has no services so these fields are never read, but they are required
-/// by the router's dispatch logic for future phases.
-#[allow(dead_code)]
 pub struct ServiceRequest {
     /// The action name (corresponds to the `action` field of the inbound envelope).
     pub action: String,
@@ -38,10 +35,6 @@ pub struct ServiceRequest {
 }
 
 /// Typed errors a service can return in response to a [`ServiceRequest`].
-///
-/// Phase 1 has no service implementations so these variants are never constructed
-/// directly; they are reserved for use in Phase 2+ service modules.
-#[allow(dead_code)]
 #[derive(Debug, Error)]
 pub enum ServiceError {
     #[error("unknown action: {action}")]
@@ -49,8 +42,10 @@ pub enum ServiceError {
     #[error("invalid action payload: {msg}")]
     ActionPayload { msg: String },
     #[error("internal service error: {msg}")]
+    #[allow(dead_code)]
     Internal { msg: String },
     #[error("service temporarily unavailable")]
+    #[allow(dead_code)]
     Unavailable,
 }
 

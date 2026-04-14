@@ -32,6 +32,9 @@ enum MainError {
 }
 
 fn main() -> Result<(), MainError> {
+    // Capture start instant as early as possible for uptime tracking.
+    let started_at = std::time::Instant::now();
+
     // Load config synchronously (before the async runtime) so we can
     // initialise tracing with the correct log level from the first moment.
     let (config, used_defaults) = config::load_with_info()?;
@@ -48,14 +51,17 @@ fn main() -> Result<(), MainError> {
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?
-        .block_on(async_main(config))
+        .block_on(async_main(config, started_at))
 }
 
-async fn async_main(config: config::Config) -> Result<(), MainError> {
+async fn async_main(
+    config: config::Config,
+    started_at: std::time::Instant,
+) -> Result<(), MainError> {
     let socket_path = PathBuf::from(&config.daemon.socket_path);
 
-    // Start services — empty HashMap in Phase 1.
-    let services = services::start_services(&config).await;
+    // Start services according to the enabled list in config.
+    let services = services::start_services(&config, started_at).await;
     let router = ipc::router::Router::new(services);
     let capabilities = router.capabilities();
 

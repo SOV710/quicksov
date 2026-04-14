@@ -4,4 +4,4 @@
 
 pub mod types;
 
-pub use types::{ServiceHandle, ServiceRequest};
+pub use types::{ServiceError, ServiceHandle, ServiceRequest};
