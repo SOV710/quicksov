@@ -116,7 +116,7 @@
 | 位置 | RIGHT 最左 |
 | 数据源 | `Quickshell.Services.SystemTray` (StatusNotifierItem) |
 | 视觉 | 每 item 16×16 原生 icon，间距 `spacing.sm` |
-| 交互 | 左键 → `item.activate()`；右键 → `item.openMenu()` |
+| 交互 | 左键 → `item.activate()`；右键 → `item.menu`（通过 Quickshell `SystemTrayItem.menu` 句柄展示原生菜单；具体弹出由 `item.display(parentWindow, relX, relY)` 触发） |
 | Hover 背景 | `radius.xs` 统一包裹（无法统一 item 风格，只能统一容器） |
 
 ### 3.6 battery
@@ -193,8 +193,8 @@
 | 收起 | 宽 0，保留 3px 触发热区 |
 | 触发 | hover 左边缘热区 > 200ms |
 | 展开 | 宽 320px，从左滑出（`autohide_enter` spring） |
-| 数据源 | `Quickshell.Services.Mpris`，自动追踪所有 MPRIS 播放器 |
-| 多播放器处理 | 优先选 `PlaybackStatus=Playing` 的；都暂停时选最近活动；右下角显示 source 切换器 |
+| 数据源 | daemon `mpris` service via IPC（SUB `mpris` topic） |
+| 多播放器处理 | 优先选 `playback_status=Playing` 的；都暂停时选最近活动；右下角显示 source 切换器（通过 `select_active` action） |
 | 退出 | 鼠标离开自动收起 |
 
 **内容结构**：
@@ -251,10 +251,7 @@
         Niri IPC             → niri-service       ──┼─→ IPC Router ─→ QML
         Open-Meteo HTTP      → weather-service    ──┤     (UDS+msgpack)
         Freedesktop D-Bus    → notif-service      ──┤
-        StatusNotifierItem   → tray-service       ──┤
         MPRIS D-Bus          → mpris-service      ──┘
-                                                      ※ MPRIS 也可让 qs
-                                                        直接用 Quickshell.Services.Mpris
 ```
 
 每个 service 独立 tokio task，通过 `ServiceHandle` 向 router 暴露 mpsc 请求通道和 watch 状态通道。详见 L3-architecture.md。

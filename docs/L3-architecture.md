@@ -168,7 +168,6 @@ server → client:  HelloAck  { server_version, capabilities, session_id }
 | `audio` | PipeWire sink/source、音量、静音 |
 | `mpris` | MPRIS 播放器发现与控制 |
 | `notification` | Freedesktop notification server |
-| `tray` | StatusNotifierItem host |
 | `niri` | Niri workspace、window、action |
 | `weather` | Open-Meteo 天气缓存 |
 | `theme` | design-tokens.toml 的内容，启动时推送，热重载时更新 |
@@ -294,8 +293,6 @@ qsovd/                              # Rust crate
     │   │   └── mod.rs              # MPRIS D-Bus 多播放器追踪
     │   ├── notification/
     │   │   └── mod.rs              # 实现 o.f.Notifications D-Bus server
-    │   ├── tray/
-    │   │   └── mod.rs              # StatusNotifierItem host
     │   ├── niri/
     │   │   └── mod.rs              # niri IPC event stream
     │   └── weather/
@@ -338,7 +335,6 @@ enabled = [
   "audio",
   "mpris",
   "notification",
-  "tray",
   "niri",
   "weather",
 ]

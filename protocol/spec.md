@@ -391,43 +391,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 
 ---
 
-### 5.8 `tray`
-
-**State Snapshot**:
-
-```json
-{
-  "type": "object",
-  "required": ["items"],
-  "properties": {
-    "items": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "id":       { "type": "string" },
-          "title":    { "type": "string" },
-          "icon":     { "type": "string" },
-          "tooltip":  { "type": "string" },
-          "status":   { "type": "string", "enum": ["active","passive","needs_attention"] }
-        }
-      }
-    }
-  }
-}
-```
-
-**Actions**:
-- `activate` — payload `{ id: string, x?: int, y?: int }`
-- `secondary_activate` — payload `{ id: string }`
-- `scroll` — payload `{ id: string, delta: int, orientation: "horizontal"|"vertical" }`
-- `open_menu` — payload `{ id: string }` (TBD: 菜单展示可能由 qs 直接通过 Quickshell.Services.SystemTray 处理)
-
-**后端**: StatusNotifierItem host (`org.kde.StatusNotifierWatcher` / `org.freedesktop.StatusNotifierWatcher`)。
-
----
-
-### 5.9 `niri`
+### 5.8 `niri`
 
 **State Snapshot**:
 
@@ -468,7 +432,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 
 ---
 
-### 5.10 `weather`
+### 5.9 `weather`
 
 **State Snapshot**:
 
@@ -520,7 +484,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 
 ---
 
-### 5.11 `theme`
+### 5.10 `theme`
 
 **State Snapshot**: 整个 `design-tokens.toml` 解析后的 JSON 对象。Schema 由 `config/design-tokens.toml` 的结构定义，此处不复述。
 
@@ -528,7 +492,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 
 ---
 
-### 5.12 `meta`
+### 5.11 `meta`
 
 **State Snapshot**:
 
