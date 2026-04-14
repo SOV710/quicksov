@@ -9,6 +9,7 @@ mod config;
 mod ipc;
 mod platform;
 mod services;
+mod util;
 
 use std::path::PathBuf;
 use thiserror::Error;
