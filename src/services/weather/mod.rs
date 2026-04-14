@@ -10,7 +10,7 @@ use tracing::{debug, info, warn};
 
 use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
 use crate::config::Config;
-use crate::util::{rmpv_map, unix_now_secs};
+use crate::util::{is_empty_object, rmpv_map, unix_now_secs};
 
 /// Spawn the `weather` service and return its [`ServiceHandle`].
 pub fn spawn(cfg: &Config) -> ServiceHandle {
@@ -110,14 +110,20 @@ async fn run(
                 let Some(req) = req else { break };
                 let result = match req.action.as_str() {
                     "refresh" => {
-                        match fetch_weather(lat, lon).await {
-                            Ok(body) => {
-                                save_cache(&body);
-                                let snap = parse_api_response(&body, lat, lon, &wc.name);
-                                state_tx.send_replace(snap);
-                                Ok(Value::Nil)
+                        if !is_empty_object(&req.payload) {
+                            Err(ServiceError::ActionPayload {
+                                msg: "refresh expects an empty object payload".to_string(),
+                            })
+                        } else {
+                            match fetch_weather(lat, lon).await {
+                                Ok(body) => {
+                                    save_cache(&body);
+                                    let snap = parse_api_response(&body, lat, lon, &wc.name);
+                                    state_tx.send_replace(snap);
+                                    Ok(Value::Nil)
+                                }
+                                Err(e) => Err(ServiceError::Internal { msg: e.to_string() }),
                             }
-                            Err(e) => Err(ServiceError::Internal { msg: e.to_string() }),
                         }
                     }
                     other => Err(ServiceError::ActionUnknown { action: other.to_string() }),
