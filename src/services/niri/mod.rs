@@ -4,7 +4,7 @@
 
 //! `niri` service — Niri compositor IPC.
 
-use rmpv::Value;
+use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::sync::{mpsc, watch};
@@ -12,7 +12,7 @@ use tracing::{debug, info, warn};
 
 use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
 use crate::config::Config;
-use crate::util::rmpv_map;
+use crate::util::json_map;
 
 /// Spawn the `niri` service and return its [`ServiceHandle`].
 pub fn spawn(cfg: &Config) -> ServiceHandle {
@@ -47,9 +47,9 @@ fn resolve_socket(cfg: &Config) -> String {
 }
 
 fn empty_snapshot() -> Value {
-    rmpv_map([
+    json_map([
         ("workspaces", Value::Array(vec![])),
-        ("focused_window", Value::Nil),
+        ("focused_window", Value::Null),
     ])
 }
 
@@ -270,26 +270,26 @@ struct FocusedWindow {
 fn build_snapshot(workspaces: &[WorkspaceInfo], focused: &Option<FocusedWindow>) -> Value {
     let ws: Vec<Value> = workspaces.iter().map(workspace_to_value).collect();
     let fw = match focused {
-        Some(w) => rmpv_map([
+        Some(w) => json_map([
             ("id", Value::from(w.id)),
             ("app_id", Value::from(w.app_id.as_str())),
             ("title", Value::from(w.title.as_str())),
         ]),
-        None => Value::Nil,
+        None => Value::Null,
     };
-    rmpv_map([("workspaces", Value::Array(ws)), ("focused_window", fw)])
+    json_map([("workspaces", Value::Array(ws)), ("focused_window", fw)])
 }
 
 fn workspace_to_value(ws: &WorkspaceInfo) -> Value {
     let name = match &ws.name {
         Some(n) => Value::from(n.as_str()),
-        None => Value::Nil,
+        None => Value::Null,
     };
-    rmpv_map([
+    json_map([
         ("idx", Value::from(ws.idx as i64)),
         ("name", name),
         ("output", Value::from(ws.output.as_str())),
-        ("focused", Value::Boolean(ws.focused)),
+        ("focused", Value::Bool(ws.focused)),
         ("windows", Value::from(ws.windows as i64)),
     ])
 }
@@ -322,10 +322,9 @@ async fn handle_run_action(payload: &Value, socket_path: &str) -> Result<Value, 
         msg: "missing 'action' field".to_string(),
     })?;
     let args = extract_value(payload, "args");
-    let args_json = match args {
-        Some(v) => rmpv_to_json(v),
-        None => "null".to_string(),
-    };
+    let args_json = args
+        .and_then(|v| serde_json::to_string(v).ok())
+        .unwrap_or_else(|| "null".to_string());
     let cmd = format!(r#"{{"Action":{{"{action}":{args_json}}}}}"#);
     niri_action(socket_path, &cmd).await
 }
@@ -337,7 +336,7 @@ async fn niri_action(socket_path: &str, cmd: &str) -> Result<Value, ServiceError
     debug!(response = %resp, "niri action response");
 
     // Niri replies with either {"Ok": ...} or {"Err": "message"}.
-    let parsed: serde_json::Value =
+    let parsed: Value =
         serde_json::from_str(&resp).map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
 
     if let Some(err_msg) = parsed.get("Err") {
@@ -348,36 +347,7 @@ async fn niri_action(socket_path: &str, cmd: &str) -> Result<Value, ServiceError
         return Err(ServiceError::Internal { msg });
     }
 
-    Ok(Value::Nil)
-}
-
-fn rmpv_to_json(v: &Value) -> String {
-    match v {
-        Value::Nil => "null".to_string(),
-        Value::Boolean(b) => format!("{b}"),
-        Value::Integer(i) => format!("{i}"),
-        Value::F32(f) => format!("{f}"),
-        Value::F64(f) => format!("{f}"),
-        Value::String(s) => {
-            let s = s.as_str().unwrap_or("");
-            format!("\"{s}\"")
-        }
-        Value::Array(arr) => {
-            let items: Vec<String> = arr.iter().map(rmpv_to_json).collect();
-            format!("[{}]", items.join(","))
-        }
-        Value::Map(pairs) => {
-            let items: Vec<String> = pairs
-                .iter()
-                .filter_map(|(k, v)| {
-                    let key = k.as_str()?;
-                    Some(format!("\"{}\":{}", key, rmpv_to_json(v)))
-                })
-                .collect();
-            format!("{{{}}}", items.join(","))
-        }
-        _ => "null".to_string(),
-    }
+    Ok(Value::Null)
 }
 
 // ---------------------------------------------------------------------------
@@ -385,36 +355,15 @@ fn rmpv_to_json(v: &Value) -> String {
 // ---------------------------------------------------------------------------
 
 fn extract_str<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
-    if let Value::Map(pairs) = v {
-        for (k, val) in pairs {
-            if k.as_str() == Some(key) {
-                return val.as_str();
-            }
-        }
-    }
-    None
+    v.as_object()?.get(key)?.as_str()
 }
 
 fn extract_i64(v: &Value, key: &str) -> Option<i64> {
-    if let Value::Map(pairs) = v {
-        for (k, val) in pairs {
-            if k.as_str() == Some(key) {
-                return val.as_i64();
-            }
-        }
-    }
-    None
+    v.as_object()?.get(key)?.as_i64()
 }
 
 fn extract_value<'a>(v: &'a Value, key: &str) -> Option<&'a Value> {
-    if let Value::Map(pairs) = v {
-        for (k, val) in pairs {
-            if k.as_str() == Some(key) {
-                return Some(val);
-            }
-        }
-    }
-    None
+    v.as_object()?.get(key)
 }
 
 // ---------------------------------------------------------------------------
