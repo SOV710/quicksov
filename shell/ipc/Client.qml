@@ -64,7 +64,7 @@ QtObject {
     }
 
     function _connect() {
-        var bridgePath = Qt.resolvedUrl("../../scripts/ipc-bridge").toString().replace(/^file:\/\//, "");
+        var bridgePath = Qt.resolvedUrl("../scripts/ipc-bridge").toString().replace(/^file:\/\//, "");
         _bridge.command = [bridgePath, _socketPath()];
         _bridge.running = true;
     }
