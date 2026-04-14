@@ -6,14 +6,14 @@
 
 use std::collections::HashMap;
 
-use rmpv::Value;
+use serde_json::Value;
 use tokio::sync::{mpsc, watch};
 use tracing::{info, warn};
 use zbus::zvariant::OwnedValue;
 
 use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
 use crate::config::Config;
-use crate::util::rmpv_map;
+use crate::util::json_map;
 
 use futures::StreamExt;
 
@@ -33,9 +33,9 @@ pub fn spawn(_cfg: &Config) -> ServiceHandle {
 }
 
 fn unavailable_snapshot() -> Value {
-    rmpv_map([
-        ("powered", Value::Boolean(false)),
-        ("discovering", Value::Boolean(false)),
+    json_map([
+        ("powered", Value::Bool(false)),
+        ("discovering", Value::Bool(false)),
         ("devices", Value::Array(vec![])),
     ])
 }
@@ -200,9 +200,9 @@ fn get_owned_u8(props: &HashMap<String, OwnedValue>, key: &str) -> Option<u8> {
 fn build_snapshot(state: &BtState) -> Value {
     let devs: Vec<Value> = state.devices.values().map(device_to_value).collect();
 
-    rmpv_map([
-        ("powered", Value::Boolean(state.powered)),
-        ("discovering", Value::Boolean(state.discovering)),
+    json_map([
+        ("powered", Value::Bool(state.powered)),
+        ("discovering", Value::Bool(state.discovering)),
         ("devices", Value::Array(devs)),
     ])
 }
@@ -210,15 +210,15 @@ fn build_snapshot(state: &BtState) -> Value {
 fn device_to_value(d: &BtDevice) -> Value {
     let bat = match d.battery {
         Some(v) => Value::from(v),
-        None => Value::Nil,
+        None => Value::Null,
     };
-    rmpv_map([
+    json_map([
         ("address", Value::from(d.address.as_str())),
         ("name", Value::from(d.name.as_str())),
         ("icon", Value::from(d.icon.as_str())),
-        ("paired", Value::Boolean(d.paired)),
-        ("connected", Value::Boolean(d.connected)),
-        ("trusted", Value::Boolean(d.trusted)),
+        ("paired", Value::Bool(d.paired)),
+        ("connected", Value::Bool(d.connected)),
+        ("trusted", Value::Bool(d.trusted)),
         ("battery", bat),
     ])
 }
@@ -257,7 +257,7 @@ async fn handle_power(
         .set_property("Powered", on)
         .await
         .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
-    Ok(Value::Nil)
+    Ok(Value::Null)
 }
 
 async fn handle_scan_start(
@@ -270,7 +270,7 @@ async fn handle_scan_start(
         .call("StartDiscovery", &())
         .await
         .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
-    Ok(Value::Nil)
+    Ok(Value::Null)
 }
 
 async fn handle_scan_stop(conn: &zbus::Connection, state: &BtState) -> Result<Value, ServiceError> {
@@ -280,7 +280,7 @@ async fn handle_scan_stop(conn: &zbus::Connection, state: &BtState) -> Result<Va
         .call("StopDiscovery", &())
         .await
         .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
-    Ok(Value::Nil)
+    Ok(Value::Null)
 }
 
 async fn handle_device_action(
@@ -298,7 +298,7 @@ async fn handle_device_action(
         .call(method, &())
         .await
         .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
-    Ok(Value::Nil)
+    Ok(Value::Null)
 }
 
 async fn handle_forget(
@@ -318,7 +318,7 @@ async fn handle_forget(
         .call("RemoveDevice", &(dev_path,))
         .await
         .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
-    Ok(Value::Nil)
+    Ok(Value::Null)
 }
 
 // ---------------------------------------------------------------------------
@@ -361,25 +361,11 @@ async fn device_proxy<'a>(
 // ---------------------------------------------------------------------------
 
 fn extract_str<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
-    if let Value::Map(pairs) = v {
-        for (k, val) in pairs {
-            if k.as_str() == Some(key) {
-                return val.as_str();
-            }
-        }
-    }
-    None
+    v.as_object()?.get(key)?.as_str()
 }
 
 fn extract_bool(v: &Value, key: &str) -> Option<bool> {
-    if let Value::Map(pairs) = v {
-        for (k, val) in pairs {
-            if k.as_str() == Some(key) {
-                return val.as_bool();
-            }
-        }
-    }
-    None
+    v.as_object()?.get(key)?.as_bool()
 }
 
 // ---------------------------------------------------------------------------
