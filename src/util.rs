@@ -64,6 +64,18 @@ pub fn rmpv_map(pairs: impl IntoIterator<Item = (&'static str, Value)>) -> Value
     )
 }
 
+/// Returns `true` if `v` is an empty msgpack object (Nil or zero-key Map).
+///
+/// Clients that omit a payload field send `Nil`; clients that send `{}` send
+/// an empty Map.  Both are accepted as "empty object" for action validation.
+pub fn is_empty_object(v: &Value) -> bool {
+    match v {
+        Value::Nil => true,
+        Value::Map(m) => m.is_empty(),
+        _ => false,
+    }
+}
+
 /// Current Unix timestamp in milliseconds.
 pub fn unix_now_ms() -> i64 {
     SystemTime::now()
