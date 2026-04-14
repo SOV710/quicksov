@@ -24,12 +24,11 @@ QtObject {
     signal connectionChanged(bool isConnected)
     signal pubReceived(string topic, var payload)
 
-    property var _bridge: Process {
-        id: bridge
-        command: []
-        running: false
+    property var _socket: Socket {
+        id: socket
+        path: root._socketPath()
 
-        stdout: SplitParser {
+        parser: SplitParser {
             splitMarker: "\n"
             onRead: function(data) {
                 if (!data || data.trim() === "") return;
@@ -41,13 +40,21 @@ QtObject {
             }
         }
 
-        onRunningChanged: {
-            if (!running) {
-                root.connected = false;
+        onConnectedChanged: {
+            if (!connected) {
                 root.handshakeDone = false;
                 root.connectionChanged(false);
                 root._scheduleReconnect();
+            } else {
+                // Send Hello immediately on connect
+                var hello = Protocol.makeHello();
+                socket.write(JSON.stringify(hello) + "\n");
+                socket.flush();
             }
+        }
+
+        onError: function(error) {
+            console.warn("[ipc] socket error:", error);
         }
     }
 
@@ -64,9 +71,7 @@ QtObject {
     }
 
     function _connect() {
-        var bridgePath = Qt.resolvedUrl("../scripts/ipc-bridge").toString().replace(/^file:\/\//, "");
-        _bridge.command = [bridgePath, _socketPath()];
-        _bridge.running = true;
+        socket.connected = true;
     }
 
     function _scheduleReconnect() {
@@ -109,9 +114,9 @@ QtObject {
     }
 
     function _sendRaw(obj) {
-        if (!_bridge.running) return;
-        _bridge.stdin.write(JSON.stringify(obj) + "\n");
-        _bridge.stdin.flush();
+        if (!socket.connected) return;
+        socket.write(JSON.stringify(obj) + "\n");
+        socket.flush();
     }
 
     function subscribe(topic, callback) {

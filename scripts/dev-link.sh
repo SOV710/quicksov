@@ -46,14 +46,5 @@ if [[ -d "$REPO_ROOT/icons" ]]; then
     link_item "$REPO_ROOT/icons"
 fi
 
-# Link scripts/ so ipc-bridge is reachable at relative path from shell/ipc/
-SCRIPTS_DIR="$REPO_ROOT/scripts"
-dst="$CONFIG_DIR/scripts"
-if [[ -L "$dst" ]]; then rm "$dst"; fi
-if [[ ! -e "$dst" ]]; then
-    ln -s "$SCRIPTS_DIR" "$dst"
-    echo "  $dst -> $SCRIPTS_DIR"
-fi
-
 echo "Done. Start daemon: cargo run --manifest-path $REPO_ROOT/Cargo.toml"
 echo "Start shell: QS_BASE_PATH=$CONFIG_DIR quickshell"

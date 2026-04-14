@@ -12,7 +12,7 @@
 
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use rmpv::Value;
+use serde_json::Value;
 use tokio::sync::{mpsc, watch};
 use tracing::{debug, info, warn};
 
@@ -102,10 +102,7 @@ fn handle_ping(req: ServiceRequest) {
     let server_time = unix_now_secs();
     debug!(server_time, "meta.ping request handled");
 
-    let payload = Value::Map(vec![
-        (Value::from("pong"), Value::Boolean(true)),
-        (Value::from("server_time"), Value::from(server_time)),
-    ]);
+    let payload = serde_json::json!({"pong": true, "server_time": server_time});
 
     req.reply.send(Ok(payload)).ok();
 }
@@ -114,7 +111,7 @@ fn handle_ping(req: ServiceRequest) {
 // Snapshot builder
 // ---------------------------------------------------------------------------
 
-/// Build a complete `meta` state snapshot as an `rmpv::Value` map.
+/// Build a complete `meta` state snapshot as a `serde_json::Value` map.
 fn build_snapshot(
     started_at: Instant,
     enabled_services: &[String],
@@ -122,31 +119,26 @@ fn build_snapshot(
 ) -> Value {
     let uptime_sec = started_at.elapsed().as_secs();
 
-    let services_map: Vec<(Value, Value)> = enabled_services
+    let services_obj: serde_json::Map<String, Value> = enabled_services
         .iter()
         .map(|name| {
-            let entry = Value::Map(vec![
-                (Value::from("status"), Value::from("healthy")),
-                (Value::from("last_error"), Value::Nil),
-            ]);
-            (Value::from(name.as_str()), entry)
+            let entry = serde_json::json!({"status": "healthy", "last_error": null});
+            (name.clone(), entry)
         })
         .collect();
 
-    let roles_map: Vec<(Value, Value)> = screens_roles
+    let roles_obj: serde_json::Map<String, Value> = screens_roles
         .iter()
-        .map(|(name, role)| (Value::from(name.as_str()), Value::from(role.as_str())))
+        .map(|(name, role)| (name.clone(), Value::from(role.as_str())))
         .collect();
 
-    let screens_value = Value::Map(vec![(Value::from("roles"), Value::Map(roles_map))]);
-
-    Value::Map(vec![
-        (Value::from("server_version"), Value::from(SERVER_VERSION)),
-        (Value::from("uptime_sec"), Value::from(uptime_sec)),
-        (Value::from("services"), Value::Map(services_map)),
-        (Value::from("config_needs_restart"), Value::Boolean(false)),
-        (Value::from("screens"), screens_value),
-    ])
+    serde_json::json!({
+        "server_version": SERVER_VERSION,
+        "uptime_sec": uptime_sec,
+        "services": Value::Object(services_obj),
+        "config_needs_restart": false,
+        "screens": {"roles": Value::Object(roles_obj)},
+    })
 }
 
 // ---------------------------------------------------------------------------
