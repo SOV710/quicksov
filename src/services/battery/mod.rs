@@ -4,13 +4,13 @@
 
 //! `battery` service — UPower + PowerProfiles via D-Bus.
 
-use rmpv::Value;
+use serde_json::Value;
 use tokio::sync::{mpsc, watch};
 use tracing::{debug, info, warn};
 
 use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
 use crate::config::Config;
-use crate::util::rmpv_map;
+use crate::util::json_map;
 
 /// Spawn the `battery` service task and return its [`ServiceHandle`].
 pub fn spawn(_cfg: &Config) -> ServiceHandle {
@@ -28,13 +28,13 @@ pub fn spawn(_cfg: &Config) -> ServiceHandle {
 }
 
 fn unavailable_snapshot() -> Value {
-    rmpv_map([
-        ("present", Value::Boolean(false)),
-        ("on_battery", Value::Boolean(false)),
+    json_map([
+        ("present", Value::Bool(false)),
+        ("on_battery", Value::Bool(false)),
         ("level", Value::from(0)),
         ("state", Value::from("unknown")),
-        ("time_to_empty_sec", Value::Nil),
-        ("time_to_full_sec", Value::Nil),
+        ("time_to_empty_sec", Value::Null),
+        ("time_to_full_sec", Value::Null),
         ("power_profile", Value::from("unknown")),
     ])
 }
@@ -157,15 +157,15 @@ fn build_snapshot(
 ) -> Value {
     let tte_val = match tte {
         Some(v) if v > 0 => Value::from(v),
-        _ => Value::Nil,
+        _ => Value::Null,
     };
     let ttf_val = match ttf {
         Some(v) if v > 0 => Value::from(v),
-        _ => Value::Nil,
+        _ => Value::Null,
     };
-    rmpv_map([
-        ("present", Value::Boolean(present)),
-        ("on_battery", Value::Boolean(on_battery)),
+    json_map([
+        ("present", Value::Bool(present)),
+        ("on_battery", Value::Bool(on_battery)),
         ("level", Value::from(level)),
         ("state", Value::from(upower_state_str(state_u32))),
         ("time_to_empty_sec", tte_val),
@@ -237,7 +237,7 @@ async fn handle_set_power_profile(
         .await
         .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
 
-    Ok(Value::Nil)
+    Ok(Value::Null)
 }
 
 // ---------------------------------------------------------------------------
@@ -297,14 +297,7 @@ where
 // ---------------------------------------------------------------------------
 
 fn extract_str<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
-    if let Value::Map(pairs) = v {
-        for (k, val) in pairs {
-            if k.as_str() == Some(key) {
-                return val.as_str();
-            }
-        }
-    }
-    None
+    v.as_object()?.get(key)?.as_str()
 }
 
 // ---------------------------------------------------------------------------
