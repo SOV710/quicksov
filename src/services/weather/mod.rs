@@ -4,13 +4,13 @@
 
 //! `weather` service — Open-Meteo HTTP backend.
 
-use rmpv::Value;
+use serde_json::Value;
 use tokio::sync::{mpsc, watch};
 use tracing::{debug, info, warn};
 
 use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
 use crate::config::Config;
-use crate::util::{is_empty_object, rmpv_map, unix_now_secs};
+use crate::util::{is_empty_object, json_map, unix_now_secs};
 
 /// Spawn the `weather` service and return its [`ServiceHandle`].
 pub fn spawn(cfg: &Config) -> ServiceHandle {
@@ -56,12 +56,12 @@ struct WeatherCfg {
 }
 
 fn offline_snapshot() -> Value {
-    rmpv_map([
-        ("location", Value::Nil),
-        ("current", Value::Nil),
+    json_map([
+        ("location", Value::Null),
+        ("current", Value::Null),
         ("hourly", Value::Array(vec![])),
-        ("updated_at", Value::Nil),
-        ("offline", Value::Boolean(true)),
+        ("updated_at", Value::Null),
+        ("offline", Value::Bool(true)),
     ])
 }
 
@@ -120,7 +120,7 @@ async fn run(
                                     save_cache(&body);
                                     let snap = parse_api_response(&body, lat, lon, &wc.name);
                                     state_tx.send_replace(snap);
-                                    Ok(Value::Nil)
+                                    Ok(Value::Null)
                                 }
                                 Err(e) => Err(ServiceError::Internal { msg: e.to_string() }),
                             }
@@ -184,32 +184,32 @@ async fn fetch_weather(lat: f64, lon: f64) -> Result<String, WeatherError> {
 // ---------------------------------------------------------------------------
 
 fn parse_api_response(json: &str, lat: f64, lon: f64, loc_name: &str) -> Value {
-    let val: serde_json::Value = match serde_json::from_str(json) {
+    let val: Value = match serde_json::from_str(json) {
         Ok(v) => v,
         Err(_) => return offline_snapshot(),
     };
 
-    let location = rmpv_map([
+    let location = json_map([
         ("name", Value::from(loc_name)),
-        ("latitude", Value::from(lat)),
-        ("longitude", Value::from(lon)),
+        ("latitude", serde_json::json!(lat)),
+        ("longitude", serde_json::json!(lon)),
     ]);
 
     let current = parse_current(&val);
     let hourly = parse_hourly(&val);
 
-    rmpv_map([
+    json_map([
         ("location", location),
         ("current", current),
         ("hourly", Value::Array(hourly)),
         ("updated_at", Value::from(unix_now_secs())),
-        ("offline", Value::Boolean(false)),
+        ("offline", Value::Bool(false)),
     ])
 }
 
-fn parse_current(val: &serde_json::Value) -> Value {
+fn parse_current(val: &Value) -> Value {
     let Some(cur) = val.get("current") else {
-        return Value::Nil;
+        return Value::Null;
     };
     let temp = cur
         .get("temperature_2m")
@@ -233,18 +233,18 @@ fn parse_current(val: &serde_json::Value) -> Value {
         .unwrap_or(-1);
     let (icon, desc) = wmo_to_icon_desc(wmo);
 
-    rmpv_map([
-        ("temperature_c", Value::from(temp)),
-        ("apparent_c", Value::from(apparent)),
+    json_map([
+        ("temperature_c", serde_json::json!(temp)),
+        ("apparent_c", serde_json::json!(apparent)),
         ("humidity_pct", Value::from(humidity)),
-        ("wind_kmh", Value::from(wind)),
+        ("wind_kmh", serde_json::json!(wind)),
         ("wmo_code", Value::from(wmo)),
         ("icon", Value::from(icon)),
         ("description", Value::from(desc)),
     ])
 }
 
-fn parse_hourly(val: &serde_json::Value) -> Vec<Value> {
+fn parse_hourly(val: &Value) -> Vec<Value> {
     let Some(hourly) = val.get("hourly") else {
         return vec![];
     };
@@ -272,9 +272,9 @@ fn parse_hourly(val: &serde_json::Value) -> Vec<Value> {
             let time_str = t.as_str().unwrap_or("");
             let temp_f = temp.as_f64().unwrap_or(0.0);
             let wmo = code.as_i64().unwrap_or(-1);
-            rmpv_map([
+            json_map([
                 ("time", Value::from(time_str)),
-                ("temperature_c", Value::from(temp_f)),
+                ("temperature_c", serde_json::json!(temp_f)),
                 ("wmo_code", Value::from(wmo)),
             ])
         })
