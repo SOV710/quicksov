@@ -89,14 +89,11 @@ impl Router {
     // -----------------------------------------------------------------------
 
     /// Dispatch a decoded envelope to the correct handler.
-    ///
-    /// Takes a mutable reference to the per-session [`ForwarderRegistry`] so
-    /// that SUB / UNSUB can spawn or abort forwarder tasks.
     pub async fn dispatch(
         &self,
         kind: Kind,
         envelope: Envelope,
-        outbound_tx: &mpsc::Sender<Vec<u8>>,
+        outbound_tx: &mpsc::Sender<String>,
         fwd: &mut ForwarderRegistry,
     ) {
         match kind {
@@ -104,8 +101,6 @@ impl Router {
             Kind::Oneshot => self.handle_oneshot(envelope).await,
             Kind::Sub => self.handle_sub(envelope, outbound_tx, fwd).await,
             Kind::Unsub => self.handle_unsub(&envelope.topic, fwd),
-            // REP, ERR, PUB are server-to-client only; a client sending them is a protocol
-            // violation but we silently discard rather than hard-disconnect.
             Kind::Rep | Kind::Err | Kind::Pub => {
                 warn!(kind = kind as u8, topic = %envelope.topic, "unexpected client-to-server kind; ignoring");
             }
@@ -116,7 +111,7 @@ impl Router {
     // REQ
     // -----------------------------------------------------------------------
 
-    async fn handle_req(&self, envelope: Envelope, outbound_tx: &mpsc::Sender<Vec<u8>>) {
+    async fn handle_req(&self, envelope: Envelope, outbound_tx: &mpsc::Sender<String>) {
         let Some(handle) = self.services.get(&envelope.topic) else {
             debug!(topic = %envelope.topic, "REQ to unknown topic");
             send_err_envelope(
@@ -202,7 +197,7 @@ impl Router {
     async fn handle_sub(
         &self,
         envelope: Envelope,
-        outbound_tx: &mpsc::Sender<Vec<u8>>,
+        outbound_tx: &mpsc::Sender<String>,
         fwd: &mut ForwarderRegistry,
     ) {
         let Some(handle) = self.services.get(&envelope.topic) else {
@@ -218,7 +213,7 @@ impl Router {
             return;
         };
 
-        // Push initial snapshot immediately (per §4.3 "订阅时立即推送快照").
+        // Push initial snapshot immediately.
         let snapshot = handle.state_rx.borrow().clone();
         send_pub_envelope(outbound_tx, &envelope.topic, snapshot).await;
 
@@ -230,7 +225,7 @@ impl Router {
         let abort = fwd.set_mut().spawn(async move {
             loop {
                 if state_rx.changed().await.is_err() {
-                    break; // Sender dropped — service has exited.
+                    break;
                 }
                 let snap = state_rx.borrow_and_update().clone();
                 send_pub_envelope(&tx, &topic, snap).await;
@@ -256,10 +251,10 @@ impl Router {
 
 /// Encode and enqueue a `REP` envelope.
 pub async fn send_rep_envelope(
-    outbound_tx: &mpsc::Sender<Vec<u8>>,
+    outbound_tx: &mpsc::Sender<String>,
     id: u64,
     topic: &str,
-    payload: rmpv::Value,
+    payload: serde_json::Value,
 ) {
     let env = Envelope {
         id,
@@ -273,7 +268,7 @@ pub async fn send_rep_envelope(
 
 /// Encode and enqueue an `ERR` envelope.
 pub async fn send_err_envelope(
-    outbound_tx: &mpsc::Sender<Vec<u8>>,
+    outbound_tx: &mpsc::Sender<String>,
     id: u64,
     topic: &str,
     code: &'static str,
@@ -284,15 +279,7 @@ pub async fn send_err_envelope(
         message: message.to_string(),
         details: None,
     };
-    // Serialize the ErrorBody as msgpack bytes and decode back to rmpv::Value
-    // so it can be embedded in the envelope's generic payload field.
-    let payload = match body_to_value(&err_body) {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!(error = %e, "failed to encode error body as value");
-            return;
-        }
-    };
+    let payload = serde_json::to_value(&err_body).unwrap_or(serde_json::Value::Null);
     let env = Envelope {
         id,
         kind: Kind::Err as u8,
@@ -305,9 +292,9 @@ pub async fn send_err_envelope(
 
 /// Encode and enqueue a `PUB` envelope.
 pub async fn send_pub_envelope(
-    outbound_tx: &mpsc::Sender<Vec<u8>>,
+    outbound_tx: &mpsc::Sender<String>,
     topic: &str,
-    payload: rmpv::Value,
+    payload: serde_json::Value,
 ) {
     let env = Envelope {
         id: 0,
@@ -323,10 +310,10 @@ pub async fn send_pub_envelope(
 // Private helpers
 // ---------------------------------------------------------------------------
 
-async fn enqueue_envelope(outbound_tx: &mpsc::Sender<Vec<u8>>, env: &Envelope) {
+async fn enqueue_envelope(outbound_tx: &mpsc::Sender<String>, env: &Envelope) {
     match codec::encode(env) {
-        Ok(bytes) => {
-            outbound_tx.send(bytes).await.ok();
+        Ok(line) => {
+            outbound_tx.send(line).await.ok();
         }
         Err(e) => {
             tracing::error!(error = %e, "failed to encode outbound envelope");
@@ -334,15 +321,3 @@ async fn enqueue_envelope(outbound_tx: &mpsc::Sender<Vec<u8>>, env: &Envelope) {
     }
 }
 
-/// Serialize `body` to msgpack bytes, then decode as an `rmpv::Value` so the
-/// structured error can be embedded in an envelope's generic `payload` field.
-fn body_to_value(body: &ErrorBody) -> Result<rmpv::Value, codec::CodecError> {
-    let bytes = codec::encode(body)?;
-    // rmpv::decode reads from a `Read` impl; use a slice cursor.
-    let mut cursor = std::io::Cursor::new(bytes);
-    rmpv::decode::value::read_value(&mut cursor).map_err(|e| {
-        codec::CodecError::Decode(rmp_serde::decode::Error::InvalidMarkerRead(
-            std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
-        ))
-    })
-}

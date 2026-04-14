@@ -4,19 +4,19 @@
 
 use std::path::Path;
 use thiserror::Error;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 
-/// Maximum permitted payload length in bytes (16 MiB, as per §1 of the spec).
-pub const MAX_MESSAGE_BYTES: u32 = 16 * 1024 * 1024;
+/// Maximum permitted line length in bytes (16 MiB, as per §1 of the spec).
+pub const MAX_LINE_BYTES: usize = 16 * 1024 * 1024;
 
 /// Errors that can occur at the transport layer.
 #[derive(Debug, Error)]
 pub enum TransportError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
-    #[error("message length {0} bytes exceeds the 16 MiB limit")]
-    MessageTooLarge(u32),
+    #[error("message line exceeds the 16 MiB limit")]
+    MessageTooLarge,
     #[error("another daemon instance is already listening on the socket")]
     AlreadyRunning,
 }
@@ -33,7 +33,6 @@ pub async fn bind(path: &Path) -> Result<UnixListener, TransportError> {
         match UnixStream::connect(path).await {
             Ok(_) => return Err(TransportError::AlreadyRunning),
             Err(_) => {
-                // Stale socket; best-effort removal — ignore errors.
                 let _ = std::fs::remove_file(path);
             }
         }
@@ -47,41 +46,44 @@ pub async fn bind(path: &Path) -> Result<UnixListener, TransportError> {
     Ok(listener)
 }
 
-/// Read one length-prefixed frame from `reader`.
+/// Read one NDJSON line from `reader`.
 ///
 /// Returns `Ok(None)` on clean EOF (peer closed the connection).
-/// Returns `Err(TransportError::MessageTooLarge)` if the length header
-/// exceeds [`MAX_MESSAGE_BYTES`]; the caller must send `E_PROTO_MALFORMED`
-/// and close the connection.
-pub async fn read_frame<R>(reader: &mut R) -> Result<Option<Vec<u8>>, TransportError>
+/// Returns `Err(TransportError::MessageTooLarge)` if the line exceeds
+/// [`MAX_LINE_BYTES`]; the caller must send `E_PROTO_MALFORMED` and close.
+pub async fn read_line<R>(reader: &mut BufReader<R>) -> Result<Option<String>, TransportError>
 where
-    R: AsyncReadExt + Unpin,
+    R: tokio::io::AsyncRead + Unpin,
 {
-    let mut len_buf = [0u8; 4];
-    match reader.read_exact(&mut len_buf).await {
-        Ok(_) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
-        Err(e) => return Err(TransportError::Io(e)),
+    let mut line = String::new();
+    loop {
+        let n = reader.read_line(&mut line).await?;
+        if n == 0 {
+            if line.is_empty() {
+                return Ok(None); // clean EOF
+            }
+            // EOF without trailing newline — treat as a complete line
+            break;
+        }
+        if line.len() > MAX_LINE_BYTES {
+            return Err(TransportError::MessageTooLarge);
+        }
+        if line.ends_with('\n') {
+            break;
+        }
     }
-
-    let len = u32::from_le_bytes(len_buf);
-    if len > MAX_MESSAGE_BYTES {
-        return Err(TransportError::MessageTooLarge(len));
-    }
-
-    let mut payload = vec![0u8; len as usize];
-    reader.read_exact(&mut payload).await?;
-    Ok(Some(payload))
+    Ok(Some(line))
 }
 
-/// Write one length-prefixed frame to `writer`.
-pub async fn write_frame<W>(writer: &mut W, payload: &[u8]) -> Result<(), TransportError>
+/// Write one NDJSON line to `writer` (appends `\n` if not already present).
+pub async fn write_line<W>(writer: &mut W, line: &str) -> Result<(), TransportError>
 where
     W: AsyncWriteExt + Unpin,
 {
-    let len = payload.len() as u32;
-    writer.write_all(&len.to_le_bytes()).await?;
-    writer.write_all(payload).await?;
+    writer.write_all(line.as_bytes()).await?;
+    if !line.ends_with('\n') {
+        writer.write_all(b"\n").await?;
+    }
     writer.flush().await?;
     Ok(())
 }

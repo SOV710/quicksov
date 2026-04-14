@@ -74,11 +74,9 @@ async fn drive_session(
 ) -> Result<(), SessionError> {
     let (read_half, write_half) = stream.into_split();
 
-    // Outbound channel: session main loop and forwarder tasks enqueue pre-encoded
-    // frames here; the writer task owns the write half and sends them out.
-    let (outbound_tx, outbound_rx) = mpsc::channel::<Vec<u8>>(64);
+    // Outbound channel carries pre-encoded JSON lines.
+    let (outbound_tx, outbound_rx) = mpsc::channel::<String>(64);
 
-    // Spawn the writer task; it exits naturally when all outbound_tx clones are dropped.
     tokio::spawn(writer_task(write_half, outbound_rx));
 
     let mut reader = BufReader::new(read_half);
@@ -105,13 +103,13 @@ async fn drive_session(
     let mut fwd = ForwarderRegistry::new();
 
     loop {
-        match transport::read_frame(&mut reader).await {
+        match transport::read_line(&mut reader).await {
             Ok(None) => {
                 tracing::debug!("client closed connection");
                 break;
             }
-            Ok(Some(frame)) => {
-                let envelope: Envelope = match codec::decode(&frame) {
+            Ok(Some(line)) => {
+                let envelope: Envelope = match codec::decode(line.trim_end_matches('\n')) {
                     Ok(e) => e,
                     Err(e) => {
                         tracing::warn!(error = %e, "envelope decode failed");
@@ -154,8 +152,8 @@ async fn drive_session(
                     .dispatch(kind, envelope, &outbound_tx, &mut fwd)
                     .await;
             }
-            Err(transport::TransportError::MessageTooLarge(len)) => {
-                tracing::warn!(len, "incoming frame exceeds 16 MiB limit");
+            Err(transport::TransportError::MessageTooLarge) => {
+                tracing::warn!("incoming line exceeds 16 MiB limit");
                 send_err_post_handshake(
                     &outbound_tx,
                     0,
@@ -173,7 +171,6 @@ async fn drive_session(
         }
     }
 
-    // Abort all active subscription forwarders for this session.
     fwd.abort_all();
 
     // outbound_tx is dropped here → writer_task exits when it drains its queue.
@@ -186,16 +183,16 @@ async fn drive_session(
 
 async fn do_handshake(
     reader: &mut BufReader<OwnedReadHalf>,
-    outbound_tx: &mpsc::Sender<Vec<u8>>,
+    outbound_tx: &mpsc::Sender<String>,
     session_id: u64,
     capabilities: Vec<String>,
 ) -> Result<(), SessionError> {
-    let frame = transport::read_frame(reader)
+    let line = transport::read_line(reader)
         .await
         .map_err(SessionError::Transport)?
         .ok_or(SessionError::PeerClosed)?;
 
-    let hello: Hello = match codec::decode(&frame) {
+    let hello: Hello = match codec::decode(line.trim_end_matches('\n')) {
         Ok(h) => h,
         Err(e) => {
             send_pre_handshake_error(
@@ -224,14 +221,14 @@ async fn do_handshake(
         "hello received"
     );
 
-    let ack = HelloAck {
-        server_version: env!("CARGO_PKG_VERSION").to_string(),
+    let ack = HelloAck::new(
+        env!("CARGO_PKG_VERSION").to_string(),
         capabilities,
         session_id,
-    };
+    );
 
-    let payload = codec::encode(&ack).map_err(|e| SessionError::Codec(e.to_string()))?;
-    outbound_tx.send(payload).await.ok();
+    let line = codec::encode(&ack).map_err(|e| SessionError::Codec(e.to_string()))?;
+    outbound_tx.send(line).await.ok();
 
     Ok(())
 }
@@ -240,9 +237,9 @@ async fn do_handshake(
 // Writer task — owns the write half of the UDS stream
 // ---------------------------------------------------------------------------
 
-async fn writer_task(mut write_half: OwnedWriteHalf, mut outbound_rx: mpsc::Receiver<Vec<u8>>) {
-    while let Some(payload) = outbound_rx.recv().await {
-        if let Err(e) = transport::write_frame(&mut write_half, &payload).await {
+async fn writer_task(mut write_half: OwnedWriteHalf, mut outbound_rx: mpsc::Receiver<String>) {
+    while let Some(line) = outbound_rx.recv().await {
+        if let Err(e) = transport::write_line(&mut write_half, &line).await {
             tracing::debug!(error = %e, "write error; stopping writer task");
             break;
         }
@@ -253,12 +250,9 @@ async fn writer_task(mut write_half: OwnedWriteHalf, mut outbound_rx: mpsc::Rece
 // Helpers for encoding and sending error frames
 // ---------------------------------------------------------------------------
 
-/// Send a bare `ErrorBody` frame (used *before* handshake completes).
-///
-/// Pre-handshake messages are raw msgpack maps, not wrapped in an `Envelope`,
-/// because the envelope format is defined as "post-handshake only" (§2).
+/// Send a bare `ErrorBody` JSON line (used *before* handshake completes).
 async fn send_pre_handshake_error(
-    outbound_tx: &mpsc::Sender<Vec<u8>>,
+    outbound_tx: &mpsc::Sender<String>,
     code: &'static str,
     message: &str,
 ) {
@@ -268,8 +262,8 @@ async fn send_pre_handshake_error(
         details: None,
     };
     match codec::encode(&body) {
-        Ok(bytes) => {
-            outbound_tx.send(bytes).await.ok();
+        Ok(line) => {
+            outbound_tx.send(line).await.ok();
         }
         Err(e) => {
             tracing::error!(error = %e, "failed to encode pre-handshake error body");
@@ -277,9 +271,9 @@ async fn send_pre_handshake_error(
     }
 }
 
-/// Send an `ERR` envelope (used *after* handshake completes, e.g. malformed envelope).
+/// Send an `ERR` envelope (used *after* handshake completes).
 async fn send_err_post_handshake(
-    outbound_tx: &mpsc::Sender<Vec<u8>>,
+    outbound_tx: &mpsc::Sender<String>,
     id: u64,
     topic: &str,
     code: &'static str,

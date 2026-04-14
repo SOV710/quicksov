@@ -2,8 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use rmpv::Value;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use thiserror::Error;
 
 // ---------------------------------------------------------------------------
@@ -44,8 +44,6 @@ impl TryFrom<u8> for Kind {
 // Standard error codes (§4 of protocol/spec.md — all 11 codes)
 // ---------------------------------------------------------------------------
 
-/// All 11 standard error codes from protocol spec §4.
-/// Phase 1 uses only the first four; the remaining five are reserved for future phases.
 pub const E_PROTO_VERSION: &str = "E_PROTO_VERSION";
 pub const E_PROTO_MALFORMED: &str = "E_PROTO_MALFORMED";
 pub const E_HANDSHAKE_TIMEOUT: &str = "E_HANDSHAKE_TIMEOUT";
@@ -79,13 +77,13 @@ pub struct Envelope {
     pub topic: String,
     #[serde(default)]
     pub action: String,
-    /// Arbitrary msgpack payload; schema determined by `(topic, action)`.
+    /// Arbitrary JSON payload; schema determined by `(topic, action)`.
     #[serde(default = "default_payload")]
     pub payload: Value,
 }
 
 fn default_payload() -> Value {
-    Value::Nil
+    Value::Null
 }
 
 /// Client → Server handshake initiation message (§3.1).
@@ -97,11 +95,26 @@ pub struct Hello {
 }
 
 /// Server → Client handshake acknowledgement (§3.2).
+///
+/// `_type` is a discriminant field that lets the QML client distinguish
+/// `HelloAck` from subsequent `Envelope` messages on the same stream.
 #[derive(Debug, Serialize)]
 pub struct HelloAck {
+    pub _type: &'static str,
     pub server_version: String,
     pub capabilities: Vec<String>,
     pub session_id: u64,
+}
+
+impl HelloAck {
+    pub fn new(server_version: String, capabilities: Vec<String>, session_id: u64) -> Self {
+        Self {
+            _type: "HelloAck",
+            server_version,
+            capabilities,
+            session_id,
+        }
+    }
 }
 
 /// Structured error payload embedded in `ERR` envelopes and pre-handshake errors (§4).
@@ -120,13 +133,10 @@ pub struct ErrorBody {
 /// Errors arising from encoding or decoding protocol messages.
 #[derive(Debug, Error)]
 pub enum ProtocolError {
-    #[error("msgpack encode error: {0}")]
-    Encode(#[from] rmp_serde::encode::Error),
-    #[error("msgpack decode error: {0}")]
-    Decode(#[from] rmp_serde::decode::Error),
+    #[error("json encode error: {0}")]
+    Encode(#[from] serde_json::Error),
     #[error("unknown kind byte: {0}")]
     UnknownKind(u8),
-    /// Reserved for future envelope validation; not triggered in Phase 1.
     #[allow(dead_code)]
     #[error("envelope missing required field: {0}")]
     MissingField(&'static str),
