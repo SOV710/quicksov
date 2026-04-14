@@ -8,13 +8,13 @@
 //! bridged to tokio through channels.  Volume/mute control uses `wpctl`
 //! because PipeWire SPA pod manipulation is prohibitively complex.
 
-use rmpv::Value;
+use serde_json::Value;
 use tokio::sync::{mpsc, watch};
 use tracing::{info, warn};
 
 use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
 use crate::config::Config;
-use crate::util::rmpv_map;
+use crate::util::json_map;
 
 // ---------------------------------------------------------------------------
 // Public entry point
@@ -36,7 +36,7 @@ pub fn spawn(_cfg: &Config) -> ServiceHandle {
 }
 
 fn unavailable_snapshot() -> Value {
-    rmpv_map([
+    json_map([
         ("default_sink", Value::from("")),
         ("default_source", Value::from("")),
         ("sinks", Value::Array(vec![])),
@@ -121,7 +121,7 @@ async fn run(mut request_rx: mpsc::Receiver<ServiceRequest>, state_tx: watch::Se
 fn snapshot_to_value(snap: &AudioSnapshot) -> Value {
     let sinks: Vec<Value> = snap.sinks.iter().map(node_to_value).collect();
     let sources: Vec<Value> = snap.sources.iter().map(node_to_value).collect();
-    rmpv_map([
+    json_map([
         ("default_sink", Value::from(snap.default_sink.as_str())),
         ("default_source", Value::from(snap.default_source.as_str())),
         ("sinks", Value::Array(sinks)),
@@ -130,12 +130,12 @@ fn snapshot_to_value(snap: &AudioSnapshot) -> Value {
 }
 
 fn node_to_value(n: &AudioNode) -> Value {
-    rmpv_map([
+    json_map([
         ("id", Value::from(n.id as i64)),
         ("name", Value::from(n.name.as_str())),
         ("description", Value::from(n.description.as_str())),
         ("volume_pct", Value::from(n.volume_pct)),
-        ("muted", Value::Boolean(n.muted)),
+        ("muted", Value::Bool(n.muted)),
     ])
 }
 
@@ -174,7 +174,7 @@ fn handle_set_volume(
         .map_err(|_| ServiceError::Internal {
             msg: "PipeWire thread not running".to_string(),
         })?;
-    Ok(Value::Nil)
+    Ok(Value::Null)
 }
 
 fn handle_set_mute(
@@ -192,7 +192,7 @@ fn handle_set_mute(
         .map_err(|_| ServiceError::Internal {
             msg: "PipeWire thread not running".to_string(),
         })?;
-    Ok(Value::Nil)
+    Ok(Value::Null)
 }
 
 fn handle_set_default_sink(
@@ -207,7 +207,7 @@ fn handle_set_default_sink(
         .map_err(|_| ServiceError::Internal {
             msg: "PipeWire thread not running".to_string(),
         })?;
-    Ok(Value::Nil)
+    Ok(Value::Null)
 }
 
 // ---------------------------------------------------------------------------
@@ -376,25 +376,12 @@ fn process_pw_command(cmd: &PwCommand) {
 // ---------------------------------------------------------------------------
 
 fn extract_u64(v: &Value, key: &str) -> Option<u64> {
-    if let Value::Map(pairs) = v {
-        for (k, val) in pairs {
-            if k.as_str() == Some(key) {
-                return val.as_u64().or_else(|| val.as_i64().map(|i| i as u64));
-            }
-        }
-    }
-    None
+    let val = v.get(key)?;
+    val.as_u64().or_else(|| val.as_i64().map(|i| i as u64))
 }
 
 fn extract_bool(v: &Value, key: &str) -> Option<bool> {
-    if let Value::Map(pairs) = v {
-        for (k, val) in pairs {
-            if k.as_str() == Some(key) {
-                return val.as_bool();
-            }
-        }
-    }
-    None
+    v.as_object()?.get(key)?.as_bool()
 }
 
 // ---------------------------------------------------------------------------
