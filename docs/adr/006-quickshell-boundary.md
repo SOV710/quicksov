@@ -1,6 +1,6 @@
 # ADR-006: Quickshell Native Integration Boundary — tray stays in Quickshell, mpris stays in daemon
 
-**Status**: Proposed  
+**Status**: Accepted  
 **Date**: 2026-04-14
 
 ## Context
