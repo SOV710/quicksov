@@ -51,7 +51,6 @@ struct BtState {
     devices: HashMap<String, BtDevice>,
 }
 
-#[allow(dead_code)]
 struct BtDevice {
     address: String,
     name: String,
