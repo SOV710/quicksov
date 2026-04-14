@@ -5,3 +5,8 @@ target
 
 /.claude/
 CLAUDE.md
+
+__pycache__/
+*.py[codz]
+*$py.class
+
