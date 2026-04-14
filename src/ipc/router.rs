@@ -320,4 +320,3 @@ async fn enqueue_envelope(outbound_tx: &mpsc::Sender<String>, env: &Envelope) {
         }
     }
 }
-

@@ -18,9 +18,11 @@ pub fn toml_to_json(v: &toml::Value) -> Value {
         toml::Value::Boolean(b) => Value::Bool(*b),
         toml::Value::Datetime(dt) => Value::String(dt.to_string()),
         toml::Value::Array(arr) => Value::Array(arr.iter().map(toml_to_json).collect()),
-        toml::Value::Table(tbl) => {
-            Value::Object(tbl.iter().map(|(k, v)| (k.clone(), toml_to_json(v))).collect())
-        }
+        toml::Value::Table(tbl) => Value::Object(
+            tbl.iter()
+                .map(|(k, v)| (k.clone(), toml_to_json(v)))
+                .collect(),
+        ),
     }
 }
 
