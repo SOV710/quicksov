@@ -47,4 +47,4 @@ if [[ -d "$REPO_ROOT/icons" ]]; then
 fi
 
 echo "Done. Start daemon: cargo run --manifest-path $REPO_ROOT/Cargo.toml"
-echo "Start shell: QS_BASE_PATH=$CONFIG_DIR quickshell"
+echo "Start shell: quickshell --path $CONFIG_DIR"

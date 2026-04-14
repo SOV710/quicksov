@@ -13,9 +13,9 @@ echo "Installing quicksov shell to $DEST"
 mkdir -p "$DEST"
 rsync -a --delete "$SHELL_SRC/" "$DEST/"
 
-echo "Installing ipc-bridge to $DEST/../../../local/bin/quicksov-ipc-bridge"
-BRIDGE_DEST="$HOME/.local/bin/quicksov-ipc-bridge"
-mkdir -p "$(dirname "$BRIDGE_DEST")"
-install -m 0755 "$REPO_ROOT/scripts/ipc-bridge" "$BRIDGE_DEST"
+if [[ -d "$REPO_ROOT/icons" ]]; then
+    rsync -a --delete "$REPO_ROOT/icons/" "$DEST/icons/"
+    echo "Installed icons/"
+fi
 
-echo "Done. Run quickshell with: quickshell -p quicksov"
+echo "Done. Run shell: quickshell --config quicksov"
