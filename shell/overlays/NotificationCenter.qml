@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import QtQuick
+import QtQuick.Layouts
 import ".."
 import "../services"
 
@@ -26,7 +27,7 @@ Rectangle {
         }
         spacing: Theme.spaceSm
 
-        Row {
+        RowLayout {
             id: headerRow
             width: parent.width
 
@@ -38,15 +39,13 @@ Rectangle {
                 font.weight: Theme.weightSemibold
             }
 
-            Item { width: 1; height: 1 }
+            Item { Layout.fillWidth: true; height: 1 }
 
             Text {
                 text: "Clear all"
                 color: Theme.accentBlue
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontSmall
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
 
                 MouseArea {
                     anchors.fill: parent
