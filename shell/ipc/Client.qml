@@ -7,7 +7,7 @@ import Quickshell
 import Quickshell.Io
 import "protocol.js" as Protocol
 
-QtObject {
+Singleton {
     id: root
 
     property bool connected: false

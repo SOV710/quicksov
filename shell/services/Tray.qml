@@ -3,9 +3,10 @@
 
 pragma Singleton
 import QtQuick
+import Quickshell
 import Quickshell.Services.SystemTray
 
-QtObject {
+Singleton {
     id: root
 
     property bool ready: true

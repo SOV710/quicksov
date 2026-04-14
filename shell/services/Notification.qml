@@ -3,9 +3,10 @@
 
 pragma Singleton
 import QtQuick
+import Quickshell
 import "../ipc"
 
-QtObject {
+Singleton {
     id: root
 
     property bool connected: false
