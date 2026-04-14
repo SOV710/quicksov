@@ -515,6 +515,16 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
     "config_needs_restart": {
       "type": "boolean",
       "description": "用户修改了需要重启 daemon 的配置项"
+    },
+    "screens": {
+      "type": "object",
+      "properties": {
+        "roles": {
+          "type": "object",
+          "description": "Maps DRM connector names to logical roles (main, aux)",
+          "additionalProperties": { "type": "string", "enum": ["main", "aux"] }
+        }
+      }
     }
   }
 }

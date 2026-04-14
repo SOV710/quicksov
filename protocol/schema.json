@@ -726,6 +726,17 @@
             }
           },
           "config_needs_restart": { "type": "boolean" }
+          ,
+          "screens": {
+            "type": "object",
+            "properties": {
+              "roles": {
+                "type": "object",
+                "description": "Maps DRM connector names to logical roles (main, aux)",
+                "additionalProperties": { "type": "string", "enum": ["main", "aux"] }
+              }
+            }
+          }
         }
       },
       "actions": {

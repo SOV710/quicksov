@@ -171,7 +171,7 @@ server → client:  HelloAck  { server_version, capabilities, session_id }
 | `niri` | Niri workspace、window、action |
 | `weather` | Open-Meteo 天气缓存 |
 | `theme` | design-tokens.toml 的内容，启动时推送，热重载时更新 |
-| `meta` | daemon 自身状态（版本、uptime、service 健康） |
+| `meta` | daemon 自身状态（版本、uptime、service 健康）；快照包含 `screens.roles` 字段（ADR-007），供 QML 侧无硬编码地分配主/副屏职责 |
 
 ### 4.6 订阅与初始状态
 

@@ -19,7 +19,7 @@
 | 交互频率 | 被动 glance 为主 | 主动触发为主 |
 | 信息类型 | 系统状态 + 工作上下文 | 正在消费的媒体（音乐） |
 
-**Niri 屏幕感知**：`Scope { Variants { model: Quickshell.screens; ... } }`，在 delegate 中读 `modelData.name` 决定加载哪个 bar 组件。映射由 `daemon.toml` 的 `[screens.mapping]` 驱动，daemon 通过 `theme` 或 `meta` topic 推送给 qs。
+**Niri 屏幕感知**：`Scope { Variants { model: Quickshell.screens; ... } }`，在 delegate 中读 `modelData.name` 决定加载哪个 bar 组件。映射由 `daemon.toml` 的 `[screens.mapping]` 驱动，daemon 通过 `meta` topic 的 `screens.roles` 字段推送给 qs（ADR-007）。QML 侧在 `Meta.qml` 单例中缓存 `screenRoles` 映射，MainBar/AuxBar 通过 `Meta.screenRoles[modelData.name]` 查询 role，不硬编码屏幕名。
 
 ## 2. 主屏 Top Bar 空间布局
 
