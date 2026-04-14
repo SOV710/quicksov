@@ -7,13 +7,13 @@
 //! Reads `~/.config/quicksov/design-tokens.toml` when available, falling back
 //! to the compile-time-embedded `config/theme_tokyonight.json`.
 
-use rmpv::Value;
+use serde_json::Value;
 use tokio::sync::{mpsc, watch};
 use tracing::{debug, info, warn};
 
 use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
 use crate::config::Config;
-use crate::util::{json_to_rmpv, toml_to_rmpv};
+use crate::util::toml_to_json;
 
 /// Embedded fallback theme (Tokyo Night).
 const EMBEDDED_THEME_JSON: &str = include_str!("../../../config/theme_tokyonight.json");
@@ -45,7 +45,7 @@ fn load_theme() -> Value {
                 Ok(text) => match text.parse::<toml::Value>() {
                     Ok(table) => {
                         debug!(path = %path.display(), "loaded design-tokens.toml");
-                        return toml_to_rmpv(&table);
+                        return toml_to_json(&table);
                     }
                     Err(e) => warn!(error = %e, "failed to parse design-tokens.toml"),
                 },
@@ -56,11 +56,11 @@ fn load_theme() -> Value {
 
     // Fallback to embedded JSON
     debug!("using embedded Tokyo Night theme");
-    match serde_json::from_str::<serde_json::Value>(EMBEDDED_THEME_JSON) {
-        Ok(v) => json_to_rmpv(&v),
+    match serde_json::from_str::<Value>(EMBEDDED_THEME_JSON) {
+        Ok(v) => v,
         Err(e) => {
             warn!(error = %e, "failed to parse embedded theme JSON");
-            Value::Nil
+            Value::Null
         }
     }
 }
