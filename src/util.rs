@@ -4,74 +4,44 @@
 
 //! Shared conversion and time helpers used across services.
 
-use rmpv::Value;
+use serde_json::{Map, Value};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Convert a [`serde_json::Value`] to an [`rmpv::Value`].
-pub fn json_to_rmpv(v: &serde_json::Value) -> Value {
+/// Convert a [`toml::Value`] to a [`serde_json::Value`].
+pub fn toml_to_json(v: &toml::Value) -> Value {
     match v {
-        serde_json::Value::Null => Value::Nil,
-        serde_json::Value::Bool(b) => Value::Boolean(*b),
-        serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Value::from(i)
-            } else if let Some(u) = n.as_u64() {
-                Value::from(u)
-            } else if let Some(f) = n.as_f64() {
-                Value::from(f)
-            } else {
-                Value::Nil
-            }
-        }
-        serde_json::Value::String(s) => Value::from(s.as_str()),
-        serde_json::Value::Array(arr) => Value::Array(arr.iter().map(json_to_rmpv).collect()),
-        serde_json::Value::Object(obj) => {
-            let pairs: Vec<(Value, Value)> = obj
-                .iter()
-                .map(|(k, v)| (Value::from(k.as_str()), json_to_rmpv(v)))
-                .collect();
-            Value::Map(pairs)
-        }
-    }
-}
-
-/// Convert a [`toml::Value`] to an [`rmpv::Value`].
-pub fn toml_to_rmpv(v: &toml::Value) -> Value {
-    match v {
-        toml::Value::String(s) => Value::from(s.as_str()),
-        toml::Value::Integer(i) => Value::from(*i),
-        toml::Value::Float(f) => Value::from(*f),
-        toml::Value::Boolean(b) => Value::Boolean(*b),
-        toml::Value::Datetime(dt) => Value::from(dt.to_string().as_str()),
-        toml::Value::Array(arr) => Value::Array(arr.iter().map(toml_to_rmpv).collect()),
+        toml::Value::String(s) => Value::String(s.clone()),
+        toml::Value::Integer(i) => Value::Number((*i).into()),
+        toml::Value::Float(f) => serde_json::Number::from_f64(*f)
+            .map(Value::Number)
+            .unwrap_or(Value::Null),
+        toml::Value::Boolean(b) => Value::Bool(*b),
+        toml::Value::Datetime(dt) => Value::String(dt.to_string()),
+        toml::Value::Array(arr) => Value::Array(arr.iter().map(toml_to_json).collect()),
         toml::Value::Table(tbl) => {
-            let pairs: Vec<(Value, Value)> = tbl
-                .iter()
-                .map(|(k, v)| (Value::from(k.as_str()), toml_to_rmpv(v)))
-                .collect();
-            Value::Map(pairs)
+            Value::Object(tbl.iter().map(|(k, v)| (k.clone(), toml_to_json(v))).collect())
         }
     }
 }
 
-/// Build an rmpv map from an iterator of `(key, value)` pairs.
-pub fn rmpv_map(pairs: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
-    Value::Map(
+/// Build a JSON object from an iterator of `(key, value)` pairs.
+pub fn json_map(pairs: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
+    Value::Object(
         pairs
             .into_iter()
-            .map(|(k, v)| (Value::from(k), v))
-            .collect(),
+            .map(|(k, v)| (k.to_string(), v))
+            .collect::<Map<String, Value>>(),
     )
 }
 
-/// Returns `true` if `v` is an empty msgpack object (Nil or zero-key Map).
+/// Returns `true` if `v` is a JSON null or an empty object `{}`.
 ///
-/// Clients that omit a payload field send `Nil`; clients that send `{}` send
-/// an empty Map.  Both are accepted as "empty object" for action validation.
+/// Clients that omit a payload field send `null`; clients that send `{}` send
+/// an empty object.  Both are accepted as "empty object" for action validation.
 pub fn is_empty_object(v: &Value) -> bool {
     match v {
-        Value::Nil => true,
-        Value::Map(m) => m.is_empty(),
+        Value::Null => true,
+        Value::Object(m) => m.is_empty(),
         _ => false,
     }
 }

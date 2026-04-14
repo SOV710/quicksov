@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use rmpv::Value;
+use serde_json::Value;
 use thiserror::Error;
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
@@ -28,7 +28,7 @@ pub struct ServiceHandle {
 pub struct ServiceRequest {
     /// The action name (corresponds to the `action` field of the inbound envelope).
     pub action: String,
-    /// The action payload as a generic msgpack value.
+    /// The action payload as a JSON value.
     pub payload: Value,
     /// One-shot sender over which the service returns its reply (or error).
     pub reply: oneshot::Sender<Result<Value, ServiceError>>,
