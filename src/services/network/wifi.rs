@@ -22,7 +22,7 @@ pub fn spawn_wifi(cfg: &Config) -> ServiceHandle {
         .network
         .as_ref()
         .and_then(|n| n.wpa_ctrl_path.as_deref())
-        .unwrap_or("/var/run/wpa_supplicant/wlo1")
+        .unwrap_or("/run/wpa_supplicant/wlo1")
         .to_string();
 
     let iface = ctrl_path.rsplit('/').next().unwrap_or("wlo1").to_string();

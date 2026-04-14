@@ -350,7 +350,7 @@ units = "metric"
 
 [services.network]
 wifi_backend = "wpa_supplicant"
-wpa_ctrl_path = "/var/run/wpa_supplicant/wlo1"
+wpa_ctrl_path = "/run/wpa_supplicant/wlo1"
 interfaces = ["wlo1", "enp109s0"]
 
 [services.audio]

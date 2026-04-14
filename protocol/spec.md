@@ -227,7 +227,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 - `disconnect` — payload `{}`
 - `forget` — payload `{ ssid: string }`
 
-**后端**: `wpa_supplicant` ctrl socket `/var/run/wpa_supplicant/wlo1`，通过 `wpa_cli` 协议（`SCAN`, `SCAN_RESULTS`, `ADD_NETWORK`, `SET_NETWORK`, `ENABLE_NETWORK`, `SELECT_NETWORK` 等）。
+**后端**: `wpa_supplicant` ctrl socket `/run/wpa_supplicant/wlo1`，通过 `wpa_cli` 协议（`SCAN`, `SCAN_RESULTS`, `ADD_NETWORK`, `SET_NETWORK`, `ENABLE_NETWORK`, `SELECT_NETWORK` 等）。
 
 ---
 

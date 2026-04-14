@@ -256,7 +256,7 @@
           "response": { "type": "null" }
         }
       },
-      "backend": "wpa_supplicant ctrl socket at /var/run/wpa_supplicant/wlo1 (wpa_cli protocol)"
+      "backend": "wpa_supplicant ctrl socket at /run/wpa_supplicant/wlo1 (wpa_cli protocol)"
     },
 
     "bluetooth": {

@@ -12,7 +12,7 @@ L0 的宿主系统约束：Gentoo + OpenRC，无 systemd，网络栈是 wpa_supp
 拆分 **`net.link`** 和 **`net.wifi`** 两个独立 service：
 
 - **`net.link`**: 通过 **rtnetlink** 直接订阅 `RTMGRP_LINK` / `RTMGRP_IPV4_IFADDR` / `RTMGRP_IPV6_IFADDR` / `RTMGRP_IPV4_ROUTE` 消息，维护所有接口的 operstate、carrier、IP、路由、字节计数。纯只读，无 actions
-- **`net.wifi`**: 通过 `wpa_supplicant` 的 ctrl socket (`/var/run/wpa_supplicant/wlo1`) 使用 wpa_cli 协议实现扫描、连接、断开、保存网络等操作
+- **`net.wifi`**: 通过 `wpa_supplicant` 的 ctrl socket (`/run/wpa_supplicant/wlo1`) 使用 wpa_cli 协议实现扫描、连接、断开、保存网络等操作
 
 dhcpcd 的租约变化不需要显式订阅——租约生效时会通过 netlink 的 ADDR 事件体现，`net.link` 已经在监听该事件。
 
