@@ -6,7 +6,6 @@ import argparse
 from _qsov_testlib import (
     ERR,
     PUB,
-    REP,
     Harness,
     add_common_args,
     assert_dict_keys,
@@ -19,13 +18,27 @@ from _qsov_testlib import (
 )
 
 REQUIRED = ["powered", "discovering", "devices"]
-DEVICE_REQUIRED = ["address", "name", "icon", "paired", "connected", "trusted", "battery"]
+DEVICE_REQUIRED = [
+    "address",
+    "name",
+    "icon",
+    "paired",
+    "connected",
+    "trusted",
+    "battery",
+]
 
 
 def run() -> int:
-    parser = argparse.ArgumentParser(description="Manual tests for qsov bluetooth service")
+    parser = argparse.ArgumentParser(
+        description="Manual tests for qsov bluetooth service"
+    )
     add_common_args(parser)
-    parser.add_argument("--address", default=None, help="device address for connect/disconnect/pair/forget mutate tests")
+    parser.add_argument(
+        "--address",
+        default=None,
+        help="device address for connect/disconnect/pair/forget mutate tests",
+    )
     parser.add_argument(
         "--power-on",
         choices=["true", "false"],
@@ -41,7 +54,9 @@ def run() -> int:
         sub = client.sub("bluetooth")
         env = expect_envelope(h, sub, kind=PUB, topic="bluetooth")
         snapshot = None
-        if env and assert_dict_keys(h, env.get("payload"), REQUIRED, "bluetooth snapshot"):
+        if env and assert_dict_keys(
+            h, env.get("payload"), REQUIRED, "bluetooth snapshot"
+        ):
             snapshot = env["payload"]
             maybe_warn_unavailable(h, "bluetooth", snapshot)
             devices = snapshot.get("devices")
@@ -49,7 +64,9 @@ def run() -> int:
                 h.ok(f"bluetooth.devices is a list (len={len(devices)})")
                 for idx, dev in enumerate(devices):
                     if isinstance(dev, dict):
-                        assert_dict_keys(h, dev, DEVICE_REQUIRED, f"bluetooth.devices[{idx}]")
+                        assert_dict_keys(
+                            h, dev, DEVICE_REQUIRED, f"bluetooth.devices[{idx}]"
+                        )
                     else:
                         h.error(f"bluetooth.devices[{idx}] is not a map: {dev!r}")
             else:
@@ -57,15 +74,21 @@ def run() -> int:
         client.unsub("bluetooth")
 
         bad_action = client.req("bluetooth", "no_such_action", {})
-        if expect_envelope(h, bad_action, kind=ERR, topic="bluetooth", code="E_ACTION_UNKNOWN"):
+        if expect_envelope(
+            h, bad_action, kind=ERR, topic="bluetooth", code="E_ACTION_UNKNOWN"
+        ):
             h.ok("bluetooth unknown action returns E_ACTION_UNKNOWN")
 
         bad_power = client.req("bluetooth", "power", {})
-        if expect_envelope(h, bad_power, kind=ERR, topic="bluetooth", code="E_ACTION_PAYLOAD"):
+        if expect_envelope(
+            h, bad_power, kind=ERR, topic="bluetooth", code="E_ACTION_PAYLOAD"
+        ):
             h.ok("bluetooth power {} returns E_ACTION_PAYLOAD")
 
         bad_connect = client.req("bluetooth", "connect", {})
-        if expect_envelope(h, bad_connect, kind=ERR, topic="bluetooth", code="E_ACTION_PAYLOAD"):
+        if expect_envelope(
+            h, bad_connect, kind=ERR, topic="bluetooth", code="E_ACTION_PAYLOAD"
+        ):
             h.ok("bluetooth connect {} returns E_ACTION_PAYLOAD")
 
         if args.mutate:
@@ -77,19 +100,30 @@ def run() -> int:
                 if isinstance(current, bool):
                     target_power = current
             if target_power is None:
-                h.warn("skipping bluetooth power test: no current powered state available")
+                h.warn(
+                    "skipping bluetooth power test: no current powered state available"
+                )
             else:
                 reply = client.req("bluetooth", "power", {"on": target_power})
-                expect_rep_or_warn_service_err(h, reply, "bluetooth", f"bluetooth power {{on:{target_power}}}")
+                expect_rep_or_warn_service_err(
+                    h, reply, "bluetooth", f"bluetooth power {{on:{target_power}}}"
+                )
 
             for action in ["scan_start", "scan_stop"]:
                 reply = client.req("bluetooth", action, {})
-                expect_rep_or_warn_service_err(h, reply, "bluetooth", f"bluetooth {action} {{}}")
+                expect_rep_or_warn_service_err(
+                    h, reply, "bluetooth", f"bluetooth {action} {{}}"
+                )
 
             if args.address:
                 for action in ["connect", "disconnect", "pair", "forget"]:
                     reply = client.req("bluetooth", action, {"address": args.address})
-                    expect_rep_or_warn_service_err(h, reply, "bluetooth", f"bluetooth {action} {{address:{args.address!r}}}")
+                    expect_rep_or_warn_service_err(
+                        h,
+                        reply,
+                        "bluetooth",
+                        f"bluetooth {action} {{address:{args.address!r}}}",
+                    )
             else:
                 h.warn("skipping bluetooth device-action tests: provide --address")
         else:
