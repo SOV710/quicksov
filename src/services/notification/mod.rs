@@ -15,13 +15,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use rmpv::Value;
+use serde_json::Value;
 use tokio::sync::{broadcast, mpsc, watch, RwLock};
 use tracing::{info, warn};
 
 use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
 use crate::config::Config;
-use crate::util::{rmpv_map, unix_now_ms};
+use crate::util::{json_map, unix_now_ms};
 
 // ---------------------------------------------------------------------------
 // Public entry point
@@ -44,7 +44,7 @@ pub fn spawn(_cfg: &Config) -> ServiceHandle {
 }
 
 fn empty_snapshot() -> Value {
-    rmpv_map([
+    json_map([
         ("unread_count", Value::from(0_i64)),
         ("history", Value::Array(vec![])),
     ])
@@ -175,7 +175,7 @@ impl NotifServer {
         let snap = state_to_snapshot(&state);
         self.state_tx.send_replace(snap);
 
-        let event = rmpv_map([
+        let event = json_map([
             ("type", Value::from("new")),
             ("id", Value::from(id as i64)),
             ("app_name", Value::from(app_name)),
@@ -192,7 +192,7 @@ impl NotifServer {
         let snap = state_to_snapshot(&state);
         self.state_tx.send_replace(snap);
 
-        let event = rmpv_map([
+        let event = json_map([
             ("type", Value::from("closed")),
             ("id", Value::from(id as i64)),
             ("reason", Value::from(3_i64)), // dismissed by call
@@ -350,7 +350,7 @@ fn state_to_snapshot(state: &NotifState) -> Value {
         .rev()
         .map(notif_to_value)
         .collect();
-    rmpv_map([
+    json_map([
         ("unread_count", Value::from(unread)),
         ("history", Value::Array(history)),
     ])
@@ -361,13 +361,13 @@ fn notif_to_value(n: &Notification) -> Value {
         .actions
         .iter()
         .map(|a| {
-            rmpv_map([
+            json_map([
                 ("id", Value::from(a.id.as_str())),
                 ("label", Value::from(a.label.as_str())),
             ])
         })
         .collect();
-    rmpv_map([
+    json_map([
         ("id", Value::from(n.id as i64)),
         ("app_name", Value::from(n.app_name.as_str())),
         ("summary", Value::from(n.summary.as_str())),
@@ -418,7 +418,7 @@ async fn handle_invoke_action(
             msg: format!("notification {id} not found"),
         });
     }
-    Ok(Value::Nil)
+    Ok(Value::Null)
 }
 
 async fn handle_dismiss(
@@ -434,13 +434,13 @@ async fn handle_dismiss(
     state.notifications.retain(|n| n.id != id);
     state_tx.send_replace(state_to_snapshot(&state));
 
-    let event = rmpv_map([
+    let event = json_map([
         ("type", Value::from("closed")),
         ("id", Value::from(id as i64)),
         ("reason", Value::from(2_i64)), // dismissed by user
     ]);
     let _ = events_tx.send(event);
-    Ok(Value::Nil)
+    Ok(Value::Null)
 }
 
 async fn handle_dismiss_all(
@@ -450,7 +450,7 @@ async fn handle_dismiss_all(
     let mut state = shared.write().await;
     state.notifications.clear();
     state_tx.send_replace(state_to_snapshot(&state));
-    Ok(Value::Nil)
+    Ok(Value::Null)
 }
 
 async fn handle_mark_read(
@@ -471,7 +471,7 @@ async fn handle_mark_read(
         }
     }
     state_tx.send_replace(state_to_snapshot(&state));
-    Ok(Value::Nil)
+    Ok(Value::Null)
 }
 
 // ---------------------------------------------------------------------------
@@ -479,25 +479,12 @@ async fn handle_mark_read(
 // ---------------------------------------------------------------------------
 
 fn extract_str<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
-    if let Value::Map(pairs) = v {
-        for (k, val) in pairs {
-            if k.as_str() == Some(key) {
-                return val.as_str();
-            }
-        }
-    }
-    None
+    v.get(key)?.as_str()
 }
 
 fn extract_u64(v: &Value, key: &str) -> Option<u64> {
-    if let Value::Map(pairs) = v {
-        for (k, val) in pairs {
-            if k.as_str() == Some(key) {
-                return val.as_u64().or_else(|| val.as_i64().map(|i| i as u64));
-            }
-        }
-    }
-    None
+    let val = v.get(key)?;
+    val.as_u64().or_else(|| val.as_i64().map(|i| i as u64))
 }
 
 // ---------------------------------------------------------------------------
