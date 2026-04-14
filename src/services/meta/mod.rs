@@ -18,6 +18,7 @@ use tracing::{debug, info, warn};
 
 use crate::bus::ServiceError;
 use crate::bus::{ServiceHandle, ServiceRequest};
+use crate::util::is_empty_object;
 
 /// Daemon binary version sourced from `Cargo.toml` at compile time.
 const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -135,18 +136,6 @@ fn build_snapshot(started_at: Instant, enabled_services: &[String]) -> Value {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/// Returns `true` if `v` represents an empty object (Nil or an empty map).
-///
-/// Clients that omit the payload field entirely send `Nil`; clients that
-/// explicitly send `{}` send an empty msgpack map. Both are valid for `ping`.
-fn is_empty_object(v: &Value) -> bool {
-    match v {
-        Value::Nil => true,
-        Value::Map(m) => m.is_empty(),
-        _ => false,
-    }
-}
 
 /// Current Unix timestamp in whole seconds.
 fn unix_now_secs() -> u64 {
