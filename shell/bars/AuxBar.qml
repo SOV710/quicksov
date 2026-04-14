@@ -4,61 +4,69 @@
 import QtQuick
 import Quickshell
 import ".."
+import "../services"
 import "../overlays"
 
-PanelWindow {
-    id: bar
+Scope {
+    Variants {
+        model: Quickshell.screens
 
-    property var screen
-    Quickshell.screen: bar.screen
+        PanelWindow {
+            id: bar
 
-    anchors.left: true
-    anchors.top:  true
-    anchors.bottom: true
+            required property var modelData
+            screen: modelData
+            visible: Meta.screenRoles[modelData.name] === "aux"
 
-    margins {
-        left:   0
-        top:    Theme.barOuterMargin
-        bottom: Theme.barOuterMargin
-    }
+            anchors.left: true
+            anchors.top:  true
+            anchors.bottom: true
 
-    implicitWidth: triggerZone.width
-    color: "transparent"
+            margins {
+                left:   0
+                top:    Theme.barOuterMargin
+                bottom: Theme.barOuterMargin
+            }
 
-    property bool expanded: false
+            implicitWidth: triggerZone.width
+            color: "transparent"
 
-    // Invisible trigger zone
-    Rectangle {
-        id: triggerZone
-        width:  Theme.auxTriggerZone
-        height: parent.height
-        color:  "transparent"
+            property bool expanded: false
 
-        MouseArea {
-            anchors.fill: parent
-            hoverEnabled: true
-            onEntered: expandTimer.start()
-            onExited:  expandTimer.stop()
+            // Invisible trigger zone
+            Rectangle {
+                id: triggerZone
+                width:  Theme.auxTriggerZone
+                height: parent.height
+                color:  "transparent"
+
+                MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onEntered: expandTimer.start()
+                    onExited:  expandTimer.stop()
+                }
+            }
+
+            Timer {
+                id: expandTimer
+                interval: Theme.auxTriggerDelayMs
+                onTriggered: bar.expanded = true
+            }
+
+            MusicPanel {
+                id: musicPanel
+                visible: bar.expanded
+                width:   Theme.auxExpandedWidth
+                height:  parent.height - Theme.barOuterMargin * 2
+                y:       Theme.barOuterMargin
+
+                onCloseRequested: bar.expanded = false
+            }
+
+            Behavior on implicitWidth {
+                NumberAnimation { duration: Theme.motionNormal; easing.type: Easing.OutCubic }
+            }
         }
-    }
-
-    Timer {
-        id: expandTimer
-        interval: Theme.auxTriggerDelayMs
-        onTriggered: bar.expanded = true
-    }
-
-    MusicPanel {
-        id: musicPanel
-        visible: bar.expanded
-        width:   Theme.auxExpandedWidth
-        height:  parent.height - Theme.barOuterMargin * 2
-        y:       Theme.barOuterMargin
-
-        onCloseRequested: bar.expanded = false
-    }
-
-    Behavior on implicitWidth {
-        NumberAnimation { duration: Theme.motionNormal; easing.type: Easing.OutCubic }
     }
 }
