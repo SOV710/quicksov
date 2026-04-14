@@ -3,6 +3,7 @@
 
 pragma Singleton
 import QtQuick
+import QtCore
 import Quickshell
 import Quickshell.Io
 import "protocol.js" as Protocol
