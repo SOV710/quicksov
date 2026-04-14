@@ -6,14 +6,14 @@
 
 use std::path::PathBuf;
 
-use rmpv::Value;
+use serde_json::Value;
 use tokio::net::UnixDatagram;
 use tokio::sync::{mpsc, watch};
 use tracing::{info, warn};
 
 use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
 use crate::config::Config;
-use crate::util::rmpv_map;
+use crate::util::json_map;
 
 /// Spawn the `net.wifi` service and return its [`ServiceHandle`].
 pub fn spawn_wifi(cfg: &Config) -> ServiceHandle {
@@ -41,14 +41,14 @@ pub fn spawn_wifi(cfg: &Config) -> ServiceHandle {
 }
 
 fn unavailable_snapshot(iface: &str) -> Value {
-    rmpv_map([
+    json_map([
         ("interface", Value::from(iface)),
         ("state", Value::from("unknown")),
-        ("ssid", Value::Nil),
-        ("bssid", Value::Nil),
-        ("rssi_dbm", Value::Nil),
-        ("signal_pct", Value::Nil),
-        ("frequency", Value::Nil),
+        ("ssid", Value::Null),
+        ("bssid", Value::Null),
+        ("rssi_dbm", Value::Null),
+        ("signal_pct", Value::Null),
+        ("frequency", Value::Null),
         ("saved_networks", Value::Array(vec![])),
         ("scan_results", Value::Array(vec![])),
     ])
@@ -215,7 +215,7 @@ struct WifiParams<'a> {
 }
 
 fn build_wifi_snapshot(p: WifiParams<'_>) -> Value {
-    rmpv_map([
+    json_map([
         ("interface", Value::from(p.iface)),
         ("state", Value::from(p.state)),
         ("ssid", opt_str_val(p.ssid)),
@@ -231,14 +231,14 @@ fn build_wifi_snapshot(p: WifiParams<'_>) -> Value {
 fn opt_str_val(v: &Option<String>) -> Value {
     match v {
         Some(s) => Value::from(s.as_str()),
-        None => Value::Nil,
+        None => Value::Null,
     }
 }
 
 fn opt_i64_val(v: Option<i64>) -> Value {
     match v {
         Some(n) => Value::from(n),
-        None => Value::Nil,
+        None => Value::Null,
     }
 }
 
@@ -288,13 +288,13 @@ async fn read_saved_networks(sock: &UnixDatagram) -> Vec<Value> {
                 let ssid = parts[1];
                 let flags = parts.get(3).unwrap_or(&"");
                 let is_current = flags.contains("[CURRENT]");
-                Some(rmpv_map([
+                Some(json_map([
                     ("ssid", Value::from(ssid)),
                     (
                         "priority",
                         Value::from(if is_current { 1_i64 } else { 0_i64 }),
                     ),
-                    ("auto", Value::Boolean(true)),
+                    ("auto", Value::Bool(true)),
                 ]))
             } else {
                 None
@@ -331,7 +331,7 @@ fn parse_scan_line(line: &str) -> Option<Value> {
         .map(Value::from)
         .collect();
 
-    Some(rmpv_map([
+    Some(json_map([
         ("ssid", Value::from(ssid)),
         ("bssid", Value::from(bssid)),
         ("rssi_dbm", Value::from(rssi)),
@@ -373,7 +373,7 @@ async fn handle_scan(sock: &UnixDatagram) -> Result<Value, ServiceError> {
     wpa_cmd(sock, "SCAN")
         .await
         .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
-    Ok(Value::Nil)
+    Ok(Value::Null)
 }
 
 async fn handle_connect(payload: &Value, sock: &UnixDatagram) -> Result<Value, ServiceError> {
@@ -413,14 +413,14 @@ async fn handle_connect(payload: &Value, sock: &UnixDatagram) -> Result<Value, S
             .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
     }
 
-    Ok(Value::Nil)
+    Ok(Value::Null)
 }
 
 async fn handle_disconnect(sock: &UnixDatagram) -> Result<Value, ServiceError> {
     wpa_cmd(sock, "DISCONNECT")
         .await
         .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
-    Ok(Value::Nil)
+    Ok(Value::Null)
 }
 
 async fn handle_forget(payload: &Value, sock: &UnixDatagram) -> Result<Value, ServiceError> {
@@ -442,7 +442,7 @@ async fn handle_forget(payload: &Value, sock: &UnixDatagram) -> Result<Value, Se
             wpa_cmd(sock, "SAVE_CONFIG")
                 .await
                 .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
-            return Ok(Value::Nil);
+            return Ok(Value::Null);
         }
     }
 
@@ -456,25 +456,11 @@ async fn handle_forget(payload: &Value, sock: &UnixDatagram) -> Result<Value, Se
 // ---------------------------------------------------------------------------
 
 fn extract_str<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
-    if let Value::Map(pairs) = v {
-        for (k, val) in pairs {
-            if k.as_str() == Some(key) {
-                return val.as_str();
-            }
-        }
-    }
-    None
+    v.as_object()?.get(key)?.as_str()
 }
 
 fn extract_bool(v: &Value, key: &str) -> Option<bool> {
-    if let Value::Map(pairs) = v {
-        for (k, val) in pairs {
-            if k.as_str() == Some(key) {
-                return val.as_bool();
-            }
-        }
-    }
-    None
+    v.as_object()?.get(key)?.as_bool()
 }
 
 // ---------------------------------------------------------------------------

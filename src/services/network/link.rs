@@ -8,18 +8,18 @@ use std::collections::HashMap;
 
 use futures::stream::TryStreamExt;
 use futures::StreamExt;
-use rmpv::Value;
 use rtnetlink::packet_route::link::{LinkAttribute, LinkFlags};
+use serde_json::Value;
 use tokio::sync::{mpsc, watch};
 use tracing::{info, warn};
 
 use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
 use crate::config::Config;
-use crate::util::rmpv_map;
+use crate::util::json_map;
 
 /// Spawn the `net.link` service and return its [`ServiceHandle`].
 pub fn spawn_link(_cfg: &Config) -> ServiceHandle {
-    let initial = rmpv_map([("interfaces", Value::Array(vec![]))]);
+    let initial = json_map([("interfaces", Value::Array(vec![]))]);
     let (state_tx, state_rx) = watch::channel(initial);
     let (request_tx, request_rx) = mpsc::channel(16);
 
@@ -229,15 +229,15 @@ fn build_snapshot(ifaces: &HashMap<u32, IfaceInfo>) -> Value {
         let name_b = extract_name(b);
         name_a.cmp(&name_b)
     });
-    rmpv_map([("interfaces", Value::Array(entries))])
+    json_map([("interfaces", Value::Array(entries))])
 }
 
 fn iface_to_value(i: &IfaceInfo) -> Value {
-    rmpv_map([
+    json_map([
         ("name", Value::from(i.name.as_str())),
         ("kind", Value::from(i.kind.as_str())),
         ("operstate", Value::from(i.operstate.as_str())),
-        ("carrier", Value::Boolean(i.carrier)),
+        ("carrier", Value::Bool(i.carrier)),
         ("mac", Value::from(i.mac.as_str())),
         ("mtu", Value::from(i.mtu as i64)),
         (
@@ -248,21 +248,18 @@ fn iface_to_value(i: &IfaceInfo) -> Value {
             "ipv6",
             Value::Array(i.ipv6.iter().map(|s| Value::from(s.as_str())).collect()),
         ),
-        ("gateway", Value::Nil),
+        ("gateway", Value::Null),
         ("rx_bytes", Value::from(i.rx_bytes as i64)),
         ("tx_bytes", Value::from(i.tx_bytes as i64)),
     ])
 }
 
 fn extract_name(v: &Value) -> String {
-    if let Value::Map(pairs) = v {
-        for (k, val) in pairs {
-            if k.as_str() == Some("name") {
-                return val.as_str().unwrap_or("").to_string();
-            }
-        }
-    }
-    String::new()
+    v.as_object()
+        .and_then(|m| m.get("name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string()
 }
 
 // ---------------------------------------------------------------------------
