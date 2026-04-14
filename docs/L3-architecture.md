@@ -52,7 +52,7 @@ Daemon 与 Quickshell 是**两个独立进程**，都由 Niri 启动脚本拉起
 ```
 niri startup script
     ├── exec qsovd &      (daemon 先启动)
-    └── exec qs &         (qs 随后启动, 读取 QS_BASE_PATH)
+    └── exec quickshell --config quicksov &  (qs 随后启动)
 ```
 
 两者解耦的好处：
@@ -425,7 +425,7 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
     └── phosphor/
 ```
 
-启动时设置 `QS_BASE_PATH=$HOME/.config/quicksov`，qs 从此目录读 `shell.qml`。
+开发时使用 `quickshell --path ~/.config/quicksov`，qs 从此目录读 `shell.qml`。
 
 ## 9. 开发仓库目录
 
@@ -502,10 +502,10 @@ Daemon 用 `cargo run --bin qsovd` 启动（而不是 install 到 `~/.local/bin`
 在 niri 的 `spawn-at-startup` 或 session 启动脚本中：
 
 ```
-export QS_BASE_PATH="$HOME/.config/quicksov"
-exec qsovd &           # 或 dev 模式下: cargo run --manifest-path ~/proj/quicksov/daemon/Cargo.toml
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+exec qsovd &           # 或 dev 模式: cargo run --manifest-path ~/proj/quicksov/Cargo.toml
 sleep 0.2              # 让 daemon 先绑定 socket (可选, qs 会自动重试)
-exec qs &
+exec quickshell --config quicksov &
 ```
 
 qs 侧的 IPC client 必须实现连接重试，使 daemon 实际启动顺序与 qs 启动顺序解耦。
@@ -534,7 +534,8 @@ qs 侧的 IPC client 必须实现连接重试，使 daemon 实际启动顺序与
 | 离散事件广播 | `tokio::sync::broadcast`（仅 notification） |
 | 配置格式 | TOML |
 | 配置位置 | `~/.config/quicksov/` |
-| QS 基路径 | `QS_BASE_PATH=~/.config/quicksov` |
+| QS 启动方式（dev） | `quickshell --path ~/.config/quicksov` |
+| QS 启动方式（installed） | `quickshell --config quicksov` |
 | 网络栈 | wpa_supplicant + dhcpcd，netlink 驱动 link 状态 |
 | 网卡名 | `wlo1`, `enp109s0` |
 | 音频栈 | PipeWire |
