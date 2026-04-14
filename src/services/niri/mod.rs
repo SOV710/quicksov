@@ -335,6 +335,19 @@ async fn niri_action(socket_path: &str, cmd: &str) -> Result<Value, ServiceError
         .await
         .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
     debug!(response = %resp, "niri action response");
+
+    // Niri replies with either {"Ok": ...} or {"Err": "message"}.
+    let parsed: serde_json::Value =
+        serde_json::from_str(&resp).map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
+
+    if let Some(err_msg) = parsed.get("Err") {
+        let msg = err_msg
+            .as_str()
+            .unwrap_or("niri returned an error")
+            .to_string();
+        return Err(ServiceError::Internal { msg });
+    }
+
     Ok(Value::Nil)
 }
 
