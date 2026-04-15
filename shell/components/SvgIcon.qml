@@ -12,6 +12,8 @@ KirigamiPrimitives.Icon {
     property string iconPath: ""
     property int size: 16
 
+    implicitWidth:  root.size
+    implicitHeight: root.size
     width:  root.size
     height: root.size
     source: root.iconPath ? Qt.resolvedUrl("../icons/" + root.iconPath) : ""
