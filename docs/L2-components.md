@@ -64,9 +64,12 @@
 | 位置 | LEFT 最左 |
 | 数据源 | daemon `niri` service：订阅 `niri msg --json event-stream` |
 | 更新频率 | 事件驱动 |
-| 视觉 | 6×6 圆点，间距 `spacing.xs`；当前 focus 用 `color.accent`，其他用 `color.muted` |
-| 交互 | 点击圆点 → daemon 执行 `niri msg action focus-workspace <idx>` |
-| 过渡 | `hover_feedback` |
+| 视觉 | 水平圆角胶囊条；默认 `8×8`，当前 focus 展开为 `22×8`，圆角 `4`，间距 `spacing.xs` |
+| 状态颜色 | 当前 focus 用 `color.accentBlue`；非 focus 且有窗口用 `color.fgSecondary`；空工作区用 `color.fgMuted` |
+| 数据过滤 | 前端按当前输出设备名过滤，仅显示对应 output 的工作区 |
+| 交互 | 点击工作区指示器 → daemon 执行 `focus_workspace { idx }`，切换到对应工作区 |
+| 命中区 | 每个指示器高度 `24px`，宽度为视觉圆点/胶囊宽度加 `spacing.xs` |
+| 过渡 | `width` 与 `color` 使用 `Theme.motionFast`(120ms) 过渡；当前无 hover/pressed 视觉反馈 |
 
 ### 3.2 window-info
 
