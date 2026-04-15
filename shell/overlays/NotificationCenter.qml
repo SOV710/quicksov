@@ -11,6 +11,7 @@ Rectangle {
 
     width:  320
     height: Math.min(notifList.contentHeight + Theme.spaceMd * 2 + headerRow.height + Theme.spaceSm, 480)
+    implicitHeight: height
     radius: Theme.radiusMd
     color:  Theme.bgSurface
     border.color: Theme.borderDefault

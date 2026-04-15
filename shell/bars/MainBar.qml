@@ -39,6 +39,8 @@ Scope {
                 return h;
             }
             implicitHeight: Theme.barHeight + Theme.barOuterMargin + _popupHeight
+            // Reserve a fixed bar-height strip only; popups must NOT push windows.
+            exclusiveZone: Theme.barHeight
             color: "transparent"
 
             Rectangle {
