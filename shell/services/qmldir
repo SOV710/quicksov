@@ -7,5 +7,6 @@ singleton Network 1.0 Network.qml
 singleton Niri 1.0 Niri.qml
 singleton Notification 1.0 Notification.qml
 singleton ThemeService 1.0 ThemeService.qml
+singleton Time 1.0 Time.qml
 singleton Tray 1.0 Tray.qml
 singleton Weather 1.0 Weather.qml
