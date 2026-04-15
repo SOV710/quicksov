@@ -184,7 +184,10 @@ fn parse_workspaces(json: &str) -> Vec<WorkspaceInfo> {
         .and_then(|ws| ws.as_array());
 
     let Some(arr) = ws_arr else { return vec![] };
-    arr.iter().filter_map(parse_single_workspace).collect()
+    let mut list: Vec<WorkspaceInfo> = arr.iter().filter_map(parse_single_workspace).collect();
+    // Stable sort ensures consistent display order regardless of niri event ordering.
+    list.sort_by(|a, b| a.output.cmp(&b.output).then_with(|| a.idx.cmp(&b.idx)));
+    list
 }
 
 fn parse_single_workspace(v: &serde_json::Value) -> Option<WorkspaceInfo> {
@@ -250,7 +253,10 @@ fn process_event(
 
     if let Some(wsc) = val.get("WorkspacesChanged") {
         if let Some(arr) = wsc.get("workspaces").and_then(|w| w.as_array()) {
-            *ws_state = arr.iter().filter_map(parse_single_workspace).collect();
+            let mut list: Vec<WorkspaceInfo> =
+                arr.iter().filter_map(parse_single_workspace).collect();
+            list.sort_by(|a, b| a.output.cmp(&b.output).then_with(|| a.idx.cmp(&b.idx)));
+            *ws_state = list;
         }
     }
 
