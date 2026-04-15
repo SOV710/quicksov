@@ -1,0 +1,4 @@
+SvgIcon 1.0 SvgIcon.qml
+IconButton 1.0 IconButton.qml
+AnimatedValue 1.0 AnimatedValue.qml
+Popup 1.0 Popup.qml
