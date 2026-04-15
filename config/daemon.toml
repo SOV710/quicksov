@@ -1,0 +1,35 @@
+# quicksov daemon configuration
+# Copy to $XDG_CONFIG_HOME/quicksov/daemon.toml (usually ~/.config/quicksov/daemon.toml)
+
+[daemon]
+log_level = "info"
+# socket_path defaults to $XDG_RUNTIME_DIR/quicksov/daemon.sock
+
+# ---------------------------------------------------------------------------
+# Screen role mapping
+#
+# Maps DRM connector names to logical roles consumed by the Quickshell bar.
+# Use `niri msg outputs` or `wlr-randr` to find your connector names.
+#
+# Roles:
+#   main — primary screen; shows the floating top bar (MainBar)
+#   aux  — secondary screen; shows the auto-hide left panel (AuxBar / MusicPanel)
+#
+# Remove or leave empty to show MainBar on every screen (prototype default).
+# ---------------------------------------------------------------------------
+
+[[screens.mapping]]
+match_name = "DP-1"
+role       = "main"
+
+[[screens.mapping]]
+match_name = "eDP-1"
+role       = "aux"
+
+# ---------------------------------------------------------------------------
+# Network — wpa_supplicant control socket path
+# Adjust the interface name if yours differs (e.g. wlan0, wlp3s0).
+# ---------------------------------------------------------------------------
+
+[services.network]
+wpa_ctrl_path = "/run/wpa_supplicant/wlo1"
