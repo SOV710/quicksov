@@ -3,6 +3,7 @@
 
 import QtQuick
 import ".."
+import "../services"
 
 Item {
     id: root
@@ -13,10 +14,16 @@ Item {
     signal openPopup()
 
     // Format: "2026-04-12 · 19:38 CST · Sun"
-    property string _clockText: _formatClock(new Date())
+    // Derives directly from the shared Time singleton — no private timer.
+    property string _clockText: _formatClock(Time.now)
+
+    // Re-format whenever Time.now changes (minute-boundary updates only)
+    Connections {
+        target: Time
+        function onNowChanged() { root._clockText = root._formatClock(Time.now) }
+    }
 
     function _tzAbbr(d) {
-        // Extract timezone abbreviation from locale time string (e.g. "19:38:00 CST")
         var s = d.toLocaleTimeString(Qt.locale(), "t");
         return s || "";
     }
@@ -28,24 +35,6 @@ Item {
         var weekday = Qt.formatDate(d, "ddd");
         if (tz) return date + " · " + time + " " + tz + " · " + weekday;
         return date + " · " + time + " · " + weekday;
-    }
-
-    // Two-phase timer: fire once at the next minute boundary, then tick every 60 s.
-    Timer {
-        id: clockTimer
-        running: true
-        repeat: false
-        interval: {
-            var now = new Date();
-            return (60 - now.getSeconds()) * 1000 - now.getMilliseconds();
-        }
-        onTriggered: {
-            root._clockText = root._formatClock(new Date());
-            // Switch to steady 60-second cadence
-            clockTimer.interval = 60000;
-            clockTimer.repeat = true;
-            clockTimer.restart();
-        }
     }
 
     Text {

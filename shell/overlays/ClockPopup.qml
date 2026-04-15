@@ -3,6 +3,7 @@
 
 import QtQuick
 import ".."
+import "../services"
 
 Item {
     id: root
@@ -32,19 +33,19 @@ Item {
             }
             spacing: Theme.spaceSm
 
+            // Seconds display — reads from the shared Time singleton so it is
+            // always in sync with the bar clock with zero startup lag.
             Text {
-                text: Qt.formatTime(new Date(), "HH:mm:ss")
+                text: Qt.formatTime(Time.now, "HH:mm:ss")
                 color: Theme.fgPrimary
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontDisplay
                 font.weight: Theme.weightSemibold
                 font.features: { "tnum": 1 }
-
-                Timer { interval: 1000; running: root.popupVisible; repeat: true; onTriggered: parent.text = Qt.formatTime(new Date(), "HH:mm:ss") }
             }
 
             Text {
-                text: Qt.formatDate(new Date(), "dddd, MMMM d yyyy")
+                text: Qt.formatDate(Time.now, "dddd, MMMM d yyyy")
                 color: Theme.fgSecondary
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontBody
