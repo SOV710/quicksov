@@ -4,6 +4,7 @@
 import QtQuick
 import Quickshell.Io
 import ".."
+import "../components"
 
 Rectangle {
     id: root
@@ -39,10 +40,10 @@ Rectangle {
 
         Repeater {
             model: [
-                { label: "Suspend",  icon: "󰒲", cmd: ["systemctl", "suspend"]     },
-                { label: "Reboot",   icon: "󰜉", cmd: ["systemctl", "reboot"]      },
-                { label: "Shut down",icon: "󰐥", cmd: ["systemctl", "poweroff"]    },
-                { label: "Lock",     icon: "󰌾", cmd: ["loginctl", "lock-session"]  }
+                { label: "Suspend",  iconPath: "lucide/moon.svg",      cmd: ["systemctl", "suspend"]     },
+                { label: "Reboot",   iconPath: "lucide/rotate-cw.svg", cmd: ["systemctl", "reboot"]      },
+                { label: "Shut down",iconPath: "phosphor/power.svg",   cmd: ["systemctl", "poweroff"]    },
+                { label: "Lock",     iconPath: "lucide/lock.svg",      cmd: ["loginctl", "lock-session"]  }
             ]
 
             delegate: PowerItem {
@@ -67,17 +68,18 @@ Rectangle {
             anchors { verticalCenter: parent.verticalCenter; left: parent.left; leftMargin: Theme.spaceSm }
             spacing: Theme.spaceSm
 
-            Text {
-                text: entry ? entry.icon : ""
+            SvgIcon {
+                iconPath: entry ? entry.iconPath : "lucide/x.svg"
+                size: Theme.iconSize
                 color: Theme.fgSecondary
-                font.pixelSize: Theme.fontBody
-                font.family: Theme.fontFamily
+                anchors.verticalCenter: parent.verticalCenter
             }
             Text {
                 text: entry ? entry.label : ""
                 color: Theme.fgPrimary
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontBody
+                anchors.verticalCenter: parent.verticalCenter
             }
         }
 
