@@ -16,8 +16,8 @@ Scope {
 
             required property var modelData
             screen: modelData
-            // Only show when Meta has resolved this screen as "aux".
-            visible: Meta.ready && Meta.screenRoles[modelData.name] === "aux"
+            // Show on any screen that is not the designated main screen.
+            visible: Meta.ready && Meta.hasScreenRoles && Meta.screenRoles[modelData.name] !== "main"
 
             anchors.left: true
             anchors.top:  true
