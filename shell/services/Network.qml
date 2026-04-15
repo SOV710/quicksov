@@ -30,12 +30,15 @@ Singleton {
         root.status = "ok";
     }
 
+    // net.wifi — daemon sends state string, not a bool "connected"
     function _onWifiSnapshot(payload) {
-        root.wifiAvailable = payload.available || false;
-        root.wifiConnected = payload.connected || false;
-        root.ssid          = payload.ssid      || "";
-        root.signalDbm     = payload.signal_dbm || 0;
-        root.wifiState     = payload.state      || "";
+        root.wifiState     = payload.state    || "";
+        // state is mapped by daemon: "connected" | "scanning" | "associating" | "disconnected" | "unknown"
+        root.wifiConnected = root.wifiState === "connected";
+        root.wifiAvailable = root.wifiState !== "unknown";
+        root.ssid          = payload.ssid     || "";
+        // Daemon field is rssi_dbm, not signal_dbm
+        root.signalDbm     = payload.rssi_dbm || 0;
     }
 
     function _onConnectionChanged(isConnected) {
