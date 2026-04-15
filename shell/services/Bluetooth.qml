@@ -14,6 +14,8 @@ Singleton {
     property string lastError: ""
     property string status: "disconnected"
 
+    // Daemon sends "powered" (bool); no separate "available" field.
+    // We treat powered=true as both "available" and "enabled".
     property bool btAvailable: false
     property bool btEnabled: false
     property bool discovering: false
@@ -24,10 +26,11 @@ Singleton {
     }
 
     function _onSnapshot(payload) {
-        root.btAvailable = payload.available   || false;
-        root.btEnabled   = payload.enabled     || false;
+        // Daemon field is "powered", not "available"/"enabled"
+        root.btAvailable = payload.powered    || false;
+        root.btEnabled   = payload.powered    || false;
         root.discovering = payload.discovering || false;
-        root.devices     = payload.devices     || [];
+        root.devices     = payload.devices    || [];
         root.ready  = true;
         root.status = "ok";
     }
