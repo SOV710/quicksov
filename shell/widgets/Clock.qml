@@ -30,11 +30,22 @@ Item {
         return date + " · " + time + " · " + weekday;
     }
 
+    // Two-phase timer: fire once at the next minute boundary, then tick every 60 s.
     Timer {
-        interval: 1000
+        id: clockTimer
         running: true
-        repeat: true
-        onTriggered: root._clockText = root._formatClock(new Date())
+        repeat: false
+        interval: {
+            var now = new Date();
+            return (60 - now.getSeconds()) * 1000 - now.getMilliseconds();
+        }
+        onTriggered: {
+            root._clockText = root._formatClock(new Date());
+            // Switch to steady 60-second cadence
+            clockTimer.interval = 60000;
+            clockTimer.repeat = true;
+            clockTimer.restart();
+        }
     }
 
     Text {
