@@ -19,15 +19,18 @@ Singleton {
     property var sinks: []
     property var sources: []
 
-    property real volume: (defaultSink && defaultSink.volume != null) ? defaultSink.volume : 0.0
-    property bool muted:  (defaultSink && defaultSink.muted  != null) ? defaultSink.muted  : false
+    // Derived from resolved sink object; daemon uses volume_pct (0–100 int → normalise to 0–1)
+    property real volume: defaultSink ? (defaultSink.volume_pct / 100.0) : 0.0
+    property bool muted:  defaultSink ? (defaultSink.muted === true)     : false
 
     function setVolume(sinkName, vol) {
-        Client.request("audio", "set_volume", { sink: sinkName, volume: vol }, null);
+        // Daemon expects volume_pct (0–100 integer)
+        Client.request("audio", "set_volume", { sink: sinkName, volume_pct: Math.round(vol * 100) }, null);
     }
 
     function setMuted(sinkName, muted) {
-        Client.request("audio", "set_muted", { sink: sinkName, muted: muted }, null);
+        // Daemon action is "set_mute" not "set_muted"
+        Client.request("audio", "set_mute", { sink: sinkName, muted: muted }, null);
     }
 
     function setDefaultSink(sinkName) {
@@ -35,10 +38,16 @@ Singleton {
     }
 
     function _onSnapshot(payload) {
-        root.defaultSink   = payload.default_sink   || null;
-        root.defaultSource = payload.default_source || null;
-        root.sinks         = payload.sinks          || [];
-        root.sources       = payload.sources        || [];
+        root.sinks   = payload.sinks   || [];
+        root.sources = payload.sources || [];
+
+        // default_sink is a NAME string; resolve to the sink object in sinks[]
+        var dsName = payload.default_sink || "";
+        root.defaultSink = root.sinks.find(function(s) { return s.name === dsName; }) || null;
+
+        var srcName = payload.default_source || "";
+        root.defaultSource = root.sources.find(function(s) { return s.name === srcName; }) || null;
+
         root.ready  = true;
         root.status = "ok";
     }
