@@ -32,7 +32,7 @@ Singleton {
     readonly property int weightMedium: 500
     readonly property int weightSemibold: 600
 
-    readonly property string fontFamily: "Editorial New, Tsukushi A Mincho, Smile Nerd Font Mono, sans-serif"
+    readonly property string fontFamily: "PP Editorial New, Tsukushi A Mincho, Smile Nerd Font Mono, sans-serif"
 
     readonly property int motionInstant: 0
     readonly property int motionFast: 120
