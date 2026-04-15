@@ -174,7 +174,7 @@ Rectangle {
                     iconPath: "lucide/x.svg"
                     size: Theme.fontSmall
                     color: Theme.fgMuted
-                    leftPadding: Theme.spaceXs
+                    Layout.leftMargin: Theme.spaceXs
 
                     MouseArea {
                         anchors.fill: parent

@@ -16,7 +16,7 @@ Item {
     width:  root.size
     height: root.size
 
-    // Off-screen source — rendered but not displayed
+    // Off-screen source — needs layer.enabled to produce a texture for masking
     Image {
         id: _src
         anchors.fill: parent
@@ -25,6 +25,7 @@ Item {
                 : ""
         fillMode: Image.PreserveAspectFit
         visible: false
+        layer.enabled: true
         smooth: true
     }
 
