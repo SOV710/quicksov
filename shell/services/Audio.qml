@@ -19,8 +19,8 @@ Singleton {
     property var sinks: []
     property var sources: []
 
-    property real volume: defaultSink ? defaultSink.volume : 0.0
-    property bool muted:  defaultSink ? defaultSink.muted  : false
+    property real volume: (defaultSink && defaultSink.volume != null) ? defaultSink.volume : 0.0
+    property bool muted:  (defaultSink && defaultSink.muted  != null) ? defaultSink.muted  : false
 
     function setVolume(sinkName, vol) {
         Client.request("audio", "set_volume", { sink: sinkName, volume: vol }, null);
