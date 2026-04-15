@@ -9,9 +9,9 @@ import "../services"
 Rectangle {
     id: root
 
-    width:  320
-    height: Math.min(notifList.contentHeight + Theme.spaceMd * 2 + headerRow.height + Theme.spaceSm, 480)
+    width:  340
     implicitHeight: height
+    height: Math.min(contentCol.implicitHeight + Theme.spaceMd * 2, 520)
     radius: Theme.radiusMd
     color:  Theme.bgSurface
     border.color: Theme.borderDefault
@@ -21,15 +21,32 @@ Rectangle {
 
     Behavior on opacity { NumberAnimation { duration: Theme.motionFast } }
 
+    // ── helpers ─────────────────────────────────────────────────────────────
+    function _timeLabel(ts) {
+        if (!ts) return "";
+        var d = new Date(ts * 1000);
+        var h = d.getHours().toString().padStart(2, "0");
+        var m = d.getMinutes().toString().padStart(2, "0");
+        return h + ":" + m;
+    }
+
+    function _urgencyColor(urgency) {
+        if (urgency === "critical") return Theme.colorError;
+        if (urgency === "low")      return Theme.fgMuted;
+        return Theme.fgSecondary;
+    }
+
+    // ── layout ───────────────────────────────────────────────────────────────
     Column {
+        id: contentCol
         anchors {
-            fill: parent
+            top: parent.top; left: parent.left; right: parent.right
             margins: Theme.spaceMd
         }
         spacing: Theme.spaceSm
 
+        // header row
         RowLayout {
-            id: headerRow
             width: parent.width
 
             Text {
@@ -38,11 +55,11 @@ Rectangle {
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontLabel
                 font.weight: Theme.weightSemibold
+                Layout.fillWidth: true
             }
 
-            Item { Layout.fillWidth: true; height: 1 }
-
             Text {
+                visible: Notification.notifications.length > 0
                 text: "Clear all"
                 color: Theme.accentBlue
                 font.family: Theme.fontFamily
@@ -56,47 +73,117 @@ Rectangle {
             }
         }
 
+        // empty state
+        Item {
+            visible: Notification.notifications.length === 0
+            width: parent.width
+            implicitHeight: 80
+
+            Text {
+                anchors.centerIn: parent
+                text: "No notifications"
+                color: Theme.fgMuted
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSmall
+                horizontalAlignment: Text.AlignHCenter
+            }
+        }
+
+        // notification cards
         ListView {
             id: notifList
+            visible: Notification.notifications.length > 0
             width:  parent.width
-            height: Math.min(contentHeight, 400)
+            implicitHeight: contentHeight
+            height: Math.min(contentHeight, 440)
             model:  Notification.notifications
             clip:   true
             spacing: Theme.spaceXs
+            interactive: contentHeight > height
 
-            delegate: NotifItem {
+            delegate: NotifCard {
                 required property var modelData
                 notif: modelData
                 width: notifList.width
             }
         }
-
-        Text {
-            visible: Notification.notifications.length === 0
-            text: "No notifications"
-            color: Theme.fgMuted
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSmall
-            width: parent.width
-            horizontalAlignment: Text.AlignHCenter
-        }
     }
 
-    component NotifItem: Rectangle {
+    // ── notification card component ──────────────────────────────────────────
+    component NotifCard: Rectangle {
+        id: card
         property var notif: null
-        height: itemCol.implicitHeight + Theme.spaceSm * 2
+
+        readonly property color _accent: root._urgencyColor(notif ? notif.urgency : "normal")
+
         radius: Theme.radiusSm
-        color: Theme.surfaceHover
+        color: cardHover.containsMouse ? Theme.surfaceHover : Qt.rgba(1,1,1,0.04)
+        border.color: notif && notif.urgency === "critical"
+                      ? Qt.rgba(Theme.colorError.r, Theme.colorError.g, Theme.colorError.b, 0.5)
+                      : Theme.borderSubtle
+        border.width: 1
+        implicitHeight: cardCol.implicitHeight + Theme.spaceXs * 2
+        clip: false
+
+        HoverHandler { id: cardHover }
+
+        Behavior on color { ColorAnimation { duration: Theme.motionFast } }
+
+        // urgency accent bar on the left
+        Rectangle {
+            width: 3
+            anchors { left: parent.left; top: parent.top; bottom: parent.bottom; topMargin: 4; bottomMargin: 4 }
+            radius: 2
+            color: card._accent
+            visible: notif && notif.urgency !== "normal"
+        }
 
         Column {
-            id: itemCol
+            id: cardCol
             anchors {
-                left: parent.left; right: parent.right
-                top: parent.top
+                left: parent.left; right: parent.right; top: parent.top
                 margins: Theme.spaceXs
+                leftMargin: notif && notif.urgency !== "normal" ? Theme.spaceXs + 6 : Theme.spaceXs
             }
             spacing: 2
 
+            // app name + time + dismiss
+            RowLayout {
+                width: parent.width
+
+                Text {
+                    text: notif ? notif.app_name : ""
+                    color: card._accent
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontMicro
+                    font.weight: Theme.weightMedium
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
+
+                Text {
+                    text: root._timeLabel(notif ? notif.timestamp : 0)
+                    color: Theme.fgMuted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontMicro
+                    visible: notif && notif.timestamp > 0
+                }
+
+                Text {
+                    text: "✕"
+                    color: Theme.fgMuted
+                    font.pixelSize: Theme.fontMicro
+                    leftPadding: Theme.spaceXs
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: if (notif) Notification.dismiss(notif.id)
+                    }
+                }
+            }
+
+            // summary
             Text {
                 text: notif ? notif.summary : ""
                 color: Theme.fgPrimary
@@ -104,32 +191,56 @@ Rectangle {
                 font.pixelSize: Theme.fontSmall
                 font.weight: Theme.weightMedium
                 elide: Text.ElideRight
-                width: parent.width - 20
+                width: parent.width
             }
 
+            // body
             Text {
                 visible: notif && notif.body !== ""
                 text: notif ? notif.body : ""
                 color: Theme.fgSecondary
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontMicro
-                elide: Text.ElideRight
-                maximumLineCount: 2
                 wrapMode: Text.WordWrap
-                width: parent.width - 20
+                maximumLineCount: 3
+                elide: Text.ElideRight
+                width: parent.width
             }
-        }
 
-        Text {
-            text: "✕"
-            color: Theme.fgMuted
-            font.pixelSize: Theme.fontMicro
-            anchors { right: parent.right; rightMargin: Theme.spaceXs; verticalCenter: parent.verticalCenter }
+            // action buttons
+            Row {
+                visible: notif && notif.actions && notif.actions.length > 0
+                spacing: Theme.spaceXs
+                topPadding: 2
 
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: if (notif) Notification.dismiss(notif.id)
+                Repeater {
+                    model: notif ? notif.actions : []
+
+                    delegate: Rectangle {
+                        required property var modelData
+                        height: 18
+                        width:  actionLabel.implicitWidth + Theme.spaceSm * 2
+                        radius: Theme.radiusXs
+                        color: actionBtn.containsMouse ? Theme.surfaceActive : Theme.borderDefault
+
+                        Text {
+                            id: actionLabel
+                            anchors.centerIn: parent
+                            text: modelData.label || ""
+                            color: Theme.fgPrimary
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontMicro
+                        }
+
+                        HoverHandler { id: actionBtn }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: Notification.invokeAction(notif.id, modelData.id)
+                        }
+                    }
+                }
             }
         }
     }
