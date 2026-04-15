@@ -4,6 +4,8 @@
 
 //! `niri` service — Niri compositor IPC.
 
+use std::collections::HashMap;
+
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
@@ -84,10 +86,14 @@ async fn connect_and_run(
     // Fetch initial state via separate one-shot connections
     let workspaces = niri_request(socket_path, r#""Workspaces""#).await?;
     let focused = niri_request(socket_path, r#""FocusedWindow""#).await?;
+    let windows_json = niri_request(socket_path, r#""Windows""#).await?;
 
     let ws_list = parse_workspaces(&workspaces);
     let fw = parse_focused_window(&focused);
-    state_tx.send_replace(build_snapshot(&ws_list, &fw));
+    // window_id → workspace_id: used to count windows per workspace
+    let mut win_map: HashMap<i64, i64> = parse_window_workspace_map(&windows_json);
+
+    state_tx.send_replace(build_snapshot(&ws_list, &fw, &win_map));
 
     // Open event stream connection
     let stream = UnixStream::connect(socket_path)
@@ -117,13 +123,13 @@ async fn connect_and_run(
                 if let Ok(fw_json) = niri_request(socket_path, r#""FocusedWindow""#).await {
                     fw_state = parse_focused_window(&fw_json);
                 }
-                state_tx.send_replace(build_snapshot(&ws_state, &fw_state));
+                state_tx.send_replace(build_snapshot(&ws_state, &fw_state, &win_map));
             }
             line = lines.next_line() => {
                 match line {
                     Ok(Some(text)) => {
-                        process_event(&text, &mut ws_state, &mut fw_state);
-                        state_tx.send_replace(build_snapshot(&ws_state, &fw_state));
+                        process_event(&text, &mut ws_state, &mut fw_state, &mut win_map);
+                        state_tx.send_replace(build_snapshot(&ws_state, &fw_state, &win_map));
                     }
                     Ok(None) => break,
                     Err(e) => {
@@ -183,6 +189,8 @@ fn parse_workspaces(json: &str) -> Vec<WorkspaceInfo> {
 
 fn parse_single_workspace(v: &serde_json::Value) -> Option<WorkspaceInfo> {
     Some(WorkspaceInfo {
+        // niri's unique workspace ID (used in WorkspaceActivated events)
+        id: v.get("id").and_then(|i| i.as_i64()).unwrap_or(0),
         idx: v.get("idx")?.as_i64()? as i32,
         name: v.get("name").and_then(|n| n.as_str()).map(String::from),
         output: v.get("output")?.as_str()?.to_string(),
@@ -190,8 +198,33 @@ fn parse_single_workspace(v: &serde_json::Value) -> Option<WorkspaceInfo> {
             .get("is_focused")
             .and_then(|b| b.as_bool())
             .unwrap_or(false),
-        windows: 0,
     })
+}
+
+/// Parse the `Windows` response into a window_id → workspace_id map.
+fn parse_window_workspace_map(json: &str) -> HashMap<i64, i64> {
+    let val: serde_json::Value = match serde_json::from_str(json) {
+        Ok(v) => v,
+        Err(_) => return HashMap::new(),
+    };
+    let arr = match val
+        .get("Ok")
+        .and_then(|ok| ok.get("Windows"))
+        .and_then(|w| w.as_array())
+    {
+        Some(a) => a,
+        None => return HashMap::new(),
+    };
+    let mut map = HashMap::new();
+    for win in arr {
+        if let (Some(win_id), Some(ws_id)) = (
+            win.get("id").and_then(|i| i.as_i64()),
+            win.get("workspace_id").and_then(|w| w.as_i64()),
+        ) {
+            map.insert(win_id, ws_id);
+        }
+    }
+    map
 }
 
 fn parse_focused_window(json: &str) -> Option<FocusedWindow> {
@@ -208,6 +241,7 @@ fn process_event(
     text: &str,
     ws_state: &mut Vec<WorkspaceInfo>,
     fw_state: &mut Option<FocusedWindow>,
+    win_map: &mut HashMap<i64, i64>,
 ) {
     let val: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
@@ -233,13 +267,38 @@ fn process_event(
         });
     }
 
+    // WorkspaceActivated carries the workspace's unique `id`, not its `idx`.
+    // We store `id` in WorkspaceInfo so we can match correctly here.
     if let Some(wa) = val.get("WorkspaceActivated") {
         let ws_id = wa.get("id").and_then(|i| i.as_i64());
         let focused = wa.get("focused").and_then(|b| b.as_bool()).unwrap_or(false);
-        if let Some(id) = ws_id {
+        if let Some(event_id) = ws_id {
             for ws in ws_state.iter_mut() {
-                ws.focused = ws.idx as i64 == id && focused;
+                ws.focused = ws.id == event_id && focused;
             }
+        }
+    }
+
+    // Track window ↔ workspace mapping for per-workspace window counts.
+    if let Some(evt) = val.get("WindowOpenedOrChanged") {
+        if let Some(win) = evt.get("window") {
+            if let Some(win_id) = win.get("id").and_then(|i| i.as_i64()) {
+                match win.get("workspace_id").and_then(|w| w.as_i64()) {
+                    Some(ws_id) => {
+                        win_map.insert(win_id, ws_id);
+                    }
+                    None => {
+                        // Window is floating / not in a workspace — remove from map
+                        win_map.remove(&win_id);
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(evt) = val.get("WindowClosed") {
+        if let Some(win_id) = evt.get("id").and_then(|i| i.as_i64()) {
+            win_map.remove(&win_id);
         }
     }
 }
@@ -249,12 +308,13 @@ fn process_event(
 // ---------------------------------------------------------------------------
 
 struct WorkspaceInfo {
+    /// Niri's unique workspace ID — used in `WorkspaceActivated` events.
+    id: i64,
+    /// Sequential 1-based position on the output.
     idx: i32,
     name: Option<String>,
     output: String,
     focused: bool,
-    #[allow(dead_code)]
-    windows: i32,
 }
 
 struct FocusedWindow {
@@ -267,8 +327,21 @@ struct FocusedWindow {
 // Snapshot
 // ---------------------------------------------------------------------------
 
-fn build_snapshot(workspaces: &[WorkspaceInfo], focused: &Option<FocusedWindow>) -> Value {
-    let ws: Vec<Value> = workspaces.iter().map(workspace_to_value).collect();
+fn build_snapshot(
+    workspaces: &[WorkspaceInfo],
+    focused: &Option<FocusedWindow>,
+    win_map: &HashMap<i64, i64>,
+) -> Value {
+    // Count windows per workspace unique ID
+    let mut ws_window_count: HashMap<i64, i64> = HashMap::new();
+    for &ws_id in win_map.values() {
+        *ws_window_count.entry(ws_id).or_insert(0) += 1;
+    }
+
+    let ws: Vec<Value> = workspaces
+        .iter()
+        .map(|ws| workspace_to_value(ws, ws_window_count.get(&ws.id).copied().unwrap_or(0)))
+        .collect();
     let fw = match focused {
         Some(w) => json_map([
             ("id", Value::from(w.id)),
@@ -280,7 +353,7 @@ fn build_snapshot(workspaces: &[WorkspaceInfo], focused: &Option<FocusedWindow>)
     json_map([("workspaces", Value::Array(ws)), ("focused_window", fw)])
 }
 
-fn workspace_to_value(ws: &WorkspaceInfo) -> Value {
+fn workspace_to_value(ws: &WorkspaceInfo, window_count: i64) -> Value {
     let name = match &ws.name {
         Some(n) => Value::from(n.as_str()),
         None => Value::Null,
@@ -290,7 +363,7 @@ fn workspace_to_value(ws: &WorkspaceInfo) -> Value {
         ("name", name),
         ("output", Value::from(ws.output.as_str())),
         ("focused", Value::Bool(ws.focused)),
-        ("windows", Value::from(ws.windows as i64)),
+        ("windows", Value::from(window_count)),
     ])
 }
 
