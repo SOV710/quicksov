@@ -11,7 +11,7 @@ DEST="$HOME/.config/quickshell/quicksov"
 echo "Installing quicksov shell to $DEST"
 
 mkdir -p "$DEST"
-rsync -a --delete "$SHELL_SRC/" "$DEST/"
+rsync -a --delete --exclude=icons "$SHELL_SRC/" "$DEST/"
 
 if [[ -d "$REPO_ROOT/icons" ]]; then
     rsync -a --delete "$REPO_ROOT/icons/" "$DEST/icons/"
