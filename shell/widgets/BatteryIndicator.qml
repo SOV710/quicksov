@@ -24,7 +24,7 @@ Item {
 
     property color _color: {
         var pct = Battery.percentage;
-        if (Battery.chargeStatus === "Charging") return Theme.colorSuccess;
+        if (Battery.chargeStatus === "charging") return Theme.colorSuccess;
         if (pct <= 15) return Theme.colorError;
         if (pct <= 30) return Theme.colorWarning;
         return Theme.fgPrimary;
