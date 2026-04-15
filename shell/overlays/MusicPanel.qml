@@ -3,6 +3,7 @@
 
 import QtQuick
 import ".."
+import "../components"
 import "../services"
 
 Rectangle {
@@ -44,11 +45,11 @@ Rectangle {
                 visible: status !== Image.Error && source !== ""
             }
 
-            Text {
+            SvgIcon {
                 anchors.centerIn: parent
-                text: "♫"
+                iconPath: "phosphor/music-note.svg"
+                size: 40
                 color: Theme.fgMuted
-                font.pixelSize: Theme.fontDisplay
                 visible: root._player === null || !root._player.metadata || !root._player.metadata.art_url
             }
         }
@@ -87,10 +88,12 @@ Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: Theme.spaceLg
 
-            Text {
-                text: "⏮"
+            SvgIcon {
+                iconPath: "phosphor/skip-back.svg"
+                size: 24
                 color: root._player && root._player.can_go_previous ? Theme.fgPrimary : Theme.fgMuted
-                font.pixelSize: Theme.fontDisplay
+                anchors.verticalCenter: parent.verticalCenter
+
                 MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
@@ -98,10 +101,13 @@ Rectangle {
                 }
             }
 
-            Text {
-                text: root._player && root._player.playback_status === "Playing" ? "⏸" : "▶"
+            SvgIcon {
+                iconPath: root._player && root._player.playback_status === "Playing"
+                          ? "phosphor/pause.svg" : "phosphor/play.svg"
+                size: 28
                 color: root._player ? Theme.fgPrimary : Theme.fgMuted
-                font.pixelSize: Theme.fontDisplay
+                anchors.verticalCenter: parent.verticalCenter
+
                 MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
@@ -109,10 +115,12 @@ Rectangle {
                 }
             }
 
-            Text {
-                text: "⏭"
+            SvgIcon {
+                iconPath: "phosphor/skip-forward.svg"
+                size: 24
                 color: root._player && root._player.can_go_next ? Theme.fgPrimary : Theme.fgMuted
-                font.pixelSize: Theme.fontDisplay
+                anchors.verticalCenter: parent.verticalCenter
+
                 MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
@@ -123,11 +131,16 @@ Rectangle {
     }
 
     // Close button
-    Text {
-        text: "✕"
-        color: Theme.fgMuted
-        font.pixelSize: Theme.fontSmall
+    Item {
+        width: 20; height: 20
         anchors { top: parent.top; right: parent.right; margins: Theme.spaceSm }
+
+        SvgIcon {
+            anchors.centerIn: parent
+            iconPath: "lucide/x.svg"
+            size: 12
+            color: Theme.fgMuted
+        }
 
         MouseArea {
             anchors.fill: parent

@@ -4,6 +4,7 @@
 import QtQuick
 import QtQuick.Layouts
 import ".."
+import "../components"
 import "../services"
 
 Rectangle {
@@ -169,10 +170,10 @@ Rectangle {
                     visible: notif && notif.timestamp > 0
                 }
 
-                Text {
-                    text: "✕"
+                SvgIcon {
+                    iconPath: "lucide/x.svg"
+                    size: Theme.fontSmall
                     color: Theme.fgMuted
-                    font.pixelSize: Theme.fontMicro
                     leftPadding: Theme.spaceXs
 
                     MouseArea {
