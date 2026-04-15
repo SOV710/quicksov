@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: 2026 SOV710
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Symlinks shell/ contents into ~/.config/quicksov/ for development.
+# Symlinks shell/ contents into ~/.config/quickshell/quicksov/ for development.
 # Each item in shell/ is individually linked so qs hot-reloads on save.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SHELL_DIR="$REPO_ROOT/shell"
-CONFIG_DIR="$HOME/.config/quicksov"
+CONFIG_DIR="$HOME/.config/quickshell/quicksov"
 
 mkdir -p "$CONFIG_DIR"
 
@@ -47,4 +47,4 @@ if [[ -d "$REPO_ROOT/icons" ]]; then
 fi
 
 echo "Done. Start daemon: cargo run --manifest-path $REPO_ROOT/Cargo.toml"
-echo "Start shell: quickshell --path $CONFIG_DIR"
+echo "Start shell: quickshell --config quicksov"

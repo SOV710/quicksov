@@ -14,7 +14,7 @@
 
 - **项目名**：quicksov
 - **Git 仓库**：`~/proj/quicksov`
-- **运行时根目录**：`~/.config/quicksov/`
+- **运行时根目录**：`~/.config/quickshell/quicksov/`
 - **Daemon 二进制**：`qsovd`（避开 QEMU `qsd` 冲突）
 - **Daemon crate 名**：`qsovd`
 - **Protocol spec 文档**：`protocol/spec.md` + `protocol/schema.json`
@@ -305,7 +305,7 @@ qsovd/                              # Rust crate
 
 ### 7.1 配置文件
 
-两份文件都位于 `~/.config/quicksov/`：
+两份文件都位于 `~/.config/quickshell/quicksov/`：
 
 - **daemon.toml**：daemon 运行参数与 service 启用清单
 - **design-tokens.toml**：L1 产物，daemon 启动时读取并通过 `theme` topic 推送给 qs
@@ -379,7 +379,7 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
 ## 8. 运行时目录
 
 ```
-~/.config/quicksov/
+~/.config/quickshell/quicksov/
 ├── daemon.toml
 ├── design-tokens.toml
 ├── shell.qml                       # qs 入口
@@ -425,7 +425,7 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
     └── phosphor/
 ```
 
-开发时使用 `quickshell --path ~/.config/quicksov`，qs 从此目录读 `shell.qml`。
+开发时使用 `quickshell --config quicksov`，qs 从 `~/.config/quickshell/quicksov/` 读 `shell.qml`。
 
 ## 9. 开发仓库目录
 
@@ -466,7 +466,7 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
 │       ├── 006-no-network-manager.md
 │       └── 007-binary-naming-qsovd.md
 ├── scripts/
-│   ├── install.sh                  # 安装到 ~/.config/quicksov
+│   ├── install.sh                  # 安装到 ~/.config/quickshell/quicksov
 │   └── dev-link.sh                 # symlink 模式部署, 便于迭代
 └── README.md
 ```
@@ -477,22 +477,19 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
 
 `scripts/install.sh` 做两件事：
 
-1. `cargo install --path daemon --bin qsovd`  安装二进制到 `~/.local/bin/`
-2. `cp -r shell/* ~/.config/quicksov/`  拷贝 qs 配置
-3. `cp config/daemon.toml.example ~/.config/quicksov/daemon.toml` 仅在目标不存在时
-4. `cp config/design-tokens.toml ~/.config/quicksov/design-tokens.toml`
-5. `cp -r icons/* ~/.config/quicksov/icons/`
+1. `cargo install --path . --bin qsovd`  安装二进制到 `~/.local/bin/`
+2. `rsync -a shell/ ~/.config/quickshell/quicksov/`  部署 qs 配置
+3. `rsync -a icons/ ~/.config/quickshell/quicksov/icons/`
 
 ### 10.2 开发迭代
 
 `scripts/dev-link.sh` 用 symlink 代替 cp，让 repo 里的 QML 改动直接被 qs 热重载看到：
 
 ```
-~/.config/quicksov/shell.qml  →  ~/proj/quicksov/shell/shell.qml
-~/.config/quicksov/bars       →  ~/proj/quicksov/shell/bars
+~/.config/quickshell/quicksov/shell.qml  →  ~/proj/quicksov/shell/shell.qml
+~/.config/quickshell/quicksov/bars       →  ~/proj/quicksov/shell/bars
 ... (所有 shell/ 下的内容)
-~/.config/quicksov/daemon.toml  →  ~/proj/quicksov/config/daemon.toml.example
-~/.config/quicksov/design-tokens.toml → ~/proj/quicksov/config/design-tokens.toml
+~/.config/quickshell/quicksov/icons      →  ~/proj/quicksov/icons
 ```
 
 Daemon 用 `cargo run --bin qsovd` 启动（而不是 install 到 `~/.local/bin`），避免每次改动都要 reinstall。
@@ -533,8 +530,8 @@ qs 侧的 IPC client 必须实现连接重试，使 daemon 实际启动顺序与
 | 状态广播机制 | `tokio::sync::watch` |
 | 离散事件广播 | `tokio::sync::broadcast`（仅 notification） |
 | 配置格式 | TOML |
-| 配置位置 | `~/.config/quicksov/` |
-| QS 启动方式（dev） | `quickshell --path ~/.config/quicksov` |
+| 配置位置 | `~/.config/quickshell/quicksov/` |
+| QS 启动方式（dev） | `quickshell --config quicksov` |
 | QS 启动方式（installed） | `quickshell --config quicksov` |
 | 网络栈 | wpa_supplicant + dhcpcd，netlink 驱动 link 状态 |
 | 网卡名 | `wlo1`, `enp109s0` |
