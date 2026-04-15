@@ -31,7 +31,14 @@ Scope {
                 right: Theme.barOuterMargin
             }
 
-            implicitHeight: Theme.barHeight + Theme.barOuterMargin
+            // Expand to cover bar + whichever popup is open (tallest wins)
+            property int _popupHeight: {
+                var h = 0;
+                if (clockPopup.popupVisible) h = Math.max(h, 180 + Theme.spaceXs);
+                if (notifCenter.visible)     h = Math.max(h, notifCenter.implicitHeight + Theme.spaceXs);
+                return h;
+            }
+            implicitHeight: Theme.barHeight + Theme.barOuterMargin + _popupHeight
             color: "transparent"
 
             Rectangle {
@@ -72,6 +79,7 @@ Scope {
                 Clock {
                     id: clockWidget
                     anchors.centerIn: parent
+                    onOpenPopup: clockPopup.popupVisible = !clockPopup.popupVisible
                 }
 
                 // RIGHT zone

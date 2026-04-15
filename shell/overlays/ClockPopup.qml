@@ -10,7 +10,6 @@ Item {
     property bool popupVisible: false
     width:  280
     height: popupVisible ? 180 : 0
-    clip: true
 
     Behavior on height { NumberAnimation { duration: Theme.motionFast; easing.type: Easing.OutCubic } }
 

@@ -7,49 +7,50 @@ import ".."
 Item {
     id: root
 
-    implicitWidth: timeText.implicitWidth
-    implicitHeight: timeText.implicitHeight
+    implicitWidth: label.implicitWidth
+    implicitHeight: label.implicitHeight
 
-    property string _time: Qt.formatTime(new Date(), "HH:mm")
-    property string _date: Qt.formatDate(new Date(), "ddd d")
+    signal openPopup()
+
+    // Format: "2026-04-12 · 19:38 CST · Sun"
+    property string _clockText: _formatClock(new Date())
+
+    function _tzAbbr(d) {
+        // Extract timezone abbreviation from locale time string (e.g. "19:38:00 CST")
+        var s = d.toLocaleTimeString(Qt.locale(), "t");
+        return s || "";
+    }
+
+    function _formatClock(d) {
+        var date    = Qt.formatDate(d, "yyyy-MM-dd");
+        var time    = Qt.formatTime(d, "HH:mm");
+        var tz      = root._tzAbbr(d);
+        var weekday = Qt.formatDate(d, "ddd");
+        if (tz) return date + " · " + time + " " + tz + " · " + weekday;
+        return date + " · " + time + " · " + weekday;
+    }
 
     Timer {
         interval: 1000
         running: true
         repeat: true
-        onTriggered: {
-            root._time = Qt.formatTime(new Date(), "HH:mm");
-            root._date = Qt.formatDate(new Date(), "ddd d");
-        }
+        onTriggered: root._clockText = root._formatClock(new Date())
     }
 
-    Row {
-        spacing: Theme.spaceXs
-
-        Text {
-            id: timeText
-            text: root._time
-            color: Theme.fgPrimary
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontBody
-            font.weight: Theme.weightMedium
-            font.features: { "tnum": 1 }
-        }
-
-        Text {
-            text: root._date
-            color: Theme.fgMuted
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSmall
-            font.weight: Theme.weightRegular
-            anchors.verticalCenter: parent.verticalCenter
-        }
+    Text {
+        id: label
+        text: root._clockText
+        color: Theme.fgPrimary
+        font.family: Theme.fontFamily
+        font.pixelSize: Theme.fontSmall
+        font.weight: Theme.weightRegular
+        font.features: { "tnum": 1 }
     }
 
     MouseArea {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: clockPopup.popupVisible = !clockPopup.popupVisible
+        onClicked: root.openPopup()
     }
 }
