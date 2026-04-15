@@ -38,9 +38,10 @@ Item {
         Text {
             text: root._icon
             color: root._color
-            font.pixelSize: Theme.fontBody
+            font.pixelSize: Theme.fontLabel
             font.family: Theme.fontFamily
             visible: Battery.present
+            anchors.verticalCenter: parent.verticalCenter
         }
 
         Text {
@@ -50,6 +51,7 @@ Item {
             font.pixelSize: Theme.fontSmall
             font.weight: Theme.weightRegular
             font.features: { "tnum": 1 }
+            anchors.verticalCenter: parent.verticalCenter
         }
     }
 }

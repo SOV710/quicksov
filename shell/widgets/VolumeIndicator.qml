@@ -27,8 +27,9 @@ Item {
         Text {
             text: root._icon
             color: Audio.muted ? Theme.fgMuted : Theme.fgPrimary
-            font.pixelSize: Theme.fontBody
+            font.pixelSize: Theme.fontLabel
             font.family: Theme.fontFamily
+            anchors.verticalCenter: parent.verticalCenter
         }
 
         Text {
@@ -39,6 +40,7 @@ Item {
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontSmall
             font.features: { "tnum": 1 }
+            anchors.verticalCenter: parent.verticalCenter
         }
     }
 

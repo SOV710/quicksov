@@ -21,8 +21,9 @@ Item {
         Text {
             text: Notification.hasUnread ? "󱅫" : "󰂚"
             color: Notification.hasUnread ? Theme.colorInfo : Theme.fgMuted
-            font.pixelSize: Theme.fontBody
+            font.pixelSize: Theme.fontLabel
             font.family: Theme.fontFamily
+            anchors.verticalCenter: parent.verticalCenter
         }
 
         Text {
