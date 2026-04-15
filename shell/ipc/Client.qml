@@ -78,6 +78,9 @@ Singleton {
     }
 
     function _connect() {
+        // Force a fresh connection attempt: setConnected(true) is a no-op when
+        // mConnected is already true even after a failed attempt, so we reset first.
+        socket.connected = false;
         socket.connected = true;
     }
 
