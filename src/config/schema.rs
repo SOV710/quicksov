@@ -47,6 +47,10 @@ fn default_socket_path_raw() -> String {
 /// Screen-to-role mapping configuration.
 #[derive(Debug, Deserialize, Default)]
 pub struct ScreensConfig {
+    /// Simple single-field alternative: name the main screen directly.
+    /// When set, all other screens are implicitly treated as "aux".
+    /// Takes priority over `mapping` when both are present.
+    pub main_screen: Option<String>,
     #[serde(default)]
     pub mapping: Vec<ScreenMapping>,
 }
