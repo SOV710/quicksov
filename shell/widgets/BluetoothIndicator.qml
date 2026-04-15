@@ -12,7 +12,9 @@ Item {
     implicitWidth: _icon.implicitWidth
     implicitHeight: _icon.implicitHeight
 
-    visible: Bluetooth.btAvailable
+    // Keep the slot visible once the daemon is connected so "off" can render
+    // as an explicit bluetooth-off icon instead of disappearing entirely.
+    visible: Bluetooth.connected || Bluetooth.ready
 
     readonly property string _iconPath: Bluetooth.btEnabled
                                         ? "lucide/bluetooth.svg"
