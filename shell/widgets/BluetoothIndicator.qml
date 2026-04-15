@@ -3,27 +3,31 @@
 
 import QtQuick
 import ".."
+import "../components"
 import "../services"
 
 Item {
     id: root
 
-    implicitWidth: label.implicitWidth
-    implicitHeight: label.implicitHeight
+    implicitWidth: _icon.implicitWidth
+    implicitHeight: _icon.implicitHeight
 
     visible: Bluetooth.btAvailable
 
-    property color _color: {
+    readonly property string _iconPath: Bluetooth.btEnabled
+                                        ? "lucide/bluetooth.svg"
+                                        : "lucide/bluetooth-off.svg"
+
+    readonly property color _color: {
         if (!Bluetooth.btEnabled) return Theme.fgMuted;
         if (Bluetooth.connectedDevices.length > 0) return Theme.accentBlue;
         return Theme.fgSecondary;
     }
 
-    Text {
-        id: label
-        text: "󰂯"
+    SvgIcon {
+        id: _icon
+        iconPath: root._iconPath
+        size: Theme.iconSize
         color: root._color
-        font.pixelSize: Theme.iconSize
-        font.family: Theme.fontFamily
     }
 }

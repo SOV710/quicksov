@@ -3,6 +3,7 @@
 
 import QtQuick
 import ".."
+import "../components"
 import "../services"
 
 Item {
@@ -11,24 +12,23 @@ Item {
     implicitWidth: row.implicitWidth
     implicitHeight: row.implicitHeight
 
-    property string _icon: {
-        if (!Audio.ready || !Audio.defaultSink) return "󰸈";
-        if (Audio.muted) return "󰸈";
+    readonly property string _iconPath: {
+        if (!Audio.ready || !Audio.defaultSink) return "lucide/volume-x.svg";
+        if (Audio.muted) return "lucide/volume-x.svg";
         var v = Audio.volume;
-        if (v > 0.66) return "󰕾";
-        if (v > 0.33) return "󰖀";
-        return "󰕿";
+        if (v <= 0) return "lucide/volume-off.svg";
+        if (v > 0.66) return "lucide/volume-2.svg";
+        return "lucide/volume-1.svg";
     }
 
     Row {
         id: row
         spacing: Theme.spaceXs
 
-        Text {
-            text: root._icon
+        SvgIcon {
+            iconPath: root._iconPath
+            size: Theme.iconSize
             color: Audio.muted ? Theme.fgMuted : Theme.fgPrimary
-            font.pixelSize: Theme.iconSize
-            font.family: Theme.fontFamily
             anchors.verticalCenter: parent.verticalCenter
         }
 

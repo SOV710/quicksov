@@ -3,41 +3,28 @@
 
 import QtQuick
 import ".."
+import "../components"
 import "../services"
 
 Item {
     id: root
 
-    implicitWidth: label.implicitWidth + Theme.spaceXs
-    implicitHeight: label.implicitHeight
+    implicitWidth: _icon.implicitWidth
+    implicitHeight: _icon.implicitHeight
 
-    property string _icon: {
-        if (!Network.ready) return "󰤯";
-        if (Network.wifiConnected) {
-            var dbm = Network.signalDbm;
-            if (dbm >= -55) return "󰤨";
-            if (dbm >= -70) return "󰤥";
-            if (dbm >= -85) return "󰤢";
-            return "󰤟";
-        }
+    readonly property bool _connected: {
+        if (Network.wifiConnected) return true;
         var ifaces = Network.interfaces;
         for (var i = 0; i < ifaces.length; i++) {
-            if (ifaces[i].up && ifaces[i].carrier) return "󰈀";
+            if (ifaces[i].up && ifaces[i].carrier) return true;
         }
-        return "󰤮";
+        return false;
     }
 
-    property color _color: {
-        if (!Network.ready) return Theme.fgMuted;
-        return (Network.wifiConnected || Network.interfaces.some(function(i) { return i.up && i.carrier; }))
-               ? Theme.fgPrimary : Theme.fgMuted;
-    }
-
-    Text {
-        id: label
-        text: root._icon
-        color: root._color
-        font.pixelSize: Theme.iconSize
-        font.family: Theme.fontFamily
+    SvgIcon {
+        id: _icon
+        iconPath: root._connected ? "lucide/wifi.svg" : "lucide/wifi-off.svg"
+        size: Theme.iconSize
+        color: root._connected ? Theme.fgPrimary : Theme.fgMuted
     }
 }

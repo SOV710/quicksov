@@ -3,6 +3,7 @@
 
 import QtQuick
 import ".."
+import "../components"
 import "../services"
 
 Item {
@@ -18,11 +19,10 @@ Item {
         spacing: Theme.spaceXs
         anchors.verticalCenter: parent.verticalCenter
 
-        Text {
-            text: Notification.hasUnread ? "󱅫" : "󰂚"
+        SvgIcon {
+            iconPath: "lucide/bell.svg"
+            size: Theme.iconSize
             color: Notification.hasUnread ? Theme.colorInfo : Theme.fgMuted
-            font.pixelSize: Theme.iconSize
-            font.family: Theme.fontFamily
             anchors.verticalCenter: parent.verticalCenter
         }
 

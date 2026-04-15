@@ -3,6 +3,7 @@
 
 import QtQuick
 import ".."
+import "../components"
 import "../services"
 
 Item {
@@ -11,20 +12,21 @@ Item {
     implicitWidth: row.implicitWidth
     implicitHeight: row.implicitHeight
 
-    property string _icon: {
+    readonly property string _icon: {
         if (!Battery.present) return "";
+        if (Battery.chargeStatus === "charging" || Battery.chargeStatus === "full")
+            return "lucide/battery-charging.svg";
         var pct = Battery.percentage;
-        if (pct > 90) return "󰁹";
-        if (pct > 70) return "󰂀";
-        if (pct > 50) return "󰁾";
-        if (pct > 30) return "󰁼";
-        if (pct > 15) return "󰁺";
-        return "󰂎";
+        if (pct > 70) return "lucide/battery-full.svg";
+        if (pct > 30) return "lucide/battery-medium.svg";
+        if (pct > 15) return "lucide/battery-low.svg";
+        return "lucide/battery-warning.svg";
     }
 
-    property color _color: {
+    readonly property color _color: {
+        if (Battery.chargeStatus === "charging" || Battery.chargeStatus === "full")
+            return Theme.colorSuccess;
         var pct = Battery.percentage;
-        if (Battery.chargeStatus === "charging") return Theme.colorSuccess;
         if (pct <= 15) return Theme.colorError;
         if (pct <= 30) return Theme.colorWarning;
         return Theme.fgPrimary;
@@ -35,11 +37,10 @@ Item {
         spacing: Theme.spaceXs
         anchors.verticalCenter: parent.verticalCenter
 
-        Text {
-            text: root._icon
+        SvgIcon {
+            iconPath: root._icon
+            size: Theme.iconSize
             color: root._color
-            font.pixelSize: Theme.iconSize
-            font.family: Theme.fontFamily
             visible: Battery.present
             anchors.verticalCenter: parent.verticalCenter
         }
