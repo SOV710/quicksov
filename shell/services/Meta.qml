@@ -19,6 +19,8 @@ Singleton {
     property bool configNeedsRestart: false
     property var services: ({})
     property var screenRoles: ({})
+    // True only if daemon has published at least one role assignment.
+    readonly property bool hasScreenRoles: Object.keys(screenRoles).length > 0
 
     function _onSnapshot(payload) {
         root.serverVersion       = payload.server_version  || "";
