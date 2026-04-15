@@ -17,7 +17,7 @@ Singleton {
     property var capabilities: []
 
     property int _retryDelay: 500
-    readonly property int _maxDelay: 30000
+    readonly property int _maxDelay: 5000
 
     property var _pending: ({})
     property var _subscribers: ({})
@@ -56,6 +56,8 @@ Singleton {
 
         onError: function(error) {
             console.warn("[ipc] socket error:", error);
+            // onConnectedChanged may not fire if connected was already false
+            if (!reconnectTimer.running) root._scheduleReconnect();
         }
     }
 
@@ -67,8 +69,12 @@ Singleton {
     }
 
     function _socketPath() {
-        var rtDir = StandardPaths.writableLocation(StandardPaths.RuntimeLocation);
-        return rtDir + "/quicksov/daemon.sock";
+        // StandardPaths.writableLocation returns a file:// URL; strip the scheme
+        var rtUrl = StandardPaths.writableLocation(StandardPaths.RuntimeLocation).toString();
+        var rtDir = rtUrl.replace(/^file:\/\//, "");
+        var path = rtDir + "/quicksov/daemon.sock";
+        console.log("[ipc] socket path:", path);
+        return path;
     }
 
     function _connect() {
@@ -76,6 +82,7 @@ Singleton {
     }
 
     function _scheduleReconnect() {
+        if (reconnectTimer.running) return;
         reconnectTimer.interval = root._retryDelay;
         reconnectTimer.start();
         root._retryDelay = Math.min(root._retryDelay * 2, root._maxDelay);
