@@ -30,16 +30,18 @@ Item {
     component WorkspaceDot: Item {
         property var wsData: null
         width: dotRect.width + Theme.spaceXs
-        height: 20
+        height: 24
 
         Rectangle {
             id: dotRect
             anchors.verticalCenter: parent.verticalCenter
-            width:  wsData && wsData.is_active ? 18 : 6
-            height: 6
-            radius: 3
-            color:  wsData && wsData.is_active ? Theme.accentBlue
-                  : wsData && wsData.active_window_id !== null ? Theme.fgSecondary
+            // Daemon sends "focused" (bool), not "is_active"
+            width:  wsData && wsData.focused ? 22 : 8
+            height: 8
+            radius: 4
+            // Daemon sends "windows" (count), not "active_window_id"
+            color:  wsData && wsData.focused ? Theme.accentBlue
+                  : wsData && wsData.windows > 0 ? Theme.fgSecondary
                   : Theme.fgMuted
 
             Behavior on width { NumberAnimation { duration: Theme.motionFast; easing.type: Easing.OutCubic } }

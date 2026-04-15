@@ -20,7 +20,8 @@ Singleton {
     property var outputs: []
 
     function focusWorkspace(index) {
-        Client.request("niri", "focus_workspace", { reference: { Index: index } }, null);
+        // Daemon expects { idx: N }, not { reference: { Index: N } }
+        Client.request("niri", "focus_workspace", { idx: index }, null);
     }
     function moveColumnToWorkspace(index) {
         Client.request("niri", "move_column_to_workspace", { reference: { Index: index } }, null);
