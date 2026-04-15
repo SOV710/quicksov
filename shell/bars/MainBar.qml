@@ -17,7 +17,9 @@ Scope {
 
             required property var modelData
             screen: modelData
-            visible: Meta.screenRoles[modelData.name] === "main"
+            // Bootstrap fallback: show on any screen until Meta has resolved roles.
+            // Once Meta.ready, only the screen with role "main" shows this bar.
+            visible: !Meta.ready || Meta.screenRoles[modelData.name] === "main"
 
             anchors.top:   true
             anchors.left:  true

@@ -16,7 +16,8 @@ Scope {
 
             required property var modelData
             screen: modelData
-            visible: Meta.screenRoles[modelData.name] === "aux"
+            // Only show when Meta has resolved this screen as "aux".
+            visible: Meta.ready && Meta.screenRoles[modelData.name] === "aux"
 
             anchors.left: true
             anchors.top:  true
