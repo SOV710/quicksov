@@ -37,7 +37,7 @@ Item {
         id: label
         text: root._icon
         color: root._color
-        font.pixelSize: Theme.fontLabel
+        font.pixelSize: Theme.iconSize
         font.family: Theme.fontFamily
     }
 }

@@ -23,7 +23,7 @@ Item {
         id: label
         text: "󰂯"
         color: root._color
-        font.pixelSize: Theme.fontLabel
+        font.pixelSize: Theme.iconSize
         font.family: Theme.fontFamily
     }
 }

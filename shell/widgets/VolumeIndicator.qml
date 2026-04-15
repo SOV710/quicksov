@@ -27,7 +27,7 @@ Item {
         Text {
             text: root._icon
             color: Audio.muted ? Theme.fgMuted : Theme.fgPrimary
-            font.pixelSize: Theme.fontLabel
+            font.pixelSize: Theme.iconSize
             font.family: Theme.fontFamily
             anchors.verticalCenter: parent.verticalCenter
         }

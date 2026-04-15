@@ -27,8 +27,8 @@ Item {
 
     component TrayItem: Item {
         property var trayItem: null
-        width:  20
-        height: 20
+        width:  Theme.iconSize
+        height: Theme.iconSize
 
         Image {
             id: icon

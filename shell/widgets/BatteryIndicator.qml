@@ -38,7 +38,7 @@ Item {
         Text {
             text: root._icon
             color: root._color
-            font.pixelSize: Theme.fontLabel
+            font.pixelSize: Theme.iconSize
             font.family: Theme.fontFamily
             visible: Battery.present
             anchors.verticalCenter: parent.verticalCenter
