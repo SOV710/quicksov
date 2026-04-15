@@ -46,6 +46,13 @@ Singleton {
     readonly property int barPadY: 6
     readonly property int barRadius: 14
 
+    // Unified icon size for bar widgets and tray items (scales with barHeight)
+    function barIconSize(scale) {
+        var s = (scale !== undefined) ? scale : 1.0;
+        return Math.round(barHeight * 0.5 * s);
+    }
+    readonly property int iconSize: barIconSize()
+
     readonly property int auxCollapsedWidth: 0
     readonly property int auxTriggerZone: 3
     readonly property int auxTriggerDelayMs: 200
