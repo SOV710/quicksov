@@ -4,6 +4,8 @@
 [daemon]
 log_level = "info"
 # socket_path defaults to $XDG_RUNTIME_DIR/quicksov/daemon.sock
+# If you override it, export the same absolute path as QSOV_SOCKET before
+# starting quickshell so the QML IPC client can find qsovd.
 
 # ---------------------------------------------------------------------------
 # Screen role mapping
