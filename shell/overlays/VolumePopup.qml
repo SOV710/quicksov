@@ -110,12 +110,6 @@ Rectangle {
                 RowLayout {
                     width: parent.width
 
-                    SvgIcon {
-                        iconPath: root._iconPath(Audio.muted, Audio.volume)
-                        size: Theme.iconSize
-                        color: Audio.muted ? Theme.fgMuted : root._accentFor(Audio.volume)
-                    }
-
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 2
@@ -158,9 +152,9 @@ Rectangle {
 
                         SvgIcon {
                             anchors.centerIn: parent
-                            iconPath: Audio.muted ? "lucide/volume-2.svg" : "lucide/volume-x.svg"
+                            iconPath: root._iconPath(Audio.muted, Audio.volume)
                             size: Theme.iconSize
-                            color: Audio.muted ? Theme.fgMuted : Theme.fgSecondary
+                            color: Audio.muted ? Theme.fgMuted : root._accentFor(Audio.volume)
                         }
 
                         HoverHandler { id: muteHover }
@@ -401,10 +395,9 @@ Rectangle {
             liveValue = minimumValue + (_range * ratio);
         }
 
-        function _emitAdjusted() {
+        function _commitAdjusted() {
             var pct = Math.round(liveValue * 100);
-            if (pct === dragArea.lastSentPct) return;
-            dragArea.lastSentPct = pct;
+            if (pct === Math.round(modelValue * 100)) return;
             adjusted(liveValue);
         }
 
@@ -441,27 +434,29 @@ Rectangle {
         MouseArea {
             id: dragArea
 
-            property int lastSentPct: -1
-
             anchors.fill: parent
             hoverEnabled: true
+            preventStealing: true
             cursorShape: Qt.PointingHandCursor
 
             onPressed: function(mouse) {
                 slider._setFromX(mouse.x);
-                slider._emitAdjusted();
                 mouse.accepted = true;
             }
 
             onPositionChanged: function(mouse) {
                 if (!pressed) return;
                 slider._setFromX(mouse.x);
-                slider._emitAdjusted();
                 mouse.accepted = true;
             }
 
-            onReleased: lastSentPct = -1
-            onCanceled: lastSentPct = -1
+            onReleased: function(mouse) {
+                slider._setFromX(mouse.x);
+                slider._commitAdjusted();
+                mouse.accepted = true;
+            }
+
+            onCanceled: liveValue = modelValue
         }
     }
 }
