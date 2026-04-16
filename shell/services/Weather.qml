@@ -15,11 +15,15 @@ Singleton {
     property string lastError: ""
     property string status: "disconnected"
 
-    property bool available: false
+    property bool available: root.lastSuccessMs !== null
+    property string provider: ""
+    property string fetchStatus: "loading"
+    property int ttlSec: 0
     property var location: null
     property var current: null
     property var hourlyForecast: []
-    property var lastUpdatedMs: null
+    property var lastSuccessMs: null
+    property var errorInfo: null
     property string weatherError: ""
 
     function refresh() {
@@ -27,12 +31,17 @@ Singleton {
     }
 
     function _onSnapshot(payload) {
-        root.available      = payload.offline !== true;
+        root.provider       = payload.provider || "";
+        root.fetchStatus    = payload.status || "loading";
+        root.ttlSec         = typeof payload.ttl_sec === "number" ? payload.ttl_sec : 0;
         root.location       = payload.location || null;
         root.current        = payload.current || null;
         root.hourlyForecast = payload.hourly || [];
-        root.lastUpdatedMs  = payload.updated_at !== undefined ? payload.updated_at * 1000 : null;
-        root.weatherError   = payload.offline === true ? "offline" : "";
+        root.lastSuccessMs  = payload.last_success_at !== undefined && payload.last_success_at !== null
+            ? payload.last_success_at * 1000
+            : null;
+        root.errorInfo      = payload.error || null;
+        root.weatherError   = root.errorInfo && root.errorInfo.kind ? root.errorInfo.kind : "";
         root.ready  = true;
         root.status = "ok";
     }
@@ -42,11 +51,14 @@ Singleton {
         if (isConnected) {
             Client.subscribe("weather", root._onSnapshot);
         } else {
-            root.available = false;
+            root.provider = "";
+            root.fetchStatus = "loading";
+            root.ttlSec = 0;
             root.location = null;
             root.current = null;
             root.hourlyForecast = [];
-            root.lastUpdatedMs = null;
+            root.lastSuccessMs = null;
+            root.errorInfo = null;
             root.weatherError = "";
             root.ready  = false;
             root.status = "disconnected";
