@@ -64,7 +64,7 @@ Rectangle {
                 text: "Clear all"
                 color: Theme.accentBlue
                 font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontSmall
+                font.pixelSize: Theme.fontBody
 
                 MouseArea {
                     anchors.fill: parent
@@ -85,7 +85,7 @@ Rectangle {
                 text: "No notifications"
                 color: Theme.fgMuted
                 font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontSmall
+                font.pixelSize: Theme.fontBody
                 horizontalAlignment: Text.AlignHCenter
             }
         }
@@ -156,7 +156,7 @@ Rectangle {
                     text: notif ? notif.app_name : ""
                     color: card._accent
                     font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontMicro
+                    font.pixelSize: Theme.fontBody
                     font.weight: Theme.weightMedium
                     elide: Text.ElideRight
                     Layout.fillWidth: true
@@ -166,7 +166,7 @@ Rectangle {
                     text: root._timeLabel(notif ? notif.timestamp : 0)
                     color: Theme.fgMuted
                     font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontMicro
+                    font.pixelSize: Theme.fontBody
                     visible: notif && notif.timestamp > 0
                 }
 
@@ -189,7 +189,7 @@ Rectangle {
                 text: notif ? notif.summary : ""
                 color: Theme.fgPrimary
                 font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontSmall
+                font.pixelSize: Theme.fontBody
                 font.weight: Theme.weightMedium
                 elide: Text.ElideRight
                 width: parent.width
@@ -201,7 +201,7 @@ Rectangle {
                 text: notif ? notif.body : ""
                 color: Theme.fgSecondary
                 font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontMicro
+                font.pixelSize: Theme.fontBody
                 wrapMode: Text.WordWrap
                 maximumLineCount: 3
                 elide: Text.ElideRight
@@ -230,7 +230,7 @@ Rectangle {
                             text: modelData.label || ""
                             color: Theme.fgPrimary
                             font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontMicro
+                            font.pixelSize: Theme.fontBody
                         }
 
                         HoverHandler { id: actionBtn }
