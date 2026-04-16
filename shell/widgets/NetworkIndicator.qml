@@ -24,11 +24,14 @@ Item {
     readonly property int _signalPct: Network.signalPct
 
     readonly property string _iconPath: {
+        if (Network.wifiConnected) {
+            if (root._signalPct < 0) return "lucide/wifi.svg";
+            if (root._signalPct < 25) return "lucide/wifi-zero.svg";
+            if (root._signalPct < 50) return "lucide/wifi-low.svg";
+            if (root._signalPct < 75) return "lucide/wifi.svg";
+            return "lucide/wifi-high.svg";
+        }
         if (!root._connected) return "lucide/wifi-off.svg";
-        if (root._signalPct < 0) return "lucide/wifi.svg";
-        if (root._signalPct < 25) return "lucide/wifi-zero.svg";
-        if (root._signalPct < 50) return "lucide/wifi-low.svg";
-        if (root._signalPct < 75) return "lucide/wifi.svg";
         return "lucide/wifi-high.svg";
     }
 
