@@ -457,17 +457,25 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 ```json
 {
   "type": "object",
+  "required": ["provider","status","ttl_sec","location","current","hourly","last_success_at","error"],
   "properties": {
+    "provider": { "type": "string", "example": "open-meteo" },
+    "status": {
+      "type": "string",
+      "enum": ["loading","ready","refreshing","init_failed","refresh_failed"]
+    },
+    "ttl_sec": { "type": "integer", "minimum": 1, "description": "成功快照 TTL，前端据此决定何时丢弃旧成功数据" },
     "location": {
-      "type": "object",
+      "type": ["object","null"],
       "properties": {
         "name":      { "type": "string" },
         "latitude":  { "type": "number" },
         "longitude": { "type": "number" }
-      }
+      },
+      "required": ["name","latitude","longitude"]
     },
     "current": {
-      "type": "object",
+      "type": ["object","null"],
       "properties": {
         "temperature_c":  { "type": "number" },
         "apparent_c":     { "type": "number" },
@@ -476,12 +484,14 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
         "wmo_code":       { "type": "integer" },
         "icon":           { "type": "string", "description": "Lucide icon name, mapped from WMO" },
         "description":    { "type": "string" }
-      }
+      },
+      "required": ["temperature_c","apparent_c","humidity_pct","wind_kmh","wmo_code","icon","description"]
     },
     "hourly": {
       "type": "array",
       "items": {
         "type": "object",
+        "required": ["time","temperature_c","wmo_code"],
         "properties": {
           "time":          { "type": "string", "description": "ISO 8601" },
           "temperature_c": { "type": "number" },
@@ -489,8 +499,16 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
         }
       }
     },
-    "updated_at": { "type": "integer", "description": "unix ms" },
-    "offline":    { "type": "boolean" }
+    "last_success_at": { "type": ["integer","null"], "description": "unix sec；最近一次成功抓取时间" },
+    "error": {
+      "type": ["object","null"],
+      "required": ["kind","message","at"],
+      "properties": {
+        "kind":    { "type": "string", "enum": ["config","timeout","http","decode","internal"] },
+        "message": { "type": "string" },
+        "at":      { "type": "integer", "description": "unix sec" }
+      }
+    }
   }
 }
 ```
@@ -498,7 +516,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 **Actions**:
 - `refresh` — 立即重新拉取，payload `{}`
 
-**后端**: Open-Meteo HTTPS, 默认轮询 600s。
+**后端**: scheduler task + fetch worker；当前 provider 为 Open-Meteo HTTPS，默认轮询 600s，成功快照 TTL 固定为 1800s。失败刷新不会抹掉上一份成功数据，而是通过 `status` / `error` 让前端自行决定何时将旧数据视为过期。
 
 ---
 

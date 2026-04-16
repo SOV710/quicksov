@@ -683,9 +683,17 @@
     "weather": {
       "state_snapshot": {
         "type": "object",
+        "required": ["provider", "status", "ttl_sec", "location", "current", "hourly", "last_success_at", "error"],
         "properties": {
+          "provider": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["loading", "ready", "refreshing", "init_failed", "refresh_failed"]
+          },
+          "ttl_sec": { "type": "integer", "minimum": 1 },
           "location": {
-            "type": "object",
+            "type": ["object", "null"],
+            "required": ["name", "latitude", "longitude"],
             "properties": {
               "name": { "type": "string" },
               "latitude": { "type": "number" },
@@ -693,7 +701,8 @@
             }
           },
           "current": {
-            "type": "object",
+            "type": ["object", "null"],
+            "required": ["temperature_c", "apparent_c", "humidity_pct", "wind_kmh", "wmo_code", "icon", "description"],
             "properties": {
               "temperature_c": { "type": "number" },
               "apparent_c": { "type": "number" },
@@ -708,6 +717,7 @@
             "type": "array",
             "items": {
               "type": "object",
+              "required": ["time", "temperature_c", "wmo_code"],
               "properties": {
                 "time": { "type": "string" },
                 "temperature_c": { "type": "number" },
@@ -715,8 +725,19 @@
               }
             }
           },
-          "updated_at": { "type": "integer" },
-          "offline": { "type": "boolean" }
+          "last_success_at": { "type": ["integer", "null"] },
+          "error": {
+            "type": ["object", "null"],
+            "required": ["kind", "message", "at"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["config", "timeout", "http", "decode", "internal"]
+              },
+              "message": { "type": "string" },
+              "at": { "type": "integer" }
+            }
+          }
         }
       },
       "actions": {
@@ -725,7 +746,7 @@
           "response": { "type": "null" }
         }
       },
-      "backend": "Open-Meteo HTTPS, default poll 600s"
+      "backend": "scheduler + fetch worker, Open-Meteo HTTPS, default poll 600s, success TTL 1800s"
     },
 
     "theme": {
