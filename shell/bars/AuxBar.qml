@@ -11,81 +11,129 @@ Scope {
     Variants {
         model: Quickshell.screens
 
-        PanelWindow {
-            id: bar
+        Item {
+            id: root
 
             required property var modelData
-            screen: modelData
-            // Show on any screen that is not the designated main screen.
-            visible: Meta.ready && Meta.hasScreenRoles && Meta.screenRoles[modelData.name] !== "main"
-
-            anchors.left: true
-            anchors.top:  true
-            anchors.bottom: true
-
-            margins {
-                left:   0
-                top:    Theme.barOuterMargin
-                bottom: Theme.barOuterMargin
-            }
-
-            implicitWidth: bar.expanded ? Theme.auxExpandedWidth : Theme.auxTriggerZone
-            color: "transparent"
-
+            readonly property bool isAuxScreen: Meta.ready
+                                             && Meta.hasScreenRoles
+                                             && Meta.screenRoles[modelData.name] !== "main"
             property bool expanded: false
+            readonly property bool hoveringTrigger: triggerMouse.containsMouse
+            readonly property bool hoveringPanel: panelMouse.containsMouse
 
-            // Invisible trigger zone
-            Rectangle {
-                id: triggerZone
-                width:  Theme.auxTriggerZone
-                height: parent.height
-                color:  Qt.rgba(1, 1, 1, 0.01)
-
-                MouseArea {
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    onEntered: expandTimer.start()
-                    onExited: {
-                        expandTimer.stop();
-                        if (!bar.expanded) return;
-                        closeTimer.restart();
-                    }
+            function syncHoverState() {
+                if (root.hoveringTrigger) {
+                    closeTimer.stop();
+                    if (!root.expanded) openTimer.restart();
+                    return;
                 }
+
+                openTimer.stop();
+                if (root.expanded && !root.hoveringPanel) closeTimer.restart();
+                else closeTimer.stop();
             }
+
+            onHoveringTriggerChanged: root.syncHoverState()
+            onHoveringPanelChanged: root.syncHoverState()
+            onExpandedChanged: root.syncHoverState()
 
             Timer {
-                id: expandTimer
+                id: openTimer
                 interval: Theme.auxTriggerDelayMs
-                onTriggered: bar.expanded = true
+                onTriggered: root.expanded = true
             }
 
             Timer {
                 id: closeTimer
                 interval: Theme.powerCloseDelayMs
-                onTriggered: if (!panelMouse.containsMouse && !triggerMouse.containsMouse) bar.expanded = false
+                onTriggered: root.expanded = false
             }
 
-            MusicPanel {
-                id: musicPanel
-                visible: bar.expanded
-                width:   Theme.auxExpandedWidth
-                height:  parent.height - Theme.barOuterMargin * 2
-                y:       Theme.barOuterMargin
+            PanelWindow {
+                id: triggerWindow
 
-                onCloseRequested: bar.expanded = false
+                screen: root.modelData
+                visible: root.isAuxScreen
 
-                MouseArea {
-                    id: panelMouse
+                anchors.left: true
+                anchors.top: true
+                anchors.bottom: true
+
+                margins {
+                    left: 0
+                    top: Theme.barOuterMargin
+                    bottom: Theme.barOuterMargin
+                }
+
+                implicitWidth: Theme.auxTriggerZone
+                color: "transparent"
+                exclusiveZone: 0
+
+                Rectangle {
                     anchors.fill: parent
-                    acceptedButtons: Qt.NoButton
-                    hoverEnabled: true
-                    onEntered: closeTimer.stop()
-                    onExited: closeTimer.restart()
+                    color: Qt.rgba(1, 1, 1, 0.01)
+
+                    MouseArea {
+                        id: triggerMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        acceptedButtons: Qt.NoButton
+                    }
                 }
             }
 
-            Behavior on implicitWidth {
-                NumberAnimation { duration: Theme.motionNormal; easing.type: Easing.OutCubic }
+            PanelWindow {
+                id: panelWindow
+
+                screen: root.modelData
+                visible: root.isAuxScreen && (root.expanded || musicPanel.opacity > 0)
+
+                anchors.left: true
+                anchors.top: true
+                anchors.bottom: true
+
+                margins {
+                    left: 0
+                    top: Theme.barOuterMargin
+                    bottom: Theme.barOuterMargin
+                }
+
+                implicitWidth: Theme.auxExpandedWidth
+                color: "transparent"
+                exclusiveZone: 0
+
+                MusicPanel {
+                    id: musicPanel
+                    width: Theme.auxExpandedWidth
+                    height: parent.height - Theme.barOuterMargin * 2
+                    y: Theme.barOuterMargin
+                    x: root.expanded ? 0 : -width
+                    opacity: root.expanded ? Theme.opacityPanel : 0
+
+                    onCloseRequested: root.expanded = false
+
+                    Behavior on x {
+                        NumberAnimation {
+                            duration: root.expanded ? Theme.motionSlow : Theme.motionNormal
+                            easing.type: root.expanded ? Easing.OutCubic : Easing.InCubic
+                        }
+                    }
+
+                    Behavior on opacity {
+                        NumberAnimation {
+                            duration: root.expanded ? Theme.motionNormal : Theme.motionFast
+                            easing.type: root.expanded ? Easing.OutCubic : Easing.InCubic
+                        }
+                    }
+
+                    MouseArea {
+                        id: panelMouse
+                        anchors.fill: parent
+                        acceptedButtons: Qt.NoButton
+                        hoverEnabled: true
+                    }
+                }
             }
         }
     }
