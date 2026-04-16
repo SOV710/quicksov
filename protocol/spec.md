@@ -417,9 +417,10 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
     "focused_window": {
       "type": ["object","null"],
       "properties": {
-        "id":      { "type": "integer" },
-        "app_id":  { "type": "string" },
-        "title":   { "type": "string" }
+        "id":           { "type": "integer" },
+        "display_name": { "type": "string" },
+        "app_id":       { "type": "string" },
+        "title":        { "type": "string" }
       }
     }
   }
