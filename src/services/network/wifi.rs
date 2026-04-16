@@ -84,13 +84,14 @@ async fn connect_and_run(
     ctrl_path: &str,
     iface: &str,
 ) -> Result<(), WifiError> {
-    let sock = open_wpa_socket(ctrl_path).await?;
+    let cmd_sock = open_wpa_socket(ctrl_path, "cmd").await?;
+    let event_sock = open_wpa_socket(ctrl_path, "evt").await?;
 
-    // Attach to receive unsolicited events
-    wpa_cmd(&sock, "ATTACH").await?;
+    // Dedicated event socket avoids racing command replies against CTRL-EVENT frames.
+    wpa_expect_ok(&event_sock, "ATTACH").await?;
 
     // Initial status
-    let mut wifi_state = read_full_state(&sock, iface).await?;
+    let mut wifi_state = read_full_state(&cmd_sock, iface).await?;
     state_tx.send_replace(wifi_state.clone());
 
     let mut buf = vec![0u8; 4096];
@@ -101,9 +102,9 @@ async fn connect_and_run(
         tokio::select! {
             req = request_rx.recv() => {
                 let Some(req) = req else { break };
-                handle_request(req, &sock, state_tx, iface).await;
+                handle_request(req, &cmd_sock, state_tx, iface).await;
             }
-            result = sock.recv(&mut buf) => {
+            result = event_sock.recv(&mut buf) => {
                 match result {
                     Ok(n) => {
                         let msg = String::from_utf8_lossy(&buf[..n]);
@@ -111,7 +112,7 @@ async fn connect_and_run(
                             || msg.contains("CTRL-EVENT-CONNECTED")
                             || msg.contains("CTRL-EVENT-DISCONNECTED")
                         {
-                            if let Ok(new_state) = read_full_state(&sock, iface).await {
+                            if let Ok(new_state) = read_full_state(&cmd_sock, iface).await {
                                 wifi_state = new_state;
                                 state_tx.send_replace(wifi_state.clone());
                             }
@@ -124,7 +125,7 @@ async fn connect_and_run(
                 }
             }
             _ = poll_interval.tick() => {
-                if let Ok(new_state) = read_full_state(&sock, iface).await {
+                if let Ok(new_state) = read_full_state(&cmd_sock, iface).await {
                     if new_state != wifi_state {
                         wifi_state = new_state;
                         state_tx.send_replace(wifi_state.clone());
@@ -140,12 +141,13 @@ async fn connect_and_run(
 // Socket helpers
 // ---------------------------------------------------------------------------
 
-async fn open_wpa_socket(ctrl_path: &str) -> Result<UnixDatagram, WifiError> {
+async fn open_wpa_socket(ctrl_path: &str, kind: &str) -> Result<UnixDatagram, WifiError> {
     let uid = nix::unistd::getuid();
     let client_path = PathBuf::from(format!(
-        "/run/user/{}/quicksov_wpa_ctrl_{}",
+        "/run/user/{}/quicksov_wpa_ctrl_{}_{}",
         uid,
-        std::process::id()
+        std::process::id(),
+        kind
     ));
     // Remove stale socket if exists
     let _ = std::fs::remove_file(&client_path);
@@ -169,6 +171,28 @@ async fn wpa_cmd(sock: &UnixDatagram, cmd: &str) -> Result<String, WifiError> {
         .map_err(|e| WifiError::Io(e.to_string()))?;
 
     Ok(String::from_utf8_lossy(&buf[..n]).to_string())
+}
+
+async fn wpa_expect_ok(sock: &UnixDatagram, cmd: &str) -> Result<(), WifiError> {
+    let reply = wpa_cmd(sock, cmd).await?;
+    if reply.trim() == "OK" {
+        return Ok(());
+    }
+    Err(WifiError::CommandFailed {
+        cmd: cmd.to_string(),
+        reply: reply.trim().to_string(),
+    })
+}
+
+fn parse_network_id(reply: &str, cmd: &str) -> Result<String, WifiError> {
+    let trimmed = reply.trim();
+    if trimmed.parse::<u32>().is_ok() {
+        return Ok(trimmed.to_string());
+    }
+    Err(WifiError::CommandFailed {
+        cmd: cmd.to_string(),
+        reply: trimmed.to_string(),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -370,7 +394,7 @@ async fn handle_request(
 }
 
 async fn handle_scan(sock: &UnixDatagram) -> Result<Value, ServiceError> {
-    wpa_cmd(sock, "SCAN")
+    wpa_expect_ok(sock, "SCAN")
         .await
         .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
     Ok(Value::Null)
@@ -382,33 +406,36 @@ async fn handle_connect(payload: &Value, sock: &UnixDatagram) -> Result<Value, S
     })?;
     let psk = extract_str(payload, "psk");
     let save = extract_bool(payload, "save").unwrap_or(false);
+    let ssid = escape_wpa_string(ssid)?;
+    let psk = psk.map(escape_wpa_string).transpose()?;
 
     // Add network
     let id_str = wpa_cmd(sock, "ADD_NETWORK")
         .await
         .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
-    let id = id_str.trim();
+    let id = parse_network_id(&id_str, "ADD_NETWORK")
+        .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
 
-    wpa_cmd(sock, &format!("SET_NETWORK {id} ssid \"{ssid}\""))
+    wpa_expect_ok(sock, &format!("SET_NETWORK {id} ssid \"{ssid}\""))
         .await
         .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
 
     if let Some(key) = psk {
-        wpa_cmd(sock, &format!("SET_NETWORK {id} psk \"{key}\""))
+        wpa_expect_ok(sock, &format!("SET_NETWORK {id} psk \"{key}\""))
             .await
             .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
     } else {
-        wpa_cmd(sock, &format!("SET_NETWORK {id} key_mgmt NONE"))
+        wpa_expect_ok(sock, &format!("SET_NETWORK {id} key_mgmt NONE"))
             .await
             .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
     }
 
-    wpa_cmd(sock, &format!("SELECT_NETWORK {id}"))
+    wpa_expect_ok(sock, &format!("SELECT_NETWORK {id}"))
         .await
         .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
 
     if save {
-        wpa_cmd(sock, "SAVE_CONFIG")
+        wpa_expect_ok(sock, "SAVE_CONFIG")
             .await
             .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
     }
@@ -417,7 +444,7 @@ async fn handle_connect(payload: &Value, sock: &UnixDatagram) -> Result<Value, S
 }
 
 async fn handle_disconnect(sock: &UnixDatagram) -> Result<Value, ServiceError> {
-    wpa_cmd(sock, "DISCONNECT")
+    wpa_expect_ok(sock, "DISCONNECT")
         .await
         .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
     Ok(Value::Null)
@@ -436,10 +463,10 @@ async fn handle_forget(payload: &Value, sock: &UnixDatagram) -> Result<Value, Se
     for line in list.lines().skip(1) {
         let parts: Vec<&str> = line.split('\t').collect();
         if parts.len() >= 2 && parts[1] == ssid {
-            wpa_cmd(sock, &format!("REMOVE_NETWORK {}", parts[0]))
+            wpa_expect_ok(sock, &format!("REMOVE_NETWORK {}", parts[0]))
                 .await
                 .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
-            wpa_cmd(sock, "SAVE_CONFIG")
+            wpa_expect_ok(sock, "SAVE_CONFIG")
                 .await
                 .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
             return Ok(Value::Null);
@@ -463,6 +490,24 @@ fn extract_bool(v: &Value, key: &str) -> Option<bool> {
     v.as_object()?.get(key)?.as_bool()
 }
 
+fn escape_wpa_string(value: &str) -> Result<String, ServiceError> {
+    if value.contains(['\n', '\r', '\0']) {
+        return Err(ServiceError::ActionPayload {
+            msg: "wifi strings must not contain control newlines or NUL".to_string(),
+        });
+    }
+
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            _ => escaped.push(ch),
+        }
+    }
+    Ok(escaped)
+}
+
 // ---------------------------------------------------------------------------
 // Error type
 // ---------------------------------------------------------------------------
@@ -473,4 +518,6 @@ enum WifiError {
     Io(String),
     #[error("wpa_supplicant command timeout")]
     Timeout,
+    #[error("wpa_supplicant command failed: {cmd} -> {reply}")]
+    CommandFailed { cmd: String, reply: String },
 }
