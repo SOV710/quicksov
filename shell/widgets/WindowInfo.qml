@@ -8,24 +8,61 @@ import "../services"
 Item {
     id: root
 
-    implicitWidth: Math.min(label.implicitWidth, 200)
-    implicitHeight: label.implicitHeight
+    property real maxWidth: 320
 
-    property string _title: {
-        if (!Niri.ready || !Niri.focusedWindow) return "";
-        var w = Niri.focusedWindow;
-        return w.title || w.app_id || "";
+    width: Math.min(implicitWidth, maxWidth)
+    implicitWidth: content.implicitWidth
+    implicitHeight: content.implicitHeight
+
+    readonly property var _window: (Niri.ready ? Niri.focusedWindow : null)
+    readonly property bool _hasWindow: !!_window
+    readonly property string _appName: {
+        if (!root._hasWindow) return "No window";
+        return root._window.display_name || root._window.app_id || "Unknown";
+    }
+    readonly property string _title: {
+        if (!root._hasWindow) return "No focused window";
+        return root._window.title || root._window.app_id || "Untitled";
     }
 
-    Text {
-        id: label
+    Row {
+        id: content
         anchors.fill: parent
-        text: root._title
-        color: Theme.fgSecondary
-        font.family: Theme.fontFamily
-        font.pixelSize: Theme.fontSmall
-        font.weight: Theme.weightRegular
-        elide: Text.ElideRight
-        verticalAlignment: Text.AlignVCenter
+        spacing: Theme.spaceXs
+
+        Text {
+            id: appLabel
+            width: Math.min(implicitWidth, root.width)
+            text: root._appName
+            color: root._hasWindow ? Theme.fgSecondary : Theme.fgMuted
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontSmall
+            font.weight: Theme.weightMedium
+            elide: Text.ElideRight
+            verticalAlignment: Text.AlignVCenter
+        }
+
+        Text {
+            id: separator
+            visible: root.width > 0
+            text: "|"
+            color: Theme.fgMuted
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontSmall
+            font.weight: Theme.weightRegular
+            verticalAlignment: Text.AlignVCenter
+        }
+
+        Text {
+            id: titleLabel
+            width: Math.max(0, root.width - appLabel.width - separator.width - content.spacing * 2)
+            text: root._title
+            color: root._hasWindow ? Theme.fgSecondary : Theme.fgMuted
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontSmall
+            font.weight: Theme.weightRegular
+            elide: Text.ElideRight
+            verticalAlignment: Text.AlignVCenter
+        }
     }
 }

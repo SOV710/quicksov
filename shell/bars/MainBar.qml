@@ -65,15 +65,24 @@ Scope {
                         leftMargin:     Theme.barPadX
                         verticalCenter: parent.verticalCenter
                     }
-                    spacing: Theme.spaceSm
+                    spacing: Theme.spaceLg
 
                     WorkspaceStrip {
+                        id: workspaceStrip
                         outputName: bar.screen ? bar.screen.name : ""
                         anchors.verticalCenter: parent.verticalCenter
                     }
 
                     WindowInfo {
+                        id: windowInfo
                         anchors.verticalCenter: parent.verticalCenter
+                        maxWidth: Math.max(
+                            0,
+                            Math.floor(
+                                (barRect.width / 2) - (clockWidget.implicitWidth / 2) - Theme.spaceLg
+                                - (Theme.barPadX + workspaceStrip.width + leftZone.spacing)
+                            )
+                        )
                     }
                 }
 
