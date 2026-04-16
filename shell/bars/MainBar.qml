@@ -32,13 +32,16 @@ Scope {
                 right: Theme.barOuterMargin
             }
 
-            readonly property bool _anyPopupOpen: clockPopup.popupVisible || notifCenter.visible
+            readonly property bool _anyPopupOpen: clockPopup.popupVisible
+                                                 || notifCenter.visible
+                                                 || volumePopup.visible
 
             // Expand to cover bar + whichever popup is open (tallest wins)
             property int _popupHeight: {
                 var h = 0;
                 if (clockPopup.popupVisible) h = Math.max(h, 180 + Theme.spaceXs);
                 if (notifCenter.visible)     h = Math.max(h, notifCenter.implicitHeight + Theme.spaceXs);
+                if (volumePopup.visible)     h = Math.max(h, volumePopup.implicitHeight + Theme.spaceXs);
                 return h;
             }
             implicitHeight: bar._anyPopupOpen && bar.screen
@@ -58,6 +61,7 @@ Scope {
                 onClicked: function() {
                     clockPopup.popupVisible = false;
                     notifCenter.visible = false;
+                    volumePopup.visible = false;
                 }
             }
 
@@ -111,6 +115,7 @@ Scope {
                     anchors.centerIn: parent
                     onOpenPopup: {
                         notifCenter.visible = false;
+                        volumePopup.visible = false;
                         clockPopup.popupVisible = !clockPopup.popupVisible;
                     }
                 }
@@ -130,11 +135,20 @@ Scope {
                         anchors.verticalCenter: parent.verticalCenter
                         onToggled: {
                             clockPopup.popupVisible = false;
+                            volumePopup.visible = false;
                             notifCenter.visible = !notifCenter.visible;
                         }
                     }
 
-                    VolumeIndicator   { anchors.verticalCenter: parent.verticalCenter }
+                    VolumeIndicator {
+                        id: volumeWidget
+                        anchors.verticalCenter: parent.verticalCenter
+                        onClicked: {
+                            clockPopup.popupVisible = false;
+                            notifCenter.visible = false;
+                            volumePopup.visible = !volumePopup.visible;
+                        }
+                    }
                     BluetoothIndicator{ anchors.verticalCenter: parent.verticalCenter }
                     NetworkIndicator  { anchors.verticalCenter: parent.verticalCenter }
                     BatteryIndicator  { anchors.verticalCenter: parent.verticalCenter }
@@ -163,6 +177,30 @@ Scope {
                     right:      barRect.right
                     rightMargin: Theme.barPadX
                 }
+            }
+
+            Item {
+                id: volumePopupAnchor
+                // Avoid mapToItem() here: the JS call does not reliably track the
+                // Row's post-layout geometry updates, which can leave the popup
+                // anchored near x=0. Bind directly to the observable layout chain.
+                x: barRect.x + rightZone.x + volumeWidget.x
+                y: barRect.y + rightZone.y + volumeWidget.y
+                width: volumeWidget ? volumeWidget.width : 0
+                height: volumeWidget ? volumeWidget.height : 0
+                visible: false
+            }
+
+            VolumePopup {
+                id: volumePopup
+                z: 2
+                visible: false
+                readonly property real _preferredX: volumePopupAnchor.x + (volumePopupAnchor.width - width) / 2
+                readonly property real _minX: barRect.x + Theme.barPadX
+                readonly property real _maxX: Math.max(_minX, barRect.x + barRect.width - Theme.barPadX - width)
+
+                x: Math.max(_minX, Math.min(_preferredX, _maxX))
+                y: barRect.y + barRect.height + Theme.spaceXs
             }
         }
     }
