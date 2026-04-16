@@ -43,7 +43,14 @@ pub fn spawn(
     let (state_tx, state_rx) = watch::channel(initial_snapshot);
     let (request_tx, request_rx) = mpsc::channel(16);
 
-    tokio::spawn(run(request_rx, state_tx));
+    tokio::spawn(run(
+        request_rx,
+        state_tx,
+        started_at,
+        enabled_services,
+        screens_roles,
+        power_actions,
+    ));
 
     ServiceHandle {
         request_tx,
@@ -58,13 +65,31 @@ pub fn spawn(
 
 async fn run(
     mut request_rx: mpsc::Receiver<ServiceRequest>,
-    // Held to keep the watch channel open for subscribers; never written after init.
-    _state_tx: watch::Sender<Value>,
+    state_tx: watch::Sender<Value>,
+    started_at: Instant,
+    enabled_services: Vec<String>,
+    screens_roles: std::collections::HashMap<String, String>,
+    power_actions: std::collections::HashMap<String, bool>,
 ) {
     info!("meta service started");
+    let mut tick = tokio::time::interval(std::time::Duration::from_secs(1));
+    tick.tick().await;
 
-    while let Some(req) = request_rx.recv().await {
-        dispatch_request(req);
+    loop {
+        tokio::select! {
+            req = request_rx.recv() => {
+                let Some(req) = req else { break };
+                dispatch_request(req);
+            }
+            _ = tick.tick() => {
+                state_tx.send_replace(build_snapshot(
+                    started_at,
+                    &enabled_services,
+                    &screens_roles,
+                    &power_actions,
+                ));
+            }
+        }
     }
 
     info!("meta service stopped");

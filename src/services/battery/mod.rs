@@ -98,6 +98,8 @@ async fn run_connected(
         .receive_signal("PropertiesChanged")
         .await
         .map_err(|e| BatteryError::Dbus(e.to_string()))?;
+    let mut poll = tokio::time::interval(std::time::Duration::from_secs(10));
+    poll.tick().await;
 
     use futures::StreamExt;
     loop {
@@ -108,6 +110,10 @@ async fn run_connected(
             }
             msg = device_changes.next() => {
                 if msg.is_none() { break; }
+                let snap = read_full_snapshot(&upower, &device, &pp_proxy).await;
+                state_tx.send_replace(snap);
+            }
+            _ = poll.tick() => {
                 let snap = read_full_snapshot(&upower, &device, &pp_proxy).await;
                 state_tx.send_replace(snap);
             }

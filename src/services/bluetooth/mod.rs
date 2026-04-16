@@ -5,6 +5,7 @@
 //! `bluetooth` service — BlueZ D-Bus backend.
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use serde_json::Value;
 use tokio::sync::{mpsc, watch};
@@ -97,6 +98,8 @@ async fn connect_and_run(
 
     let mut added = obj_mgr.receive_interfaces_added().await?;
     let mut removed = obj_mgr.receive_interfaces_removed().await?;
+    let mut poll = tokio::time::interval(Duration::from_secs(5));
+    poll.tick().await;
 
     loop {
         tokio::select! {
@@ -118,6 +121,12 @@ async fn connect_and_run(
             }
             signal = removed.next() => {
                 if signal.is_none() { break; }
+                if let Ok(new_state) = scan_objects(&obj_mgr).await {
+                    bt_state = new_state;
+                    state_tx.send_replace(build_snapshot(&bt_state));
+                }
+            }
+            _ = poll.tick() => {
                 if let Ok(new_state) = scan_objects(&obj_mgr).await {
                     bt_state = new_state;
                     state_tx.send_replace(build_snapshot(&bt_state));
