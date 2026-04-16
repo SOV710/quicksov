@@ -5,18 +5,17 @@
 //! `bluetooth` service — BlueZ D-Bus backend.
 
 use std::collections::HashMap;
-use std::time::Duration;
 
+use futures::StreamExt;
 use serde_json::Value;
 use tokio::sync::{mpsc, watch};
 use tracing::{info, warn};
-use zbus::zvariant::OwnedValue;
+use zbus::zvariant::{OwnedObjectPath, OwnedValue};
+use zbus::{message::Type as MessageType, MatchRule, MessageStream};
 
 use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
 use crate::config::Config;
 use crate::util::json_map;
-
-use futures::StreamExt;
 
 /// Spawn the `bluetooth` service and return its [`ServiceHandle`].
 pub fn spawn(_cfg: &Config) -> ServiceHandle {
@@ -45,11 +44,17 @@ fn unavailable_snapshot() -> Value {
 // Internal state
 // ---------------------------------------------------------------------------
 
+#[derive(Default)]
 struct BtState {
+    adapter_path: Option<String>,
+    adapters: HashMap<String, BtAdapter>,
+    devices: HashMap<String, BtDevice>,
+}
+
+#[derive(Default)]
+struct BtAdapter {
     powered: bool,
     discovering: bool,
-    adapter_path: Option<String>,
-    devices: HashMap<String, BtDevice>,
 }
 
 struct BtDevice {
@@ -61,6 +66,21 @@ struct BtDevice {
     trusted: bool,
     battery: Option<i64>,
     path: String,
+}
+
+impl BtDevice {
+    fn placeholder(path: &str) -> Self {
+        Self {
+            address: String::new(),
+            name: String::new(),
+            icon: String::new(),
+            paired: false,
+            connected: false,
+            trusted: false,
+            battery: None,
+            path: path.to_string(),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -96,45 +116,81 @@ async fn connect_and_run(
     let mut bt_state = scan_objects(&obj_mgr).await?;
     state_tx.send_replace(build_snapshot(&bt_state));
 
-    let mut added = obj_mgr.receive_interfaces_added().await?;
-    let mut removed = obj_mgr.receive_interfaces_removed().await?;
-    let mut poll = tokio::time::interval(Duration::from_secs(5));
-    poll.tick().await;
+    let mut added = signal_stream(
+        &conn,
+        MatchRule::builder()
+            .msg_type(MessageType::Signal)
+            .sender("org.bluez")?
+            .interface("org.freedesktop.DBus.ObjectManager")?
+            .member("InterfacesAdded")?
+            .path("/")?
+            .build(),
+    )
+    .await?;
+    let mut removed = signal_stream(
+        &conn,
+        MatchRule::builder()
+            .msg_type(MessageType::Signal)
+            .sender("org.bluez")?
+            .interface("org.freedesktop.DBus.ObjectManager")?
+            .member("InterfacesRemoved")?
+            .path("/")?
+            .build(),
+    )
+    .await?;
+    let mut changed = signal_stream(
+        &conn,
+        MatchRule::builder()
+            .msg_type(MessageType::Signal)
+            .sender("org.bluez")?
+            .interface("org.freedesktop.DBus.Properties")?
+            .member("PropertiesChanged")?
+            .path_namespace("/org/bluez")?
+            .build(),
+    )
+    .await?;
 
     loop {
         tokio::select! {
             req = request_rx.recv() => {
                 let Some(req) = req else { break };
                 handle_request(req, &conn, &bt_state).await;
-                // Re-scan after actions
+                // Keep local actions strongly consistent even if BlueZ coalesces signals.
                 if let Ok(new_state) = scan_objects(&obj_mgr).await {
                     bt_state = new_state;
                     state_tx.send_replace(build_snapshot(&bt_state));
                 }
             }
             signal = added.next() => {
-                if signal.is_none() { break; }
-                if let Ok(new_state) = scan_objects(&obj_mgr).await {
-                    bt_state = new_state;
-                    state_tx.send_replace(build_snapshot(&bt_state));
-                }
+                let Some(signal) = signal else { break };
+                let msg = signal?;
+                apply_interfaces_added_message(&mut bt_state, &msg)?;
+                state_tx.send_replace(build_snapshot(&bt_state));
             }
             signal = removed.next() => {
-                if signal.is_none() { break; }
-                if let Ok(new_state) = scan_objects(&obj_mgr).await {
-                    bt_state = new_state;
-                    state_tx.send_replace(build_snapshot(&bt_state));
-                }
+                let Some(signal) = signal else { break };
+                let msg = signal?;
+                apply_interfaces_removed_message(&mut bt_state, &msg)?;
+                state_tx.send_replace(build_snapshot(&bt_state));
             }
-            _ = poll.tick() => {
-                if let Ok(new_state) = scan_objects(&obj_mgr).await {
-                    bt_state = new_state;
-                    state_tx.send_replace(build_snapshot(&bt_state));
-                }
+            signal = changed.next() => {
+                let Some(signal) = signal else { break };
+                let msg = signal?;
+                apply_properties_changed_message(&mut bt_state, &msg)?;
+                state_tx.send_replace(build_snapshot(&bt_state));
             }
         }
     }
     Ok(())
+}
+
+async fn signal_stream(
+    conn: &zbus::Connection,
+    rule: MatchRule<'static>,
+) -> Result<MessageStream, BtError> {
+    MessageStream::for_match_rule(rule, conn, None)
+        .await
+        .map_err(BtError::Zbus)
 }
 
 // ---------------------------------------------------------------------------
@@ -147,59 +203,246 @@ async fn scan_objects(obj_mgr: &zbus::fdo::ObjectManagerProxy<'_>) -> Result<BtS
         .await
         .map_err(|e| BtError::Dbus(e.to_string()))?;
 
-    let mut state = BtState {
-        powered: false,
-        discovering: false,
-        adapter_path: None,
-        devices: HashMap::new(),
-    };
+    let mut state = BtState::default();
 
     for (path, ifaces) in &objects {
-        if let Some(adapter_props) = ifaces.get("org.bluez.Adapter1") {
-            state.adapter_path = Some(path.to_string());
-            state.powered = get_owned_bool(adapter_props, "Powered");
-            state.discovering = get_owned_bool(adapter_props, "Discovering");
-        }
-
-        if let Some(dev_props) = ifaces.get("org.bluez.Device1") {
-            let address = get_owned_string(dev_props, "Address");
-            let dev = BtDevice {
-                address: address.clone(),
-                name: get_owned_string(dev_props, "Name"),
-                icon: get_owned_string(dev_props, "Icon"),
-                paired: get_owned_bool(dev_props, "Paired"),
-                connected: get_owned_bool(dev_props, "Connected"),
-                trusted: get_owned_bool(dev_props, "Trusted"),
-                battery: ifaces
-                    .get("org.bluez.Battery1")
-                    .and_then(|bp| get_owned_u8(bp, "Percentage"))
-                    .map(|v| v as i64),
-                path: path.to_string(),
-            };
-            state.devices.insert(address, dev);
+        let path = path.to_string();
+        for (iface, props) in ifaces {
+            apply_interface_properties(&mut state, &path, iface.as_str(), props);
         }
     }
 
+    sync_active_adapter(&mut state);
     Ok(state)
 }
 
-fn get_owned_bool(props: &HashMap<String, OwnedValue>, key: &str) -> bool {
-    props
-        .get(key)
-        .and_then(|v| bool::try_from(v).ok())
-        .unwrap_or(false)
+fn apply_interfaces_added_message(state: &mut BtState, msg: &zbus::Message) -> Result<(), BtError> {
+    let (path, ifaces): (
+        OwnedObjectPath,
+        HashMap<String, HashMap<String, OwnedValue>>,
+    ) = msg
+        .body()
+        .deserialize()
+        .map_err(|e| BtError::Dbus(e.to_string()))?;
+    let path = path.to_string();
+    for (iface, props) in ifaces {
+        apply_interface_properties(state, &path, &iface, &props);
+    }
+    sync_active_adapter(state);
+    Ok(())
 }
 
-fn get_owned_string(props: &HashMap<String, OwnedValue>, key: &str) -> String {
-    props
-        .get(key)
-        .and_then(|v| <&str>::try_from(v).ok())
-        .map(|s| s.to_string())
-        .unwrap_or_default()
+fn apply_interfaces_removed_message(
+    state: &mut BtState,
+    msg: &zbus::Message,
+) -> Result<(), BtError> {
+    let (path, ifaces): (OwnedObjectPath, Vec<String>) = msg
+        .body()
+        .deserialize()
+        .map_err(|e| BtError::Dbus(e.to_string()))?;
+    let path = path.to_string();
+    for iface in ifaces {
+        remove_interface(state, &path, &iface);
+    }
+    sync_active_adapter(state);
+    Ok(())
 }
 
-fn get_owned_u8(props: &HashMap<String, OwnedValue>, key: &str) -> Option<u8> {
-    props.get(key).and_then(|v| u8::try_from(v).ok())
+fn apply_properties_changed_message(
+    state: &mut BtState,
+    msg: &zbus::Message,
+) -> Result<(), BtError> {
+    let path = msg
+        .header()
+        .path()
+        .ok_or_else(|| BtError::Dbus("PropertiesChanged without object path".to_string()))?
+        .to_string();
+    let (iface, changed, invalidated): (String, HashMap<String, OwnedValue>, Vec<String>) = msg
+        .body()
+        .deserialize()
+        .map_err(|e| BtError::Dbus(e.to_string()))?;
+    apply_interface_change(state, &path, &iface, &changed, &invalidated);
+    sync_active_adapter(state);
+    Ok(())
+}
+
+fn apply_interface_properties(
+    state: &mut BtState,
+    path: &str,
+    iface: &str,
+    props: &HashMap<String, OwnedValue>,
+) {
+    match iface {
+        "org.bluez.Adapter1" => apply_adapter_props(state, path, props),
+        "org.bluez.Device1" => apply_device_props(state, path, props),
+        "org.bluez.Battery1" => apply_battery_props(state, path, props),
+        _ => {}
+    }
+}
+
+fn apply_interface_change(
+    state: &mut BtState,
+    path: &str,
+    iface: &str,
+    changed: &HashMap<String, OwnedValue>,
+    invalidated: &[String],
+) {
+    match iface {
+        "org.bluez.Adapter1" => apply_adapter_change(state, path, changed, invalidated),
+        "org.bluez.Device1" => apply_device_change(state, path, changed, invalidated),
+        "org.bluez.Battery1" => apply_battery_change(state, path, changed, invalidated),
+        _ => {}
+    }
+}
+
+fn apply_adapter_props(state: &mut BtState, path: &str, props: &HashMap<String, OwnedValue>) {
+    let adapter = state.adapters.entry(path.to_string()).or_default();
+    if let Some(powered) = owned_prop::<bool>(props, "Powered") {
+        adapter.powered = powered;
+    }
+    if let Some(discovering) = owned_prop::<bool>(props, "Discovering") {
+        adapter.discovering = discovering;
+    }
+    if state.adapter_path.is_none() {
+        state.adapter_path = Some(path.to_string());
+    }
+}
+
+fn apply_device_props(state: &mut BtState, path: &str, props: &HashMap<String, OwnedValue>) {
+    let device = state
+        .devices
+        .entry(path.to_string())
+        .or_insert_with(|| BtDevice::placeholder(path));
+    if let Some(address) = owned_prop::<String>(props, "Address") {
+        device.address = address;
+    }
+    if let Some(name) = device_name(props) {
+        device.name = name;
+    }
+    if let Some(icon) = owned_prop::<String>(props, "Icon") {
+        device.icon = icon;
+    }
+    if let Some(paired) = owned_prop::<bool>(props, "Paired") {
+        device.paired = paired;
+    }
+    if let Some(connected) = owned_prop::<bool>(props, "Connected") {
+        device.connected = connected;
+    }
+    if let Some(trusted) = owned_prop::<bool>(props, "Trusted") {
+        device.trusted = trusted;
+    }
+}
+
+fn apply_battery_props(state: &mut BtState, path: &str, props: &HashMap<String, OwnedValue>) {
+    let device = state
+        .devices
+        .entry(path.to_string())
+        .or_insert_with(|| BtDevice::placeholder(path));
+    if let Some(percentage) = owned_prop::<u8>(props, "Percentage") {
+        device.battery = Some(i64::from(percentage));
+    }
+}
+
+fn apply_adapter_change(
+    state: &mut BtState,
+    path: &str,
+    changed: &HashMap<String, OwnedValue>,
+    invalidated: &[String],
+) {
+    apply_adapter_props(state, path, changed);
+    let adapter = state.adapters.entry(path.to_string()).or_default();
+    for key in invalidated {
+        match key.as_str() {
+            "Powered" => adapter.powered = false,
+            "Discovering" => adapter.discovering = false,
+            _ => {}
+        }
+    }
+}
+
+fn apply_device_change(
+    state: &mut BtState,
+    path: &str,
+    changed: &HashMap<String, OwnedValue>,
+    invalidated: &[String],
+) {
+    apply_device_props(state, path, changed);
+    let device = state
+        .devices
+        .entry(path.to_string())
+        .or_insert_with(|| BtDevice::placeholder(path));
+    for key in invalidated {
+        match key.as_str() {
+            "Address" => device.address.clear(),
+            "Name" | "Alias" => device.name.clear(),
+            "Icon" => device.icon.clear(),
+            "Paired" => device.paired = false,
+            "Connected" => device.connected = false,
+            "Trusted" => device.trusted = false,
+            _ => {}
+        }
+    }
+}
+
+fn apply_battery_change(
+    state: &mut BtState,
+    path: &str,
+    changed: &HashMap<String, OwnedValue>,
+    invalidated: &[String],
+) {
+    apply_battery_props(state, path, changed);
+    if invalidated.iter().any(|key| key == "Percentage") {
+        let device = state
+            .devices
+            .entry(path.to_string())
+            .or_insert_with(|| BtDevice::placeholder(path));
+        device.battery = None;
+    }
+}
+
+fn remove_interface(state: &mut BtState, path: &str, iface: &str) {
+    match iface {
+        "org.bluez.Adapter1" => {
+            state.adapters.remove(path);
+            if state.adapter_path.as_deref() == Some(path) {
+                state.adapter_path = None;
+            }
+        }
+        "org.bluez.Device1" => {
+            state.devices.remove(path);
+        }
+        "org.bluez.Battery1" => {
+            if let Some(device) = state.devices.get_mut(path) {
+                device.battery = None;
+            }
+        }
+        _ => {}
+    }
+}
+
+fn sync_active_adapter(state: &mut BtState) {
+    let current_valid = state
+        .adapter_path
+        .as_ref()
+        .map(|path| state.adapters.contains_key(path))
+        .unwrap_or(false);
+    if current_valid {
+        return;
+    }
+    state.adapter_path = state.adapters.keys().min().cloned();
+}
+
+fn device_name(props: &HashMap<String, OwnedValue>) -> Option<String> {
+    owned_prop::<String>(props, "Name").or_else(|| owned_prop::<String>(props, "Alias"))
+}
+
+fn owned_prop<T>(props: &HashMap<String, OwnedValue>, key: &str) -> Option<T>
+where
+    T: TryFrom<OwnedValue>,
+{
+    props
+        .get(key)
+        .and_then(|value| T::try_from(value.clone()).ok())
 }
 
 // ---------------------------------------------------------------------------
@@ -207,11 +450,27 @@ fn get_owned_u8(props: &HashMap<String, OwnedValue>, key: &str) -> Option<u8> {
 // ---------------------------------------------------------------------------
 
 fn build_snapshot(state: &BtState) -> Value {
-    let devs: Vec<Value> = state.devices.values().map(device_to_value).collect();
+    let devs: Vec<Value> = state
+        .devices
+        .values()
+        .filter(|device| !device.address.is_empty())
+        .map(device_to_value)
+        .collect();
+
+    let adapter = state
+        .adapter_path
+        .as_ref()
+        .and_then(|path| state.adapters.get(path));
 
     json_map([
-        ("powered", Value::Bool(state.powered)),
-        ("discovering", Value::Bool(state.discovering)),
+        (
+            "powered",
+            Value::Bool(adapter.map(|adapter| adapter.powered).unwrap_or(false)),
+        ),
+        (
+            "discovering",
+            Value::Bool(adapter.map(|adapter| adapter.discovering).unwrap_or(false)),
+        ),
         ("devices", Value::Array(devs)),
     ])
 }
@@ -341,7 +600,8 @@ fn adapter_path(state: &BtState) -> Result<String, ServiceError> {
 fn find_device<'a>(state: &'a BtState, address: &str) -> Result<&'a BtDevice, ServiceError> {
     state
         .devices
-        .get(address)
+        .values()
+        .find(|device| device.address == address)
         .ok_or_else(|| ServiceError::ActionPayload {
             msg: format!("device '{address}' not found"),
         })
