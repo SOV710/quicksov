@@ -169,7 +169,7 @@ server → client:  HelloAck  { server_version, capabilities, session_id }
 | `mpris` | MPRIS 播放器发现与控制 |
 | `notification` | Freedesktop notification server |
 | `niri` | Niri workspace、window、action |
-| `weather` | Open-Meteo 天气缓存 |
+| `weather` | Open-Meteo 天气 scheduler / worker 与快照缓存 |
 | `theme` | design-tokens.toml 的内容，启动时推送，热重载时更新 |
 | `meta` | daemon 自身状态（版本、uptime、service 健康）；快照包含 `screens.roles` 字段（ADR-007），供 QML 侧无硬编码地分配主/副屏职责 |
 
@@ -296,10 +296,12 @@ qsovd/                              # Rust crate
     │   ├── niri/
     │   │   └── mod.rs              # niri IPC event stream
     │   └── weather/
-    │       └── mod.rs              # Open-Meteo HTTP client + 缓存
+    │       └── mod.rs              # scheduler + fetch worker + canonical snapshot cache
     └── platform/
         └── linux.rs                # 平台相关的小工具 (PR_SET_PDEATHSIG 等)
 ```
+
+`weather` 是当前唯一在 service 内部显式拆成二级并发模型的模块：scheduler 留在主 service task 中，fetch worker 专职执行 provider HTTP 请求，二者通过 channel 交互。
 
 ## 7. 配置系统
 

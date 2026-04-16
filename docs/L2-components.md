@@ -104,13 +104,14 @@
 **天气数据源**：
 - Backend：**Open-Meteo**（免费、无 API key、隐私友好）
 - Daemon `weather` service 职责：
-  - 启动时通过 Geocoding API 解析位置名 → lat/lon，缓存到 `~/.cache/quicksov/weather/geocode.json`
-  - 位置来源优先级：配置文件手动 > IP 地理定位 fallback > 硬编码默认
-  - 请求 `/v1/forecast` 获取当前温度、WMO weather code、湿度、风速、未来 6-12h 预报
+  - 当前仅支持配置文件手动提供 `latitude` / `longitude` / `location_name`
+  - 内部架构为 scheduler task + fetch worker，便于后续扩展多 provider
+  - 请求 `/v1/forecast` 获取当前温度、WMO weather code、湿度、风速、未来小时级预报
   - 轮询间隔 600s（配置项）
-  - 结果缓存 `~/.cache/quicksov/weather/current.json`
+  - 成功快照 canonical cache 持久化到 `~/.cache/quicksov/weather/current.json`
+  - State snapshot 额外下发 `provider` / `status` / `ttl_sec` / `last_success_at` / `error`
 - **WMO code → Lucide icon 映射**由 daemon 维护（`0 → sun`、`1-3 → cloud-sun`、`61-65 → cloud-rain`、`71-75 → cloud-snow`...）
-- 离线 fallback：显示最后缓存 + "offline" 小标识
+- 刷新失败不直接清空上一份成功数据；前端根据 `last_success_at + ttl_sec` 自行决定何时将旧数据视为过期
 
 ### 3.5 tray
 
@@ -252,7 +253,8 @@
         BlueZ D-Bus          → bt-service         ──┤
         PipeWire             → audio-service      ──┤
         Niri IPC             → niri-service       ──┼─→ IPC Router ─→ QML
-        Open-Meteo HTTP      → weather-service    ──┤     (UDS+NDJSON)
+        weather scheduler    → weather-service    ──┤     (UDS+NDJSON)
+        Open-Meteo HTTP      → weather-worker     ──┤
         Freedesktop D-Bus    → notif-service      ──┤
         MPRIS D-Bus          → mpris-service      ──┘
 ```
