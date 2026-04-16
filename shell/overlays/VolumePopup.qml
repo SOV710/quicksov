@@ -372,6 +372,7 @@ Rectangle {
         property real maximumValue: 1.5
         property color accentColor: Theme.accentBlue
         property bool muted: false
+        property int updateIntervalMs: 50
 
         readonly property real _range: Math.max(maximumValue - minimumValue, 0.001)
         readonly property real _ratio: Math.max(
@@ -397,8 +398,17 @@ Rectangle {
 
         function _commitAdjusted() {
             var pct = Math.round(liveValue * 100);
-            if (pct === Math.round(modelValue * 100)) return;
+            if (pct === dragArea.lastSentPct) return;
+            dragArea.lastSentPct = pct;
             adjusted(liveValue);
+        }
+
+        Timer {
+            id: dragCommitTimer
+            interval: slider.updateIntervalMs
+            repeat: true
+            running: dragArea.pressed
+            onTriggered: slider._commitAdjusted()
         }
 
         Rectangle {
@@ -434,6 +444,8 @@ Rectangle {
         MouseArea {
             id: dragArea
 
+            property int lastSentPct: -1
+
             anchors.fill: parent
             hoverEnabled: true
             preventStealing: true
@@ -441,6 +453,7 @@ Rectangle {
 
             onPressed: function(mouse) {
                 slider._setFromX(mouse.x);
+                slider._commitAdjusted();
                 mouse.accepted = true;
             }
 
@@ -453,10 +466,14 @@ Rectangle {
             onReleased: function(mouse) {
                 slider._setFromX(mouse.x);
                 slider._commitAdjusted();
+                lastSentPct = -1;
                 mouse.accepted = true;
             }
 
-            onCanceled: liveValue = modelValue
+            onCanceled: {
+                lastSentPct = -1;
+                liveValue = modelValue;
+            }
         }
     }
 }
