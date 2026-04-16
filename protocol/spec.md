@@ -279,7 +279,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 ```json
 {
   "type": "object",
-  "required": ["default_sink","default_source","sinks","sources"],
+  "required": ["default_sink","default_source","sinks","sources","streams"],
   "properties": {
     "default_sink":   { "type": "string" },
     "default_source": { "type": "string" },
@@ -296,7 +296,21 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
         }
       }
     },
-    "sources": { "description": "同 sinks 结构" }
+    "sources": { "description": "同 sinks 结构" },
+    "streams": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id":         { "type": "integer" },
+          "app_name":   { "type": "string" },
+          "binary":     { "type": "string" },
+          "title":      { "type": "string" },
+          "volume_pct": { "type": "integer", "minimum": 0, "maximum": 150 },
+          "muted":      { "type": "boolean" }
+        }
+      }
+    }
   }
 }
 ```
@@ -305,6 +319,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 - `set_volume` — payload `{ sink_id: int, volume_pct: int }`
 - `set_mute` — payload `{ sink_id: int, muted: bool }`
 - `set_default_sink` — payload `{ sink_id: int }`
+- `set_stream_volume` — payload `{ stream_id: int, volume_pct: int }`
 
 **后端**: PipeWire。
 

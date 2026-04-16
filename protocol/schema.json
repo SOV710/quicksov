@@ -344,7 +344,7 @@
     "audio": {
       "state_snapshot": {
         "type": "object",
-        "required": ["default_sink", "default_source", "sinks", "sources"],
+        "required": ["default_sink", "default_source", "sinks", "sources", "streams"],
         "properties": {
           "default_sink": { "type": "string" },
           "default_source": { "type": "string" },
@@ -373,6 +373,24 @@
                 "id": { "type": "integer" },
                 "name": { "type": "string" },
                 "description": { "type": "string" },
+                "volume_pct": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 150
+                },
+                "muted": { "type": "boolean" }
+              }
+            }
+          },
+          "streams": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "integer" },
+                "app_name": { "type": "string" },
+                "binary": { "type": "string" },
+                "title": { "type": "string" },
                 "volume_pct": {
                   "type": "integer",
                   "minimum": 0,
@@ -412,6 +430,17 @@
             "type": "object",
             "required": ["sink_id"],
             "properties": { "sink_id": { "type": "integer" } }
+          },
+          "response": { "type": "null" }
+        },
+        "set_stream_volume": {
+          "request": {
+            "type": "object",
+            "required": ["stream_id", "volume_pct"],
+            "properties": {
+              "stream_id": { "type": "integer" },
+              "volume_pct": { "type": "integer", "minimum": 0, "maximum": 150 }
+            }
           },
           "response": { "type": "null" }
         }
