@@ -4,6 +4,8 @@
 
 //! `weather` service — Open-Meteo HTTP backend.
 
+use std::time::Duration;
+
 use serde_json::Value;
 use tokio::sync::{mpsc, watch};
 use tracing::{debug, info, warn};
@@ -169,8 +171,16 @@ async fn fetch_weather(lat: f64, lon: f64) -> Result<String, WeatherError> {
          &hourly=temperature_2m,weather_code\
          &forecast_days=1&timezone=auto"
     );
-    let resp = reqwest::get(&url)
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| WeatherError::Http(e.to_string()))?;
+    let resp = client
+        .get(&url)
+        .send()
         .await
+        .map_err(|e| WeatherError::Http(e.to_string()))?
+        .error_for_status()
         .map_err(|e| WeatherError::Http(e.to_string()))?;
     let body = resp
         .text()
@@ -188,6 +198,10 @@ fn parse_api_response(json: &str, lat: f64, lon: f64, loc_name: &str) -> Value {
         Ok(v) => v,
         Err(_) => return offline_snapshot(),
     };
+
+    if val.get("current").is_none() || val.get("hourly").is_none() {
+        return offline_snapshot();
+    }
 
     let location = json_map([
         ("name", Value::from(loc_name)),

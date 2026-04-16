@@ -16,7 +16,7 @@ Singleton {
     property string status: "disconnected"
 
     property bool available: false
-    property string location: ""
+    property var location: null
     property var current: null
     property var hourlyForecast: []
     property var lastUpdatedMs: null
@@ -27,12 +27,12 @@ Singleton {
     }
 
     function _onSnapshot(payload) {
-        root.available      = payload.available      || false;
-        root.location       = payload.location       || "";
-        root.current        = payload.current        || null;
-        root.hourlyForecast = payload.hourly_forecast || [];
-        root.lastUpdatedMs  = payload.last_updated_ms;
-        root.weatherError   = payload.error          || "";
+        root.available      = payload.offline !== true;
+        root.location       = payload.location || null;
+        root.current        = payload.current || null;
+        root.hourlyForecast = payload.hourly || [];
+        root.lastUpdatedMs  = payload.updated_at !== undefined ? payload.updated_at * 1000 : null;
+        root.weatherError   = payload.offline === true ? "offline" : "";
         root.ready  = true;
         root.status = "ok";
     }
@@ -42,6 +42,12 @@ Singleton {
         if (isConnected) {
             Client.subscribe("weather", root._onSnapshot);
         } else {
+            root.available = false;
+            root.location = null;
+            root.current = null;
+            root.hourlyForecast = [];
+            root.lastUpdatedMs = null;
+            root.weatherError = "";
             root.ready  = false;
             root.status = "disconnected";
         }
