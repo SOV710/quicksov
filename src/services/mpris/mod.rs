@@ -204,6 +204,7 @@ struct Metadata {
     artist: Vec<String>,
     album: String,
     art_url: String,
+    track_id: Option<zbus::zvariant::OwnedObjectPath>,
     length_us: i64,
 }
 
@@ -219,6 +220,7 @@ async fn read_metadata(player: &zbus::Proxy<'_>) -> Metadata {
                 artist: vec![],
                 album: String::new(),
                 art_url: String::new(),
+                track_id: None,
                 length_us: 0,
             }
         }
@@ -250,6 +252,10 @@ async fn read_metadata(player: &zbus::Proxy<'_>) -> Metadata {
         .map(|s| s.to_string())
         .unwrap_or_default();
 
+    let track_id = map
+        .get("mpris:trackid")
+        .and_then(|v| zbus::zvariant::OwnedObjectPath::try_from(v.clone()).ok());
+
     let length_us = map
         .get("mpris:length")
         .and_then(|v| i64::try_from(v).ok())
@@ -260,6 +266,7 @@ async fn read_metadata(player: &zbus::Proxy<'_>) -> Metadata {
         artist,
         album,
         art_url,
+        track_id,
         length_us,
     }
 }
@@ -385,8 +392,10 @@ async fn handle_set_position(
         msg: "missing 'position_us' field".to_string(),
     })?;
     let proxy = player_proxy(conn, bus).await?;
-    let track_id = zbus::zvariant::ObjectPath::try_from("/dummy")
-        .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
+    let metadata = read_metadata(&proxy).await;
+    let track_id = metadata.track_id.ok_or_else(|| ServiceError::Internal {
+        msg: format!("player {bus} did not expose mpris:trackid"),
+    })?;
     let _: () = proxy
         .call("SetPosition", &(track_id, pos))
         .await

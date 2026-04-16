@@ -40,8 +40,7 @@ Rectangle {
 
             Image {
                 anchors.fill: parent
-                source: root._player && root._player.metadata && root._player.metadata.art_url
-                        ? root._player.metadata.art_url : ""
+                source: root._player && root._player.art_url ? root._player.art_url : ""
                 fillMode: Image.PreserveAspectCrop
                 visible: status !== Image.Error && source !== ""
             }
@@ -51,7 +50,7 @@ Rectangle {
                 iconPath: "phosphor/music-note.svg"
                 size: 40
                 color: Theme.fgMuted
-                visible: root._player === null || !root._player.metadata || !root._player.metadata.art_url
+                visible: root._player === null || !root._player.art_url
             }
         }
 
@@ -61,7 +60,7 @@ Rectangle {
             spacing: Theme.spaceXs
 
             Text {
-                text: root._player ? (root._player.metadata ? root._player.metadata.title || "Unknown" : "Unknown") : "No player"
+                text: root._player ? (root._player.title || root._player.identity || "Unknown") : "No player"
                 color: Theme.fgPrimary
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontBody
@@ -72,8 +71,8 @@ Rectangle {
 
             Text {
                 text: {
-                    if (!root._player || !root._player.metadata) return "";
-                    var artists = root._player.metadata.artist;
+                    if (!root._player) return "";
+                    var artists = root._player.artist;
                     return Array.isArray(artists) ? artists.join(", ") : (artists || "");
                 }
                 color: Theme.fgSecondary
@@ -92,7 +91,7 @@ Rectangle {
             SvgIcon {
                 iconPath: "phosphor/skip-back.svg"
                 size: 24
-                color: root._player && root._player.can_go_previous ? Theme.fgPrimary : Theme.fgMuted
+                color: root._player ? Theme.fgPrimary : Theme.fgMuted
                 anchors.verticalCenter: parent.verticalCenter
 
                 MouseArea {
@@ -119,7 +118,7 @@ Rectangle {
             SvgIcon {
                 iconPath: "phosphor/skip-forward.svg"
                 size: 24
-                color: root._player && root._player.can_go_next ? Theme.fgPrimary : Theme.fgMuted
+                color: root._player ? Theme.fgPrimary : Theme.fgMuted
                 anchors.verticalCenter: parent.verticalCenter
 
                 MouseArea {

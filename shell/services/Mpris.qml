@@ -16,7 +16,14 @@ Singleton {
     property string status: "disconnected"
 
     property var players: []
-    property var activePlayer: players.length > 0 ? players[0] : null
+    property string activeBusName: ""
+    property var activePlayer: {
+        for (var i = 0; i < players.length; ++i) {
+            if (players[i].bus_name === activeBusName)
+                return players[i];
+        }
+        return players.length > 0 ? players[0] : null;
+    }
 
     function playPause(busName) {
         Client.request("mpris", "play_pause", { bus_name: busName }, null);
@@ -25,14 +32,12 @@ Singleton {
         Client.request("mpris", "next", { bus_name: busName }, null);
     }
     function previous(busName) {
-        Client.request("mpris", "previous", { bus_name: busName }, null);
-    }
-    function setVolume(busName, vol) {
-        Client.request("mpris", "set_volume", { bus_name: busName, volume: vol }, null);
+        Client.request("mpris", "prev", { bus_name: busName }, null);
     }
 
     function _onSnapshot(payload) {
         root.players = payload.players || [];
+        root.activeBusName = payload.active_player || "";
         root.ready  = true;
         root.status = "ok";
     }
@@ -42,6 +47,8 @@ Singleton {
         if (isConnected) {
             Client.subscribe("mpris", root._onSnapshot);
         } else {
+            root.players = [];
+            root.activeBusName = "";
             root.ready  = false;
             root.status = "disconnected";
         }
