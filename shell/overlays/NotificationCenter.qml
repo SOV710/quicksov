@@ -114,6 +114,7 @@ Rectangle {
     component NotifCard: Rectangle {
         id: card
         property var notif: null
+        property bool expanded: false
 
         readonly property color _accent: root._urgencyColor(notif ? notif.urgency : "normal")
 
@@ -124,7 +125,7 @@ Rectangle {
                       : Theme.borderSubtle
         border.width: 1
         implicitHeight: cardCol.implicitHeight + Theme.spaceXs * 2
-        clip: false
+        clip: true
 
         HoverHandler { id: cardHover }
 
@@ -197,15 +198,41 @@ Rectangle {
 
             // body
             Text {
+                id: bodyLabel
                 visible: notif && notif.body !== ""
                 text: notif ? notif.body : ""
                 color: Theme.fgSecondary
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontBody
                 wrapMode: Text.WordWrap
-                maximumLineCount: 3
-                elide: Text.ElideRight
+                maximumLineCount: card.expanded ? 0 : 3
+                elide: card.expanded ? Text.ElideNone : Text.ElideRight
                 width: parent.width
+            }
+
+            Text {
+                id: bodyMeasure
+                visible: false
+                text: notif ? notif.body : ""
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontBody
+                wrapMode: Text.WordWrap
+                width: parent.width
+            }
+
+            Text {
+                visible: bodyLabel.visible && bodyMeasure.lineCount > 3
+                text: card.expanded ? "Less" : "More"
+                color: Theme.accentBlue
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontBody
+                font.weight: Theme.weightMedium
+
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: card.expanded = !card.expanded
+                }
             }
 
             // action buttons
