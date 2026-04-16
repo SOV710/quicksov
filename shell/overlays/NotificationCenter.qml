@@ -46,6 +46,17 @@ Rectangle {
         return cut.replace(/\s+$/, "") + "...";
     }
 
+    function _displayActions(actions) {
+        if (!actions || !actions.length) return [];
+
+        return actions.filter(function(action) {
+            return action
+                && typeof action.id === "string"
+                && typeof action.label === "string"
+                && action.label.trim().length > 0;
+        });
+    }
+
     // ── layout ───────────────────────────────────────────────────────────────
     Column {
         id: contentCol
@@ -130,6 +141,7 @@ Rectangle {
         )
         readonly property string _bodyText: notif ? notif.body || "" : ""
         readonly property bool _bodyCanExpand: _bodyText.length > _bodyPreviewLimit
+        readonly property var _actions: root._displayActions(notif ? notif.actions : [])
 
         readonly property color _accent: root._urgencyColor(notif ? notif.urgency : "normal")
 
@@ -242,12 +254,12 @@ Rectangle {
 
             // action buttons
             Row {
-                visible: notif && notif.actions && notif.actions.length > 0
+                visible: card._actions.length > 0
                 spacing: Theme.spaceXs
                 topPadding: 2
 
                 Repeater {
-                    model: notif ? notif.actions : []
+                    model: card._actions
 
                     delegate: Rectangle {
                         required property var modelData
