@@ -29,7 +29,7 @@ Scope {
                 bottom: Theme.barOuterMargin
             }
 
-            implicitWidth: triggerZone.width
+            implicitWidth: bar.expanded ? Theme.auxExpandedWidth : Theme.auxTriggerZone
             color: "transparent"
 
             property bool expanded: false
@@ -39,13 +39,17 @@ Scope {
                 id: triggerZone
                 width:  Theme.auxTriggerZone
                 height: parent.height
-                color:  "transparent"
+                color:  Qt.rgba(1, 1, 1, 0.01)
 
                 MouseArea {
                     anchors.fill: parent
                     hoverEnabled: true
                     onEntered: expandTimer.start()
-                    onExited:  expandTimer.stop()
+                    onExited: {
+                        expandTimer.stop();
+                        if (!bar.expanded) return;
+                        closeTimer.restart();
+                    }
                 }
             }
 
@@ -53,6 +57,12 @@ Scope {
                 id: expandTimer
                 interval: Theme.auxTriggerDelayMs
                 onTriggered: bar.expanded = true
+            }
+
+            Timer {
+                id: closeTimer
+                interval: Theme.powerCloseDelayMs
+                onTriggered: if (!panelMouse.containsMouse && !triggerMouse.containsMouse) bar.expanded = false
             }
 
             MusicPanel {
@@ -63,6 +73,15 @@ Scope {
                 y:       Theme.barOuterMargin
 
                 onCloseRequested: bar.expanded = false
+
+                MouseArea {
+                    id: panelMouse
+                    anchors.fill: parent
+                    acceptedButtons: Qt.NoButton
+                    hoverEnabled: true
+                    onEntered: closeTimer.stop()
+                    onExited: closeTimer.restart()
+                }
             }
 
             Behavior on implicitWidth {

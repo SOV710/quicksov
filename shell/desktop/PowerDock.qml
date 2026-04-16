@@ -111,6 +111,11 @@ Scope {
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.bottom: parent.bottom
 
+                    Rectangle {
+                        anchors.fill: parent
+                        color: Qt.rgba(1, 1, 1, 0.01)
+                    }
+
                     MouseArea {
                         id: triggerMouse
                         anchors.fill: parent
