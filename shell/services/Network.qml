@@ -22,6 +22,7 @@ Singleton {
     property bool wifiConnected: false
     property string ssid: ""
     property int signalDbm: 0
+    property int signalPct: -1
     property string wifiState: ""
 
     function _onLinkSnapshot(payload) {
@@ -39,6 +40,7 @@ Singleton {
         root.ssid          = payload.ssid     || "";
         // Daemon field is rssi_dbm, not signal_dbm
         root.signalDbm     = payload.rssi_dbm || 0;
+        root.signalPct     = typeof payload.signal_pct === "number" ? payload.signal_pct : -1;
     }
 
     function _onConnectionChanged(isConnected) {
