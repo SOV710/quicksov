@@ -2,14 +2,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import socket
-import struct
 import sys
 from pathlib import Path
 from typing import Any, Iterable
-
-import msgpack
 
 REQ = 0
 REP = 1
@@ -95,16 +93,30 @@ class QsovClient:
         return self.sock
 
     def send_obj(self, obj: Any) -> None:
-        raw = msgpack.packb(obj, use_bin_type=True)
-        hdr = struct.pack("<I", len(raw))
-        self._ensure_sock().sendall(hdr + raw)
+        raw = json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        self._ensure_sock().sendall(raw + b"\n")
 
     def recv_obj(self) -> Any:
         sock = self._ensure_sock()
-        hdr = _recv_exact(sock, 4)
-        (length,) = struct.unpack("<I", hdr)
-        payload = _recv_exact(sock, length)
-        return msgpack.unpackb(payload, raw=False, strict_map_key=False)
+        data = bytearray()
+        while True:
+            chunk = sock.recv(4096)
+            if not chunk:
+                if data:
+                    break
+                raise QsovError("socket closed while receiving line")
+            data.extend(chunk)
+            if b"\n" in chunk:
+                break
+
+        line, _, _rest = bytes(data).partition(b"\n")
+        if not line:
+            raise QsovError("received empty line")
+
+        try:
+            return json.loads(line.decode("utf-8"))
+        except json.JSONDecodeError as exc:
+            raise QsovError(f"failed to decode JSON line: {exc}") from exc
 
     def hello(
         self,
@@ -193,16 +205,6 @@ class QsovClient:
         finally:
             sock.settimeout(original_timeout)
         return drained
-
-
-def _recv_exact(sock: socket.socket, n: int) -> bytes:
-    chunks = bytearray()
-    while len(chunks) < n:
-        data = sock.recv(n - len(chunks))
-        if not data:
-            raise QsovError("socket closed while receiving frame")
-        chunks.extend(data)
-    return bytes(chunks)
 
 
 def default_socket_path(explicit: str | None = None) -> str:
@@ -340,7 +342,7 @@ def main_guard(func) -> None:
     except KeyboardInterrupt:
         print("INTERRUPTED")
         raise SystemExit(130)
-    except (OSError, QsovError, msgpack.ExtraData, msgpack.FormatError, msgpack.StackError) as exc:
+    except (OSError, QsovError, json.JSONDecodeError) as exc:
         print(f"FATAL {exc}", file=sys.stderr)
         raise SystemExit(1)
 
