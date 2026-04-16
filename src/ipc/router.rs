@@ -33,7 +33,9 @@ impl ForwarderRegistry {
 
     /// Insert a new forwarder task and record its abort handle under `topic`.
     pub fn insert(&mut self, topic: String, abort: AbortHandle) {
-        self.handles.insert(topic, abort);
+        if let Some(existing) = self.handles.insert(topic, abort) {
+            existing.abort();
+        }
     }
 
     /// Abort the forwarder for `topic` (UNSUB).  No-op if not subscribed.
