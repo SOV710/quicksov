@@ -4,7 +4,10 @@
 
 //! `niri` service — Niri compositor IPC.
 
+mod app_names;
+
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -15,15 +18,17 @@ use tracing::{debug, info, warn};
 use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
 use crate::config::Config;
 use crate::util::json_map;
+use app_names::AppNameResolver;
 
 /// Spawn the `niri` service and return its [`ServiceHandle`].
 pub fn spawn(cfg: &Config) -> ServiceHandle {
     let socket_path = resolve_socket(cfg);
+    let app_names = Arc::new(AppNameResolver::load());
     let initial = empty_snapshot();
     let (state_tx, state_rx) = watch::channel(initial);
     let (request_tx, request_rx) = mpsc::channel(16);
 
-    tokio::spawn(run(request_rx, state_tx, socket_path));
+    tokio::spawn(run(request_rx, state_tx, socket_path, app_names));
 
     ServiceHandle {
         request_tx,
@@ -63,10 +68,11 @@ async fn run(
     mut request_rx: mpsc::Receiver<ServiceRequest>,
     state_tx: watch::Sender<Value>,
     socket_path: String,
+    app_names: Arc<AppNameResolver>,
 ) {
     info!(path = %socket_path, "niri service started");
     loop {
-        match connect_and_run(&mut request_rx, &state_tx, &socket_path).await {
+        match connect_and_run(&mut request_rx, &state_tx, &socket_path, &app_names).await {
             Ok(()) => break,
             Err(e) => {
                 warn!(error = %e, "niri IPC connection failed; retrying in 5 s");
@@ -82,6 +88,7 @@ async fn connect_and_run(
     request_rx: &mut mpsc::Receiver<ServiceRequest>,
     state_tx: &watch::Sender<Value>,
     socket_path: &str,
+    app_names: &AppNameResolver,
 ) -> Result<(), NiriError> {
     // Fetch initial state via separate one-shot connections
     let workspaces = niri_request(socket_path, r#""Workspaces""#).await?;
@@ -89,7 +96,7 @@ async fn connect_and_run(
     let windows_json = niri_request(socket_path, r#""Windows""#).await?;
 
     let ws_list = parse_workspaces(&workspaces);
-    let fw = parse_focused_window(&focused);
+    let fw = parse_focused_window(&focused, app_names);
     // window_id → workspace_id: used to count windows per workspace
     let mut win_map: HashMap<i64, i64> = parse_window_workspace_map(&windows_json);
 
@@ -121,17 +128,18 @@ async fn connect_and_run(
                     ws_state = parse_workspaces(&ws_json);
                 }
                 if let Ok(fw_json) = niri_request(socket_path, r#""FocusedWindow""#).await {
-                    fw_state = parse_focused_window(&fw_json);
+                    fw_state = parse_focused_window(&fw_json, app_names);
                 }
                 state_tx.send_replace(build_snapshot(&ws_state, &fw_state, &win_map));
             }
             line = lines.next_line() => {
                 match line {
                     Ok(Some(text)) => {
-                        let refresh_focus = process_event(&text, &mut ws_state, &mut fw_state, &mut win_map);
+                        let refresh_focus =
+                            process_event(&text, &mut ws_state, &mut fw_state, &mut win_map, app_names);
                         if refresh_focus {
                             if let Ok(fw_json) = niri_request(socket_path, r#""FocusedWindow""#).await {
-                                fw_state = parse_focused_window(&fw_json);
+                                fw_state = parse_focused_window(&fw_json, app_names);
                             }
                         }
                         state_tx.send_replace(build_snapshot(&ws_state, &fw_state, &win_map));
@@ -235,21 +243,22 @@ fn parse_window_workspace_map(json: &str) -> HashMap<i64, i64> {
     map
 }
 
-fn parse_focused_window(json: &str) -> Option<FocusedWindow> {
+fn parse_focused_window(json: &str, app_names: &AppNameResolver) -> Option<FocusedWindow> {
     let val: serde_json::Value = serde_json::from_str(json).ok()?;
-    focused_window_from_value(val.get("Ok")?.get("FocusedWindow")?)
+    focused_window_from_value(val.get("Ok")?.get("FocusedWindow")?, app_names)
 }
 
-fn focused_window_from_value(value: &serde_json::Value) -> Option<FocusedWindow> {
+fn focused_window_from_value(
+    value: &serde_json::Value,
+    app_names: &AppNameResolver,
+) -> Option<FocusedWindow> {
     let win = if let Some(obj) = value.as_object() {
         if obj.contains_key("id") {
             obj
         } else if let Some(nested) = obj.get("Window").and_then(|w| w.as_object()) {
             nested
-        } else if let Some(nested) = obj.get("window").and_then(|w| w.as_object()) {
-            nested
         } else {
-            return None;
+            obj.get("window").and_then(|w| w.as_object())?
         }
     } else {
         return None;
@@ -258,7 +267,7 @@ fn focused_window_from_value(value: &serde_json::Value) -> Option<FocusedWindow>
     let app_id = win.get("app_id")?.as_str()?.to_string();
     Some(FocusedWindow {
         id: win.get("id")?.as_i64()?,
-        display_name: app_display_name(&app_id),
+        display_name: app_names.resolve(&app_id),
         app_id,
         title: win.get("title")?.as_str()?.to_string(),
     })
@@ -269,6 +278,7 @@ fn process_event(
     ws_state: &mut Vec<WorkspaceInfo>,
     fw_state: &mut Option<FocusedWindow>,
     win_map: &mut HashMap<i64, i64>,
+    app_names: &AppNameResolver,
 ) -> bool {
     let val: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
@@ -291,7 +301,7 @@ fn process_event(
             if w.is_null() {
                 None
             } else {
-                focused_window_from_value(w)
+                focused_window_from_value(w, app_names)
             }
         });
         refresh_focus = true;
@@ -388,15 +398,6 @@ fn build_snapshot(
         None => Value::Null,
     };
     json_map([("workspaces", Value::Array(ws)), ("focused_window", fw)])
-}
-
-fn app_display_name(app_id: &str) -> String {
-    match app_id {
-        "vivaldi-stable" => "Vivaldi".to_string(),
-        "emacs" => "GNU Emacs".to_string(),
-        "nvim" => "Neovim".to_string(),
-        _ => app_id.to_string(),
-    }
 }
 
 fn workspace_to_value(ws: &WorkspaceInfo, window_count: i64) -> Value {
