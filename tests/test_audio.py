@@ -18,8 +18,9 @@ from _qsov_testlib import (
     maybe_warn_unavailable,
 )
 
-REQUIRED = ["default_sink", "default_source", "sinks", "sources"]
+REQUIRED = ["default_sink", "default_source", "sinks", "sources", "streams"]
 NODE_REQUIRED = ["id", "name", "description", "volume_pct", "muted"]
+STREAM_REQUIRED = ["id", "app_name", "binary", "title", "volume_pct", "muted"]
 
 
 def _read_snapshot(h: Harness, socket_path: str, timeout: float) -> dict[str, Any] | None:
@@ -45,6 +46,16 @@ def _read_snapshot(h: Harness, socket_path: str, timeout: float) -> dict[str, An
                         h.error(f"audio.{list_name}[{idx}] is not a map: {node!r}")
             else:
                 h.error(f"audio.{list_name} is not a list: {snapshot!r}")
+        streams = snapshot.get("streams")
+        if isinstance(streams, list):
+            h.ok(f"audio.streams is a list (len={len(streams)})")
+            for idx, stream in enumerate(streams):
+                if isinstance(stream, dict):
+                    assert_dict_keys(h, stream, STREAM_REQUIRED, f"audio.streams[{idx}]")
+                else:
+                    h.error(f"audio.streams[{idx}] is not a map: {stream!r}")
+        else:
+            h.error(f"audio.streams is not a list: {snapshot!r}")
         client.unsub("audio")
         client.drain_async()
         return snapshot
@@ -55,7 +66,7 @@ def _read_snapshot(h: Harness, socket_path: str, timeout: float) -> dict[str, An
 def _negative_path_tests(h: Harness, socket_path: str, timeout: float) -> None:
     client, _ack = connect_and_hello(h, socket_path, timeout, "audio")
     try:
-        for action in ["no_such_action", "set_volume", "set_mute", "set_default_sink"]:
+        for action in ["no_such_action", "set_volume", "set_mute", "set_default_sink", "set_stream_volume"]:
             code = "E_ACTION_UNKNOWN" if action == "no_such_action" else "E_ACTION_PAYLOAD"
             reply = client.req("audio", action, {})
             if expect_envelope(h, reply, kind=ERR, topic="audio", code=code):
@@ -92,6 +103,29 @@ def _mutate_tests(h: Harness, socket_path: str, timeout: float, snapshot: dict[s
 
         reply = client.req("audio", "set_default_sink", {"sink_id": sink_id})
         expect_rep_or_warn_service_err(h, reply, "audio", f"audio set_default_sink sink_id={sink_id}")
+
+        streams = snapshot.get("streams")
+        if not isinstance(streams, list) or not streams:
+            h.warn("skipping audio stream mutate test: no active stream found")
+            return
+
+        if args.stream_id is not None:
+            stream = next((s for s in streams if isinstance(s, dict) and s.get("id") == args.stream_id), None)
+        else:
+            stream = next((s for s in streams if isinstance(s, dict)), None)
+        if stream is None:
+            h.warn("skipping audio stream mutate test: requested stream not found")
+            return
+
+        stream_id = stream["id"]
+        stream_volume = args.volume_pct if args.volume_pct is not None else stream.get("volume_pct")
+        reply = client.req("audio", "set_stream_volume", {"stream_id": stream_id, "volume_pct": stream_volume})
+        expect_rep_or_warn_service_err(
+            h,
+            reply,
+            "audio",
+            f"audio set_stream_volume stream_id={stream_id} volume_pct={stream_volume}",
+        )
     finally:
         client.close()
 
@@ -100,6 +134,7 @@ def run() -> int:
     parser = argparse.ArgumentParser(description="Manual tests for qsov audio service")
     add_common_args(parser)
     parser.add_argument("--sink-id", type=int, default=None, help="sink id for mutate tests")
+    parser.add_argument("--stream-id", type=int, default=None, help="stream id for mutate tests")
     parser.add_argument("--volume-pct", type=int, default=None, help="volume for mutate test; default=current volume")
     parser.add_argument(
         "--muted",
