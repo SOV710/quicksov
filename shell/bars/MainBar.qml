@@ -31,6 +31,8 @@ Scope {
                 right: Theme.barOuterMargin
             }
 
+            readonly property bool _anyPopupOpen: clockPopup.popupVisible || notifCenter.visible
+
             // Expand to cover bar + whichever popup is open (tallest wins)
             property int _popupHeight: {
                 var h = 0;
@@ -38,13 +40,29 @@ Scope {
                 if (notifCenter.visible)     h = Math.max(h, notifCenter.implicitHeight + Theme.spaceXs);
                 return h;
             }
-            implicitHeight: Theme.barHeight + Theme.barOuterMargin + _popupHeight
+            implicitHeight: bar._anyPopupOpen && bar.screen
+                            ? Math.max(
+                                  Theme.barHeight + Theme.barOuterMargin + _popupHeight,
+                                  bar.screen.height - Theme.barOuterMargin
+                              )
+                            : Theme.barHeight + Theme.barOuterMargin + _popupHeight
             // Reserve a fixed bar-height strip only; popups must NOT push windows.
             exclusiveZone: Theme.barHeight
             color: "transparent"
 
+            MouseArea {
+                anchors.fill: parent
+                visible: bar._anyPopupOpen
+                acceptedButtons: Qt.AllButtons
+                onClicked: function() {
+                    clockPopup.popupVisible = false;
+                    notifCenter.visible = false;
+                }
+            }
+
             Rectangle {
                 id: barRect
+                z: 1
                 anchors {
                     left:   parent.left
                     right:  parent.right
@@ -90,7 +108,10 @@ Scope {
                 Clock {
                     id: clockWidget
                     anchors.centerIn: parent
-                    onOpenPopup: clockPopup.popupVisible = !clockPopup.popupVisible
+                    onOpenPopup: {
+                        notifCenter.visible = false;
+                        clockPopup.popupVisible = !clockPopup.popupVisible;
+                    }
                 }
 
                 // RIGHT zone
@@ -106,7 +127,10 @@ Scope {
 
                     NotificationButton {
                         anchors.verticalCenter: parent.verticalCenter
-                        onToggled: notifCenter.visible = !notifCenter.visible
+                        onToggled: {
+                            clockPopup.popupVisible = false;
+                            notifCenter.visible = !notifCenter.visible;
+                        }
                     }
 
                     VolumeIndicator   { anchors.verticalCenter: parent.verticalCenter }
@@ -120,6 +144,7 @@ Scope {
             // Overlays anchored below bar
             ClockPopup {
                 id: clockPopup
+                z: 2
                 anchors {
                     top:              barRect.bottom
                     topMargin:        Theme.spaceXs
@@ -129,6 +154,7 @@ Scope {
 
             NotificationCenter {
                 id: notifCenter
+                z: 2
                 visible: false
                 anchors {
                     top:        barRect.bottom
