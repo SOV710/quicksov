@@ -135,12 +135,23 @@ Rectangle {
                     }
 
                     Text {
+                        id: masterPercent
                         text: root._hasAudio ? root._percentText(Audio.volume) : "—"
                         color: Audio.muted ? Theme.fgMuted : root._accentFor(Audio.volume)
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontBody
                         font.weight: Theme.weightMedium
                         font.features: { "tnum": 1 }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: Audio.defaultSink !== null
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: {
+                                if (Audio.defaultSink)
+                                    Audio.setVolume(Audio.defaultSink.id, 1.0);
+                            }
+                        }
                     }
 
                     Rectangle {
@@ -343,12 +354,19 @@ Rectangle {
                             }
 
                             Text {
+                                id: streamPercent
                                 text: root._percentText(_volume)
                                 color: muted ? Theme.fgMuted : root._accentFor(_volume)
                                 font.family: Theme.fontFamily
                                 font.pixelSize: Theme.fontBody
                                 font.weight: Theme.weightMedium
                                 font.features: { "tnum": 1 }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: Audio.setStreamVolume(stream_id, 1.0)
+                                }
                             }
                         }
 
