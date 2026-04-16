@@ -128,7 +128,12 @@ async fn connect_and_run(
             line = lines.next_line() => {
                 match line {
                     Ok(Some(text)) => {
-                        process_event(&text, &mut ws_state, &mut fw_state, &mut win_map);
+                        let refresh_focus = process_event(&text, &mut ws_state, &mut fw_state, &mut win_map);
+                        if refresh_focus {
+                            if let Ok(fw_json) = niri_request(socket_path, r#""FocusedWindow""#).await {
+                                fw_state = parse_focused_window(&fw_json);
+                            }
+                        }
                         state_tx.send_replace(build_snapshot(&ws_state, &fw_state, &win_map));
                     }
                     Ok(None) => break,
@@ -232,7 +237,24 @@ fn parse_window_workspace_map(json: &str) -> HashMap<i64, i64> {
 
 fn parse_focused_window(json: &str) -> Option<FocusedWindow> {
     let val: serde_json::Value = serde_json::from_str(json).ok()?;
-    let win = val.get("Ok")?.get("FocusedWindow")?.as_object()?;
+    focused_window_from_value(val.get("Ok")?.get("FocusedWindow")?)
+}
+
+fn focused_window_from_value(value: &serde_json::Value) -> Option<FocusedWindow> {
+    let win = if let Some(obj) = value.as_object() {
+        if obj.contains_key("id") {
+            obj
+        } else if let Some(nested) = obj.get("Window").and_then(|w| w.as_object()) {
+            nested
+        } else if let Some(nested) = obj.get("window").and_then(|w| w.as_object()) {
+            nested
+        } else {
+            return None;
+        }
+    } else {
+        return None;
+    };
+
     let app_id = win.get("app_id")?.as_str()?.to_string();
     Some(FocusedWindow {
         id: win.get("id")?.as_i64()?,
@@ -247,11 +269,12 @@ fn process_event(
     ws_state: &mut Vec<WorkspaceInfo>,
     fw_state: &mut Option<FocusedWindow>,
     win_map: &mut HashMap<i64, i64>,
-) {
+) -> bool {
     let val: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
-        Err(_) => return,
+        Err(_) => return false,
     };
+    let mut refresh_focus = false;
 
     if let Some(wsc) = val.get("WorkspacesChanged") {
         if let Some(arr) = wsc.get("workspaces").and_then(|w| w.as_array()) {
@@ -260,6 +283,7 @@ fn process_event(
             list.sort_by(|a, b| a.output.cmp(&b.output).then_with(|| a.idx.cmp(&b.idx)));
             *ws_state = list;
         }
+        refresh_focus = true;
     }
 
     if let Some(wfc) = val.get("WindowFocusChanged") {
@@ -267,17 +291,10 @@ fn process_event(
             if w.is_null() {
                 None
             } else {
-                let id = w.get("id")?.as_i64()?;
-                let app_id = w.get("app_id")?.as_str()?.to_string();
-                let title = w.get("title")?.as_str()?.to_string();
-                Some(FocusedWindow {
-                    id,
-                    display_name: app_display_name(&app_id),
-                    app_id,
-                    title,
-                })
+                focused_window_from_value(w)
             }
         });
+        refresh_focus = true;
     }
 
     // WorkspaceActivated carries the workspace's unique `id`, not its `idx`.
@@ -290,6 +307,7 @@ fn process_event(
                 ws.focused = ws.id == event_id && focused;
             }
         }
+        refresh_focus = true;
     }
 
     // Track window ↔ workspace mapping for per-workspace window counts.
@@ -307,13 +325,17 @@ fn process_event(
                 }
             }
         }
+        refresh_focus = true;
     }
 
     if let Some(evt) = val.get("WindowClosed") {
         if let Some(win_id) = evt.get("id").and_then(|i| i.as_i64()) {
             win_map.remove(&win_id);
         }
+        refresh_focus = true;
     }
+
+    refresh_focus
 }
 
 // ---------------------------------------------------------------------------
