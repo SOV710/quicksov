@@ -25,36 +25,47 @@ Singleton {
     signal connectionChanged(bool isConnected)
     signal pubReceived(string topic, var payload)
 
-    property var _socket: Socket {
-        id: socket
-        path: root._socketPath()
+    property var _socket: socketLoader.item
 
-        parser: SplitParser {
-            splitMarker: "\n"
-            onRead: function(data) {
-                if (!data || data.trim() === "") return;
-                try {
-                    root._handleMessage(JSON.parse(data));
-                } catch(e) {
-                    console.warn("[ipc] parse error:", e, data);
+    Loader {
+        id: socketLoader
+        active: true
+        sourceComponent: socketComponent
+    }
+
+    Component {
+        id: socketComponent
+
+        Socket {
+            path: root._socketPath()
+
+            parser: SplitParser {
+                splitMarker: "\n"
+                onRead: function(data) {
+                    if (!data || data.trim() === "") return;
+                    try {
+                        root._handleMessage(JSON.parse(data));
+                    } catch(e) {
+                        console.warn("[ipc] parse error:", e, data);
+                    }
                 }
             }
-        }
 
-        onConnectedChanged: {
-            if (!connected) {
+            onConnectedChanged: {
+                if (!connected) {
+                    root._markDisconnected();
+                    root._ensureReconnectLoop();
+                } else {
+                    root._sendHello();
+                }
+            }
+
+            onError: function(error) {
+                console.warn("[ipc] socket error:", error);
+                // onConnectedChanged may not fire if connected was already false
                 root._markDisconnected();
                 root._ensureReconnectLoop();
-            } else {
-                root._sendHello();
             }
-        }
-
-        onError: function(error) {
-            console.warn("[ipc] socket error:", error);
-            // onConnectedChanged may not fire if connected was already false
-            root._markDisconnected();
-            root._ensureReconnectLoop();
         }
     }
 
@@ -85,13 +96,20 @@ Singleton {
     }
 
     function _connect() {
-        // Force a fresh connection attempt: setConnected(true) is a no-op when
-        // mConnected is already true even after a failed attempt, so we reset first.
-        socket.connected = false;
+        var socket = root._recreateSocket();
+        if (!socket) return;
         socket.connected = true;
     }
 
+    function _recreateSocket() {
+        if (socketLoader.active) socketLoader.active = false;
+        socketLoader.active = true;
+        return root._socket;
+    }
+
     function _sendHello() {
+        var socket = root._socket;
+        if (!socket) return;
         root.handshakeDone = false;
         var hello = Protocol.makeHello();
         socket.write(JSON.stringify(hello) + "\n");
@@ -160,6 +178,8 @@ Singleton {
     }
 
     function _sendRaw(obj) {
+        var socket = root._socket;
+        if (!socket) return;
         if (!socket.connected) return;
         socket.write(JSON.stringify(obj) + "\n");
         socket.flush();
