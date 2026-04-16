@@ -37,6 +37,15 @@ Rectangle {
         return Theme.fgSecondary;
     }
 
+    function _previewText(text, limit) {
+        if (!text || text.length <= limit) return text || "";
+
+        var cut = text.slice(0, limit);
+        var lastSpace = Math.max(cut.lastIndexOf(" "), cut.lastIndexOf("\n"));
+        if (lastSpace > Math.floor(limit * 0.65)) cut = cut.slice(0, lastSpace);
+        return cut.replace(/\s+$/, "") + "...";
+    }
+
     // ── layout ───────────────────────────────────────────────────────────────
     Column {
         id: contentCol
@@ -115,8 +124,12 @@ Rectangle {
         id: card
         property var notif: null
         property bool expanded: false
-        readonly property real _bodyLineHeight: Math.ceil(Theme.fontBody * 1.35)
-        readonly property real _collapsedBodyHeight: _bodyLineHeight * 3
+        readonly property int _bodyPreviewLimit: Math.max(
+            90,
+            Math.floor((cardCol.width / (Theme.fontBody * 0.62)) * 3)
+        )
+        readonly property string _bodyText: notif ? notif.body || "" : ""
+        readonly property bool _bodyCanExpand: _bodyText.length > _bodyPreviewLimit
 
         readonly property color _accent: root._urgencyColor(notif ? notif.urgency : "normal")
 
@@ -200,42 +213,20 @@ Rectangle {
 
             // body
             Text {
-                id: bodyMeasure
-                visible: false
-                text: notif ? notif.body : ""
+                id: bodyLabel
+                visible: card._bodyText !== ""
+                text: card.expanded
+                      ? card._bodyText
+                      : root._previewText(card._bodyText, card._bodyPreviewLimit)
+                color: Theme.fgSecondary
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontBody
                 wrapMode: Text.WordWrap
-                lineHeightMode: Text.FixedHeight
-                lineHeight: card._bodyLineHeight
                 width: parent.width
-            }
-
-            Item {
-                id: bodyViewport
-                visible: notif && notif.body !== ""
-                width: parent.width
-                height: card.expanded
-                        ? bodyLabel.implicitHeight
-                        : Math.min(bodyLabel.implicitHeight, card._collapsedBodyHeight)
-                clip: true
-
-                Text {
-                    id: bodyLabel
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    text: notif ? notif.body : ""
-                    color: Theme.fgSecondary
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontBody
-                    wrapMode: Text.WordWrap
-                    lineHeightMode: Text.FixedHeight
-                    lineHeight: card._bodyLineHeight
-                }
             }
 
             Text {
-                visible: bodyViewport.visible && bodyMeasure.lineCount > 3
+                visible: bodyLabel.visible && card._bodyCanExpand
                 text: card.expanded ? "Less" : "More"
                 color: Theme.accentBlue
                 font.family: Theme.fontFamily
