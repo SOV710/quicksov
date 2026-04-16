@@ -35,6 +35,13 @@ socket_path = "$XDG_RUNTIME_DIR/quicksov/daemon.sock"
 
 [screens]
 
+[power]
+lock = true
+suspend = true
+logout = true
+reboot = true
+shutdown = true
+
 [services]
 enabled = []
 "#;

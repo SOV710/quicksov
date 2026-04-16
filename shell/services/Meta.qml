@@ -19,6 +19,7 @@ Singleton {
     property bool configNeedsRestart: false
     property var services: ({})
     property var screenRoles: ({})
+    property var powerActions: ({})
     // True only if daemon has published at least one role assignment.
     readonly property bool hasScreenRoles: Object.keys(screenRoles).length > 0
 
@@ -28,6 +29,7 @@ Singleton {
         root.configNeedsRestart  = payload.config_needs_restart || false;
         root.services            = payload.services        || {};
         root.screenRoles         = (payload.screens && payload.screens.roles) ? payload.screens.roles : {};
+        root.powerActions        = (payload.power && payload.power.actions) ? payload.power.actions : {};
         root.ready   = true;
         root.status  = "ok";
     }

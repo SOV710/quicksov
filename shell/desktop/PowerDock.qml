@@ -61,6 +61,9 @@ Scope {
             }
 
             function _runAction(actionId) {
+                var enabled = Meta.powerActions[actionId];
+                if (enabled !== undefined && !enabled) return;
+
                 var command = bar._commandFor(actionId);
                 if (!command || !command.length) return;
 

@@ -4,6 +4,7 @@
 import QtQuick
 import ".."
 import "../components"
+import "../services"
 
 Rectangle {
     id: root
@@ -33,7 +34,14 @@ Rectangle {
         return actionId === "reboot" || actionId === "shutdown";
     }
 
+    function _isEnabled(actionId) {
+        var enabled = Meta.powerActions[actionId];
+        return enabled === undefined ? true : !!enabled;
+    }
+
     function _triggerAction(actionId) {
+        if (!root._isEnabled(actionId)) return;
+
         if (root._requiresConfirm(actionId) && root.pendingActionId !== actionId) {
             root.pendingActionId = actionId;
             confirmReset.restart();
@@ -75,6 +83,7 @@ Rectangle {
 
         property var entry: null
         readonly property bool pendingConfirm: root.pendingActionId === (entry ? entry.id : "")
+        readonly property bool enabled: entry ? root._isEnabled(entry.id) : false
 
         signal triggered(string actionId)
 
@@ -85,11 +94,15 @@ Rectangle {
             radius: Theme.radiusMd
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.top: parent.top
-            color: actionMouse.containsMouse
-                   ? (actionItem.pendingConfirm ? Theme.surfaceActive : Theme.surfaceHover)
-                   : (actionItem.pendingConfirm ? Theme.surfaceActive : Qt.rgba(1, 1, 1, 0.04))
+            color: !actionItem.enabled
+                   ? Qt.rgba(1, 1, 1, 0.03)
+                   : actionMouse.containsMouse
+                     ? (actionItem.pendingConfirm ? Theme.surfaceActive : Theme.surfaceHover)
+                     : (actionItem.pendingConfirm ? Theme.surfaceActive : Qt.rgba(1, 1, 1, 0.04))
             border.width: 1
-            border.color: actionItem.pendingConfirm ? Theme.colorError : Theme.borderDefault
+            border.color: !actionItem.enabled
+                          ? Theme.fgMuted
+                          : actionItem.pendingConfirm ? Theme.colorError : Theme.borderDefault
 
             Behavior on color { ColorAnimation { duration: Theme.motionFast } }
             Behavior on border.color { ColorAnimation { duration: Theme.motionFast } }
@@ -98,7 +111,19 @@ Rectangle {
                 anchors.centerIn: parent
                 iconPath: actionItem.entry ? actionItem.entry.iconPath : "phosphor/power.svg"
                 size: 28
-                color: actionItem.pendingConfirm ? Theme.colorError : Theme.fgPrimary
+                color: !actionItem.enabled
+                       ? Theme.fgMuted
+                       : actionItem.pendingConfirm ? Theme.colorError : Theme.fgPrimary
+            }
+
+            Rectangle {
+                visible: !actionItem.enabled
+                width: Theme.powerActionSize - Theme.spaceSm
+                height: 2
+                radius: 1
+                color: Theme.fgMuted
+                anchors.centerIn: parent
+                rotation: -45
             }
         }
 
@@ -111,18 +136,21 @@ Rectangle {
             maximumLineCount: 2
             elide: Text.ElideRight
             text: actionItem.pendingConfirm ? "Click again" : (actionItem.entry ? actionItem.entry.label : "")
-            color: actionItem.pendingConfirm ? Theme.colorError : Theme.fgSecondary
+            color: !actionItem.enabled
+                   ? Theme.fgMuted
+                   : actionItem.pendingConfirm ? Theme.colorError : Theme.fgSecondary
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontBody
             font.weight: actionItem.pendingConfirm ? Theme.weightMedium : Theme.weightRegular
+            opacity: actionItem.enabled ? 1.0 : 0.72
         }
 
         MouseArea {
             id: actionMouse
             anchors.fill: parent
             hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: if (actionItem.entry) actionItem.triggered(actionItem.entry.id)
+            cursorShape: actionItem.enabled ? Qt.PointingHandCursor : Qt.ForbiddenCursor
+            onClicked: if (actionItem.entry && actionItem.enabled) actionItem.triggered(actionItem.entry.id)
         }
     }
 }

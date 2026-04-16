@@ -33,6 +33,18 @@ log_level = "info"
 # role       = "aux"
 
 # ---------------------------------------------------------------------------
+# PowerDock actions
+# Set any action to false to keep the button visible but disabled in the UI.
+# ---------------------------------------------------------------------------
+
+# [power]
+# lock = true
+# suspend = true
+# logout = true
+# reboot = true
+# shutdown = true
+
+# ---------------------------------------------------------------------------
 # Network — wpa_supplicant control socket path
 # Adjust the interface name if yours differs (e.g. wlan0, wlp3s0).
 # ---------------------------------------------------------------------------

@@ -32,8 +32,14 @@ pub fn spawn(
     started_at: Instant,
     enabled_services: Vec<String>,
     screens_roles: std::collections::HashMap<String, String>,
+    power_actions: std::collections::HashMap<String, bool>,
 ) -> ServiceHandle {
-    let initial_snapshot = build_snapshot(started_at, &enabled_services, &screens_roles);
+    let initial_snapshot = build_snapshot(
+        started_at,
+        &enabled_services,
+        &screens_roles,
+        &power_actions,
+    );
     let (state_tx, state_rx) = watch::channel(initial_snapshot);
     let (request_tx, request_rx) = mpsc::channel(16);
 
@@ -116,6 +122,7 @@ fn build_snapshot(
     started_at: Instant,
     enabled_services: &[String],
     screens_roles: &std::collections::HashMap<String, String>,
+    power_actions: &std::collections::HashMap<String, bool>,
 ) -> Value {
     let uptime_sec = started_at.elapsed().as_secs();
 
@@ -131,6 +138,10 @@ fn build_snapshot(
         .iter()
         .map(|(name, role)| (name.clone(), Value::from(role.as_str())))
         .collect();
+    let power_obj: serde_json::Map<String, Value> = power_actions
+        .iter()
+        .map(|(name, enabled)| (name.clone(), Value::from(*enabled)))
+        .collect();
 
     serde_json::json!({
         "server_version": SERVER_VERSION,
@@ -138,6 +149,7 @@ fn build_snapshot(
         "services": Value::Object(services_obj),
         "config_needs_restart": false,
         "screens": {"roles": Value::Object(roles_obj)},
+        "power": {"actions": Value::Object(power_obj)},
     })
 }
 

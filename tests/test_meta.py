@@ -57,7 +57,7 @@ def run() -> int:
         if env and assert_dict_keys(
             h,
             env.get("payload"),
-            ["server_version", "uptime_sec", "services", "config_needs_restart"],
+            ["server_version", "uptime_sec", "services", "config_needs_restart", "power"],
             "meta snapshot",
         ):
             payload = env["payload"]
@@ -65,6 +65,7 @@ def run() -> int:
             get_map_value(payload, "uptime_sec", int, h)
             services = get_map_value(payload, "services", dict, h)
             get_map_value(payload, "config_needs_restart", bool, h)
+            power = get_map_value(payload, "power", dict, h)
             if isinstance(services, dict):
                 meta_entry = services.get("meta")
                 if not isinstance(meta_entry, dict):
@@ -73,6 +74,16 @@ def run() -> int:
                     h.ok("meta.services.meta.status is valid")
                 else:
                     h.error(f"invalid meta.services.meta.status: {meta_entry!r}")
+            if isinstance(power, dict):
+                actions = power.get("actions")
+                if not isinstance(actions, dict):
+                    h.error(f"meta.power.actions missing or invalid: {power!r}")
+                else:
+                    for key in ["lock", "suspend", "logout", "reboot", "shutdown"]:
+                        if isinstance(actions.get(key), bool):
+                            h.ok(f"meta.power.actions.{key} is a bool")
+                        else:
+                            h.error(f"meta.power.actions.{key} invalid: {actions!r}")
         client.unsub("meta")
     finally:
         client.close()

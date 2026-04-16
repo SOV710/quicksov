@@ -13,6 +13,8 @@ pub struct Config {
     #[serde(default)]
     pub screens: ScreensConfig,
     #[serde(default)]
+    pub power: PowerConfig,
+    #[serde(default)]
     pub services: ServicesConfig,
 }
 
@@ -60,6 +62,37 @@ pub struct ScreensConfig {
 pub struct ScreenMapping {
     pub match_name: String,
     pub role: String,
+}
+
+/// Power action enablement exposed to the shell UI.
+#[derive(Debug, Deserialize)]
+pub struct PowerConfig {
+    #[serde(default = "default_power_action_enabled")]
+    pub lock: bool,
+    #[serde(default = "default_power_action_enabled")]
+    pub suspend: bool,
+    #[serde(default = "default_power_action_enabled")]
+    pub logout: bool,
+    #[serde(default = "default_power_action_enabled")]
+    pub reboot: bool,
+    #[serde(default = "default_power_action_enabled")]
+    pub shutdown: bool,
+}
+
+impl Default for PowerConfig {
+    fn default() -> Self {
+        Self {
+            lock: default_power_action_enabled(),
+            suspend: default_power_action_enabled(),
+            logout: default_power_action_enabled(),
+            reboot: default_power_action_enabled(),
+            shutdown: default_power_action_enabled(),
+        }
+    }
+}
+
+fn default_power_action_enabled() -> bool {
+    true
 }
 
 /// Which services to enable and their per-service configuration.

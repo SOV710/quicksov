@@ -528,6 +528,21 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
           "additionalProperties": { "type": "string", "enum": ["main", "aux"] }
         }
       }
+    },
+    "power": {
+      "type": "object",
+      "properties": {
+        "actions": {
+          "type": "object",
+          "properties": {
+            "lock":     { "type": "boolean" },
+            "suspend":  { "type": "boolean" },
+            "logout":   { "type": "boolean" },
+            "reboot":   { "type": "boolean" },
+            "shutdown": { "type": "boolean" }
+          }
+        }
+      }
     }
   }
 }

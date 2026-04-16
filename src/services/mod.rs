@@ -87,9 +87,18 @@ pub async fn start_services(cfg: &Config, started_at: Instant) -> HashMap<String
                     .map(|m| (m.match_name.clone(), m.role.clone()))
                     .collect()
             };
+        let power_actions: std::collections::HashMap<String, bool> = [
+            ("lock".to_string(), cfg.power.lock),
+            ("suspend".to_string(), cfg.power.suspend),
+            ("logout".to_string(), cfg.power.logout),
+            ("reboot".to_string(), cfg.power.reboot),
+            ("shutdown".to_string(), cfg.power.shutdown),
+        ]
+        .into_iter()
+        .collect();
         map.insert(
             "meta".into(),
-            meta::spawn(started_at, running, screens_roles),
+            meta::spawn(started_at, running, screens_roles, power_actions),
         );
     }
 
