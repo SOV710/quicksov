@@ -115,6 +115,10 @@ Rectangle {
         id: card
         property var notif: null
         property bool expanded: false
+        readonly property real _bodyLineHeight: bodyMeasure.lineCount > 0
+                                          ? Math.ceil(bodyMeasure.contentHeight / bodyMeasure.lineCount)
+                                          : 0
+        readonly property real _collapsedBodyHeight: _bodyLineHeight * 3
 
         readonly property color _accent: root._urgencyColor(notif ? notif.urgency : "normal")
 
@@ -198,19 +202,6 @@ Rectangle {
 
             // body
             Text {
-                id: bodyLabel
-                visible: notif && notif.body !== ""
-                text: notif ? notif.body : ""
-                color: Theme.fgSecondary
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontBody
-                wrapMode: Text.WordWrap
-                maximumLineCount: card.expanded ? 0 : 3
-                elide: card.expanded ? Text.ElideNone : Text.ElideRight
-                width: parent.width
-            }
-
-            Text {
                 id: bodyMeasure
                 visible: false
                 text: notif ? notif.body : ""
@@ -220,8 +211,29 @@ Rectangle {
                 width: parent.width
             }
 
+            Item {
+                id: bodyViewport
+                visible: notif && notif.body !== ""
+                width: parent.width
+                height: card.expanded
+                        ? bodyLabel.implicitHeight
+                        : Math.min(bodyLabel.implicitHeight, card._collapsedBodyHeight)
+                clip: true
+
+                Text {
+                    id: bodyLabel
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    text: notif ? notif.body : ""
+                    color: Theme.fgSecondary
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontBody
+                    wrapMode: Text.WordWrap
+                }
+            }
+
             Text {
-                visible: bodyLabel.visible && bodyMeasure.lineCount > 3
+                visible: bodyViewport.visible && bodyMeasure.lineCount > 3
                 text: card.expanded ? "Less" : "More"
                 color: Theme.accentBlue
                 font.family: Theme.fontFamily
