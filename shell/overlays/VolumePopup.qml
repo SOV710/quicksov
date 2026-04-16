@@ -84,7 +84,7 @@ Rectangle {
             }
 
             Text {
-                text: Audio.streams.length > 0 ? String(Audio.streams.length) : ""
+                text: Audio.streamsModel.count > 0 ? String(Audio.streamsModel.count) : ""
                 visible: text !== ""
                 color: Theme.fgMuted
                 font.family: Theme.fontFamily
@@ -264,7 +264,7 @@ Rectangle {
             }
 
             Item {
-                visible: Audio.streams.length === 0
+                visible: Audio.streamsModel.count === 0
                 width: parent.width
                 implicitHeight: emptyText.implicitHeight + Theme.spaceSm
 
@@ -280,22 +280,26 @@ Rectangle {
 
             ListView {
                 id: streamList
-                visible: Audio.streams.length > 0
+                visible: Audio.streamsModel.count > 0
                 width: parent.width
                 implicitHeight: contentHeight
                 height: Math.min(
                     contentHeight,
                     Theme.powerDockHeight + Theme.spaceXl * 2
                 )
-                model: Audio.streams
+                model: Audio.streamsModel
                 spacing: Theme.spaceXs
                 clip: true
                 interactive: contentHeight > height
 
                 delegate: Rectangle {
-                    required property var modelData
+                    required property string app_name
+                    required property string title
+                    required property int volume_pct
+                    required property bool muted
+                    required property int stream_id
 
-                    readonly property real _volume: (modelData.volume_pct || 0) / 100.0
+                    readonly property real _volume: volume_pct / 100.0
 
                     width: streamList.width
                     radius: Theme.radiusSm
@@ -318,7 +322,7 @@ Rectangle {
                                 spacing: 2
 
                                 Text {
-                                    text: modelData.app_name || "Unknown app"
+                                    text: app_name || "Unknown app"
                                     color: Theme.fgPrimary
                                     font.family: Theme.fontFamily
                                     font.pixelSize: Theme.fontBody
@@ -328,8 +332,8 @@ Rectangle {
                                 }
 
                                 Text {
-                                    visible: root._streamSubtitle(modelData) !== ""
-                                    text: root._streamSubtitle(modelData)
+                                    visible: root._streamSubtitle({ app_name: app_name, title: title }) !== ""
+                                    text: root._streamSubtitle({ app_name: app_name, title: title })
                                     color: Theme.fgMuted
                                     font.family: Theme.fontFamily
                                     font.pixelSize: Theme.fontSmall
@@ -340,7 +344,7 @@ Rectangle {
 
                             Text {
                                 text: root._percentText(_volume)
-                                color: modelData.muted ? Theme.fgMuted : root._accentFor(_volume)
+                                color: muted ? Theme.fgMuted : root._accentFor(_volume)
                                 font.family: Theme.fontFamily
                                 font.pixelSize: Theme.fontBody
                                 font.weight: Theme.weightMedium
@@ -350,11 +354,11 @@ Rectangle {
 
                         AudioSlider {
                             width: parent.width
-                            modelValue: modelData.volume_pct / 100.0
+                            modelValue: volume_pct / 100.0
                             accentColor: root._accentFor(liveValue)
-                            muted: modelData.muted === true
+                            muted: muted
                             onAdjusted: function(value) {
-                                Audio.setStreamVolume(modelData.id, value);
+                                Audio.setStreamVolume(stream_id, value);
                             }
                         }
                     }
