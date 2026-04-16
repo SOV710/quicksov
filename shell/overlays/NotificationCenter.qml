@@ -115,9 +115,7 @@ Rectangle {
         id: card
         property var notif: null
         property bool expanded: false
-        readonly property real _bodyLineHeight: bodyMeasure.lineCount > 0
-                                          ? Math.ceil(bodyMeasure.contentHeight / bodyMeasure.lineCount)
-                                          : 0
+        readonly property real _bodyLineHeight: Math.ceil(Theme.fontBody * 1.35)
         readonly property real _collapsedBodyHeight: _bodyLineHeight * 3
 
         readonly property color _accent: root._urgencyColor(notif ? notif.urgency : "normal")
@@ -208,6 +206,8 @@ Rectangle {
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontBody
                 wrapMode: Text.WordWrap
+                lineHeightMode: Text.FixedHeight
+                lineHeight: card._bodyLineHeight
                 width: parent.width
             }
 
@@ -229,6 +229,8 @@ Rectangle {
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontBody
                     wrapMode: Text.WordWrap
+                    lineHeightMode: Text.FixedHeight
+                    lineHeight: card._bodyLineHeight
                 }
             }
 
