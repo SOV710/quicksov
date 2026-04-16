@@ -13,6 +13,8 @@ Item {
     implicitWidth: row.implicitWidth
     implicitHeight: row.implicitHeight
 
+    signal clicked()
+
     readonly property string _iconPath: {
         if (!Audio.ready || !Audio.defaultSink) return "lucide/volume-x.svg";
         if (Audio.muted) return "lucide/volume-x.svg";
@@ -48,12 +50,14 @@ Item {
     MouseArea {
         anchors.fill: parent
         hoverEnabled: true
-        acceptedButtons: Qt.NoButton
+        acceptedButtons: Qt.LeftButton
+        cursorShape: Qt.PointingHandCursor
+        onClicked: root.clicked()
         onWheel: function(wheel) {
             if (!Audio.ready || !Audio.defaultSink) return;
             var delta = wheel.angleDelta.y > 0 ? 0.05 : -0.05;
             var newVol = Math.max(0.0, Math.min(1.5, Audio.volume + delta));
-            Audio.setVolume(Audio.defaultSink.name, newVol);
+            Audio.setVolume(Audio.defaultSink.id, newVol);
         }
     }
 }
