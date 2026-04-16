@@ -217,7 +217,9 @@ fn refresh_snapshot_blocking() -> Result<AudioSnapshot, AudioError> {
 
 fn find_metadata_name(objects: &[Value], key: &str) -> Option<String> {
     for object in objects {
-        let entries = object.get("metadata")?.as_array()?;
+        let Some(entries) = object.get("metadata").and_then(Value::as_array) else {
+            continue;
+        };
         for entry in entries {
             if entry.get("key").and_then(Value::as_str) != Some(key) {
                 continue;
@@ -411,10 +413,22 @@ fn node_state(object: &Value) -> Option<NodeState> {
         .first()?
         .as_object()?;
 
+    let volume = props
+        .get("channelVolumes")
+        .and_then(Value::as_array)
+        .and_then(|values| max_channel_volume(values))
+        .map(|channel| channel.cbrt())
+        .or_else(|| props.get("volume").and_then(Value::as_f64))
+        .unwrap_or(1.0);
+
     Some(NodeState {
-        volume: props.get("volume").and_then(Value::as_f64).unwrap_or(1.0),
+        volume,
         muted: props.get("mute").and_then(Value::as_bool).unwrap_or(false),
     })
+}
+
+fn max_channel_volume(values: &[Value]) -> Option<f64> {
+    values.iter().filter_map(Value::as_f64).reduce(f64::max)
 }
 
 fn volume_pct(volume: f64) -> i64 {

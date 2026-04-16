@@ -46,6 +46,35 @@ def _read_snapshot(h: Harness, socket_path: str, timeout: float) -> dict[str, An
                         h.error(f"audio.{list_name}[{idx}] is not a map: {node!r}")
             else:
                 h.error(f"audio.{list_name} is not a list: {snapshot!r}")
+
+        sinks = snapshot.get("sinks")
+        if isinstance(sinks, list) and sinks:
+            default_sink = snapshot.get("default_sink")
+            sink_names = {
+                node.get("name")
+                for node in sinks
+                if isinstance(node, dict) and isinstance(node.get("name"), str)
+            }
+            h.expect(
+                isinstance(default_sink, str) and default_sink in sink_names,
+                f"audio.default_sink resolves to a known sink: {default_sink!r}",
+                f"audio.default_sink does not resolve to a known sink: {default_sink!r}",
+            )
+
+        sources = snapshot.get("sources")
+        if isinstance(sources, list) and sources:
+            default_source = snapshot.get("default_source")
+            source_names = {
+                node.get("name")
+                for node in sources
+                if isinstance(node, dict) and isinstance(node.get("name"), str)
+            }
+            h.expect(
+                isinstance(default_source, str) and default_source in source_names,
+                f"audio.default_source resolves to a known source: {default_source!r}",
+                f"audio.default_source does not resolve to a known source: {default_source!r}",
+            )
+
         streams = snapshot.get("streams")
         if isinstance(streams, list):
             h.ok(f"audio.streams is a list (len={len(streams)})")

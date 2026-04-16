@@ -182,7 +182,7 @@ Rectangle {
                     modelValue: Audio.defaultSink ? (Audio.defaultSink.volume_pct / 100.0) : 0
                     accentColor: root._accentFor(liveValue)
                     muted: Audio.muted
-                    onAdjusted: {
+                    onAdjusted: function(value) {
                         if (Audio.defaultSink)
                             Audio.setVolume(Audio.defaultSink.id, value);
                     }
@@ -359,7 +359,9 @@ Rectangle {
                             modelValue: modelData.volume_pct / 100.0
                             accentColor: root._accentFor(liveValue)
                             muted: modelData.muted === true
-                            onAdjusted: Audio.setStreamVolume(modelData.id, value)
+                            onAdjusted: function(value) {
+                                Audio.setStreamVolume(modelData.id, value);
+                            }
                         }
                     }
                 }
