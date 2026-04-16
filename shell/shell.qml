@@ -3,8 +3,10 @@
 
 import Quickshell
 import "./bars"
+import "./desktop"
 
 Scope {
     MainBar {}
     AuxBar {}
+    PowerDock {}
 }

@@ -2,101 +2,127 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import QtQuick
-import Quickshell.Io
 import ".."
 import "../components"
 
 Rectangle {
     id: root
 
-    signal closed()
+    signal actionRequested(string actionId)
+    signal closeRequested()
 
-    width:  240
-    height: menuCol.implicitHeight + Theme.spaceLg * 2
-    radius: Theme.radiusMd
+    implicitWidth: Theme.powerDockWidth
+    implicitHeight: Theme.powerDockHeight
+    radius: Theme.radiusLg
     color:  Theme.bgSurface
     border.color: Theme.borderDefault
     border.width: 1
-    opacity: visible ? Theme.opacityPopup : 0
+    clip: true
 
-    Behavior on opacity { NumberAnimation { duration: Theme.motionFast } }
+    property string pendingActionId: ""
 
-    Column {
-        id: menuCol
-        anchors {
-            fill: parent
-            margins: Theme.spaceLg
+    readonly property var entries: [
+        { id: "lock",     label: "Lock",     iconPath: "phosphor/lock.svg",              danger: false },
+        { id: "suspend",  label: "Suspend",  iconPath: "phosphor/moon.svg",              danger: false },
+        { id: "logout",   label: "Logout",   iconPath: "phosphor/sign-out.svg",          danger: false },
+        { id: "reboot",   label: "Reboot",   iconPath: "phosphor/arrows-clockwise.svg",  danger: true  },
+        { id: "shutdown", label: "Shutdown", iconPath: "phosphor/power.svg",             danger: true  }
+    ]
+
+    function _requiresConfirm(actionId) {
+        return actionId === "reboot" || actionId === "shutdown";
+    }
+
+    function _triggerAction(actionId) {
+        if (root._requiresConfirm(actionId) && root.pendingActionId !== actionId) {
+            root.pendingActionId = actionId;
+            confirmReset.restart();
+            return;
         }
-        spacing: Theme.spaceXs
 
-        Text {
-            text: "Power"
-            color: Theme.fgPrimary
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontLabel
-            font.weight: Theme.weightSemibold
-            width: parent.width
-        }
+        confirmReset.stop();
+        root.pendingActionId = "";
+        root.actionRequested(actionId);
+        root.closeRequested();
+    }
+
+    Timer {
+        id: confirmReset
+        interval: Theme.powerConfirmTimeoutMs
+        onTriggered: root.pendingActionId = ""
+    }
+
+    Row {
+        id: actionRow
+        anchors.centerIn: parent
+        spacing: Theme.spaceSm
 
         Repeater {
-            model: [
-                { label: "Suspend",  iconPath: "lucide/moon.svg",      cmd: ["systemctl", "suspend"]     },
-                { label: "Reboot",   iconPath: "lucide/rotate-cw.svg", cmd: ["systemctl", "reboot"]      },
-                { label: "Shut down",iconPath: "phosphor/power.svg",   cmd: ["systemctl", "poweroff"]    },
-                { label: "Lock",     iconPath: "lucide/lock.svg",      cmd: ["loginctl", "lock-session"]  }
-            ]
+            model: root.entries
 
-            delegate: PowerItem {
+            delegate: PowerAction {
                 required property var modelData
                 entry: modelData
-                width: menuCol.width
+                width: Math.floor((root.width - actionRow.spacing * (root.entries.length - 1)) / root.entries.length)
+                height: root.height - Theme.spaceSm * 2
+                onTriggered: actionId => root._triggerAction(actionId)
             }
         }
     }
 
-    component PowerItem: Rectangle {
+    component PowerAction: Item {
+        id: actionItem
+
         property var entry: null
-        height: 36
-        radius: Theme.radiusSm
-        color: hovered ? Theme.surfaceHover : "transparent"
+        readonly property bool pendingConfirm: root.pendingActionId === (entry ? entry.id : "")
 
-        property bool hovered: false
+        signal triggered(string actionId)
 
-        Behavior on color { ColorAnimation { duration: Theme.motionFast } }
+        Rectangle {
+            id: iconPlate
+            width: Theme.powerActionSize
+            height: Theme.powerActionSize
+            radius: Theme.radiusMd
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.top: parent.top
+            color: actionMouse.containsMouse
+                   ? (actionItem.pendingConfirm ? Theme.surfaceActive : Theme.surfaceHover)
+                   : (actionItem.pendingConfirm ? Theme.surfaceActive : Qt.rgba(1, 1, 1, 0.04))
+            border.width: 1
+            border.color: actionItem.pendingConfirm ? Theme.colorError : Theme.borderDefault
 
-        Row {
-            anchors { verticalCenter: parent.verticalCenter; left: parent.left; leftMargin: Theme.spaceSm }
-            spacing: Theme.spaceSm
+            Behavior on color { ColorAnimation { duration: Theme.motionFast } }
+            Behavior on border.color { ColorAnimation { duration: Theme.motionFast } }
 
             SvgIcon {
-                iconPath: entry ? entry.iconPath : "lucide/x.svg"
-                size: Theme.iconSize
-                color: Theme.fgSecondary
-                anchors.verticalCenter: parent.verticalCenter
-            }
-            Text {
-                text: entry ? entry.label : ""
-                color: Theme.fgPrimary
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontBody
-                anchors.verticalCenter: parent.verticalCenter
+                anchors.centerIn: parent
+                iconPath: actionItem.entry ? actionItem.entry.iconPath : "phosphor/power.svg"
+                size: 28
+                color: actionItem.pendingConfirm ? Theme.colorError : Theme.fgPrimary
             }
         }
 
+        Text {
+            width: parent.width
+            anchors.top: iconPlate.bottom
+            anchors.topMargin: Theme.spaceXs
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.WordWrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
+            text: actionItem.pendingConfirm ? "Click again" : (actionItem.entry ? actionItem.entry.label : "")
+            color: actionItem.pendingConfirm ? Theme.colorError : Theme.fgSecondary
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontBody
+            font.weight: actionItem.pendingConfirm ? Theme.weightMedium : Theme.weightRegular
+        }
+
         MouseArea {
+            id: actionMouse
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onEntered: parent.hovered = true
-            onExited:  parent.hovered = false
-            onClicked: {
-                if (entry) {
-                    var p = Qt.createQmlObject('import Quickshell.Io; Process { }', root);
-                    p.command = entry.cmd;
-                    p.running = true;
-                }
-                root.closed();
-            }
+            onClicked: if (actionItem.entry) actionItem.triggered(actionItem.entry.id)
         }
     }
 }

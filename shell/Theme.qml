@@ -58,6 +58,15 @@ Singleton {
     readonly property int auxTriggerDelayMs: 200
     readonly property int auxExpandedWidth: 320
 
+    readonly property int powerTriggerWidth: 200
+    readonly property int powerTriggerHeight: 3
+    readonly property int powerTriggerDelayMs: 200
+    readonly property int powerCloseDelayMs: 120
+    readonly property int powerDockWidth: 400
+    readonly property int powerDockHeight: 120
+    readonly property int powerActionSize: 64
+    readonly property int powerConfirmTimeoutMs: 3000
+
     // --- Dynamic color tokens (updated from daemon theme topic) ---
     property string bgCanvas: "#1a1b26"
     property string bgSurface: "#1a1b26"
