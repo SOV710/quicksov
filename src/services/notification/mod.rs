@@ -99,15 +99,18 @@ async fn run(
     let shared = Arc::new(RwLock::new(NotifState::default()));
 
     // Start the D-Bus server
-    let dbus_result = start_dbus_server(shared.clone(), state_tx.clone(), events_tx.clone()).await;
-
-    if let Err(e) = dbus_result {
-        warn!(error = %e, "notification D-Bus server failed to start");
-    }
+    let dbus_conn =
+        match start_dbus_server(shared.clone(), state_tx.clone(), events_tx.clone()).await {
+            Ok(conn) => Some(conn),
+            Err(e) => {
+                warn!(error = %e, "notification D-Bus server failed to start");
+                None
+            }
+        };
 
     // Handle IPC requests
     while let Some(req) = request_rx.recv().await {
-        handle_request(req, &shared, &state_tx, &events_tx).await;
+        handle_request(req, &shared, &state_tx, &events_tx, dbus_conn.as_ref()).await;
     }
 
     info!("notification service stopped");
@@ -229,7 +232,7 @@ async fn start_dbus_server(
     shared: Arc<RwLock<NotifState>>,
     state_tx: watch::Sender<Value>,
     events_tx: broadcast::Sender<Value>,
-) -> Result<(), NotifError> {
+) -> Result<zbus::Connection, NotifError> {
     let server = NotifServer {
         shared,
         state_tx,
@@ -241,15 +244,7 @@ async fn start_dbus_server(
         .serve_at("/org/freedesktop/Notifications", server)?
         .build()
         .await?;
-
-    // Keep the connection alive in a background task
-    tokio::spawn(async move {
-        let _conn = conn;
-        // Connection stays alive as long as this task runs
-        futures::future::pending::<()>().await;
-    });
-
-    Ok(())
+    Ok(conn)
 }
 
 // ---------------------------------------------------------------------------
@@ -404,10 +399,11 @@ async fn handle_request(
     shared: &Arc<RwLock<NotifState>>,
     state_tx: &watch::Sender<Value>,
     events_tx: &broadcast::Sender<Value>,
+    dbus_conn: Option<&zbus::Connection>,
 ) {
     let result = match req.action.as_str() {
-        "invoke_action" => handle_invoke_action(&req.payload, shared).await,
-        "dismiss" => handle_dismiss(&req.payload, shared, state_tx, events_tx).await,
+        "invoke_action" => handle_invoke_action(&req.payload, shared, events_tx, dbus_conn).await,
+        "dismiss" => handle_dismiss(&req.payload, shared, state_tx, events_tx, dbus_conn).await,
         "dismiss_all" => handle_dismiss_all(shared, state_tx).await,
         "mark_read" => handle_mark_read(&req.payload, shared, state_tx).await,
         other => Err(ServiceError::ActionUnknown {
@@ -420,20 +416,42 @@ async fn handle_request(
 async fn handle_invoke_action(
     payload: &Value,
     shared: &Arc<RwLock<NotifState>>,
+    events_tx: &broadcast::Sender<Value>,
+    dbus_conn: Option<&zbus::Connection>,
 ) -> Result<Value, ServiceError> {
     let id = extract_u64(payload, "id").ok_or_else(|| ServiceError::ActionPayload {
         msg: "missing 'id' field".to_string(),
     })? as u32;
-    let _action_id =
+    let action_id =
         extract_str(payload, "action_id").ok_or_else(|| ServiceError::ActionPayload {
             msg: "missing 'action_id' field".to_string(),
         })?;
     let state = shared.read().await;
-    if !state.notifications.iter().any(|n| n.id == id) {
+    let Some(notification) = state.notifications.iter().find(|n| n.id == id) else {
         return Err(ServiceError::ActionPayload {
             msg: format!("notification {id} not found"),
         });
+    };
+    if !notification.actions.iter().any(|a| a.id == action_id) {
+        return Err(ServiceError::ActionPayload {
+            msg: format!("notification {id} action '{action_id}' not found"),
+        });
     }
+    drop(state);
+
+    let conn = dbus_conn.ok_or(ServiceError::Unavailable)?;
+    let emitter = zbus::object_server::SignalEmitter::new(conn, "/org/freedesktop/Notifications")
+        .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
+    NotifServer::action_invoked(&emitter, id, action_id.to_string())
+        .await
+        .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
+
+    let event = json_map([
+        ("type", Value::from("action_invoked")),
+        ("id", Value::from(id as i64)),
+        ("action_id", Value::from(action_id)),
+    ]);
+    let _ = events_tx.send(event);
     Ok(Value::Null)
 }
 
@@ -442,6 +460,7 @@ async fn handle_dismiss(
     shared: &Arc<RwLock<NotifState>>,
     state_tx: &watch::Sender<Value>,
     events_tx: &broadcast::Sender<Value>,
+    dbus_conn: Option<&zbus::Connection>,
 ) -> Result<Value, ServiceError> {
     let id = extract_u64(payload, "id").ok_or_else(|| ServiceError::ActionPayload {
         msg: "missing 'id' field".to_string(),
@@ -456,6 +475,14 @@ async fn handle_dismiss(
         ("reason", Value::from(2_i64)), // dismissed by user
     ]);
     let _ = events_tx.send(event);
+
+    if let Some(conn) = dbus_conn {
+        if let Ok(emitter) =
+            zbus::object_server::SignalEmitter::new(conn, "/org/freedesktop/Notifications")
+        {
+            let _ = NotifServer::notification_closed(&emitter, id, 2).await;
+        }
+    }
     Ok(Value::Null)
 }
 
