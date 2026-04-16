@@ -21,14 +21,13 @@ Singleton {
     property var outputs: []
 
     function focusWorkspace(index) {
-        // Daemon expects { idx: N }, not { reference: { Index: N } }
         Client.request("niri", "focus_workspace", { idx: index }, null);
     }
-    function moveColumnToWorkspace(index) {
-        Client.request("niri", "move_column_to_workspace", { reference: { Index: index } }, null);
-    }
-    function niriAction(action) {
-        Client.request("niri", "niri_action", action, null);
+    function runAction(action, args) {
+        var payload = { action: action };
+        if (args !== undefined)
+            payload.args = args;
+        Client.request("niri", "run_action", payload, null);
     }
 
     function workspacesForOutput(outputName) {
