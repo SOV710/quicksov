@@ -58,7 +58,7 @@ Singleton {
     readonly property int auxTriggerDelayMs: 200
     readonly property int auxExpandedWidth: 320
 
-    readonly property int powerTriggerWidth: 200
+    readonly property int powerTriggerWidth: 280
     readonly property int powerTriggerHeight: 3
     readonly property int powerTriggerDelayMs: 200
     readonly property int powerCloseDelayMs: 120
