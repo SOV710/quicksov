@@ -65,12 +65,14 @@ class QsovClient:
         self.timeout = timeout
         self.sock: socket.socket | None = None
         self._next_id = 1
+        self._recv_buffer = bytearray()
 
     def connect(self) -> None:
         self.close()
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.sock.settimeout(self.timeout)
         self.sock.connect(self.socket_path)
+        self._recv_buffer.clear()
 
     def close(self) -> None:
         if self.sock is not None:
@@ -98,18 +100,19 @@ class QsovClient:
 
     def recv_obj(self) -> Any:
         sock = self._ensure_sock()
-        data = bytearray()
-        while True:
+        while b"\n" not in self._recv_buffer:
             chunk = sock.recv(4096)
             if not chunk:
-                if data:
+                if self._recv_buffer:
                     break
                 raise QsovError("socket closed while receiving line")
-            data.extend(chunk)
-            if b"\n" in chunk:
-                break
+            self._recv_buffer.extend(chunk)
 
-        line, _, _rest = bytes(data).partition(b"\n")
+        line, sep, rest = bytes(self._recv_buffer).partition(b"\n")
+        if sep:
+            self._recv_buffer = bytearray(rest)
+        else:
+            self._recv_buffer.clear()
         if not line:
             raise QsovError("received empty line")
 
