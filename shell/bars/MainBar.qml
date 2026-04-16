@@ -17,9 +17,9 @@ Scope {
 
             required property var modelData
             screen: modelData
-            // Show on every screen when Meta is not ready or no roles are configured.
-            // Once Meta has role data, only the "main" screen shows this bar.
-            visible: !Meta.ready || !Meta.hasScreenRoles || Meta.screenRoles[modelData.name] === "main"
+            // Render a top bar on every output. Screen roles remain available through
+            // Meta for any future per-screen behavior, but no longer gate MainBar itself.
+            visible: true
 
             anchors.top:   true
             anchors.left:  true
