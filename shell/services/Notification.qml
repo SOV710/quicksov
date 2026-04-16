@@ -25,13 +25,14 @@ Singleton {
         Client.request("notification", "dismiss_all", {}, null);
     }
     function invokeAction(id, actionKey) {
-        Client.request("notification", "invoke_action", { id: id, action_key: actionKey }, null);
+        Client.request("notification", "invoke_action", { id: id, action_id: actionKey }, null);
     }
 
     function _onSnapshot(payload) {
-        root.count         = payload.count          || 0;
-        root.hasUnread     = payload.has_unread      || false;
-        root.notifications = payload.notifications   || [];
+        var unread = payload.unread_count || 0;
+        root.count         = unread;
+        root.hasUnread     = unread > 0;
+        root.notifications = payload.history || [];
         root.ready  = true;
         root.status = "ok";
     }

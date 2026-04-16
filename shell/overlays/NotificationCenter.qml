@@ -25,7 +25,7 @@ Rectangle {
     // ── helpers ─────────────────────────────────────────────────────────────
     function _timeLabel(ts) {
         if (!ts) return "";
-        var d = new Date(ts * 1000);
+        var d = new Date(ts);
         var h = d.getHours().toString().padStart(2, "0");
         var m = d.getMinutes().toString().padStart(2, "0");
         return h + ":" + m;
