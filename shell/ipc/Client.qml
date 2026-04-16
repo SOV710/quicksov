@@ -43,21 +43,18 @@ Singleton {
 
         onConnectedChanged: {
             if (!connected) {
-                root.handshakeDone = false;
-                root.connectionChanged(false);
-                root._scheduleReconnect();
+                root._markDisconnected();
+                root._ensureReconnectLoop();
             } else {
-                // Send Hello immediately on connect
-                var hello = Protocol.makeHello();
-                socket.write(JSON.stringify(hello) + "\n");
-                socket.flush();
+                root._sendHello();
             }
         }
 
         onError: function(error) {
             console.warn("[ipc] socket error:", error);
             // onConnectedChanged may not fire if connected was already false
-            if (!reconnectTimer.running) root._scheduleReconnect();
+            root._markDisconnected();
+            root._ensureReconnectLoop();
         }
     }
 
@@ -65,13 +62,23 @@ Singleton {
         id: reconnectTimer
         interval: 500
         repeat: false
-        onTriggered: root._connect()
+        onTriggered: root._reconnectTick()
     }
 
     function _socketPath() {
+        var override = Quickshell.env("QSOV_SOCKET");
+        if (override && String(override).length > 0) {
+            var overridePath = String(override);
+            console.log("[ipc] socket path:", overridePath);
+            return overridePath;
+        }
+
         // StandardPaths.writableLocation returns a file:// URL; strip the scheme
-        var rtUrl = StandardPaths.writableLocation(StandardPaths.RuntimeLocation).toString();
-        var rtDir = rtUrl.replace(/^file:\/\//, "");
+        var rtDir = Quickshell.env("XDG_RUNTIME_DIR");
+        if (!rtDir || String(rtDir).length === 0) {
+            var rtUrl = StandardPaths.writableLocation(StandardPaths.RuntimeLocation).toString();
+            rtDir = rtUrl.replace(/^file:\/\//, "");
+        }
         var path = rtDir + "/quicksov/daemon.sock";
         console.log("[ipc] socket path:", path);
         return path;
@@ -84,27 +91,55 @@ Singleton {
         socket.connected = true;
     }
 
-    function _scheduleReconnect() {
+    function _sendHello() {
+        root.handshakeDone = false;
+        var hello = Protocol.makeHello();
+        socket.write(JSON.stringify(hello) + "\n");
+        socket.flush();
+    }
+
+    function _markDisconnected() {
+        var wasConnected = root.connected || root.handshakeDone;
+        root.connected = false;
+        root.handshakeDone = false;
+        root.sessionId = "";
+        root.capabilities = [];
+        root._pending = ({});
+        if (wasConnected) root.connectionChanged(false);
+    }
+
+    function _ensureReconnectLoop() {
         if (reconnectTimer.running) return;
         reconnectTimer.interval = root._retryDelay;
         reconnectTimer.start();
-        root._retryDelay = Math.min(root._retryDelay * 2, root._maxDelay);
+    }
+
+    function _reconnectTick() {
+        if (root.handshakeDone) return;
+
+        root._connect();
+
+        var nextDelay = Math.min(root._retryDelay * 2, root._maxDelay);
+        reconnectTimer.interval = nextDelay;
+        reconnectTimer.start();
+        root._retryDelay = nextDelay;
     }
 
     function _resetBackoff() { root._retryDelay = 500; }
 
     function _handleMessage(msg) {
         if (msg._type === "HelloAck") {
+            if (reconnectTimer.running) reconnectTimer.stop();
             root.connected = true;
             root.handshakeDone = true;
             root.sessionId = msg.session_id != null ? String(msg.session_id) : "";
             root.capabilities = msg.capabilities || [];
             root._resetBackoff();
-            root.connectionChanged(true);
             var topics = Object.keys(root._subscribers);
             for (var i = 0; i < topics.length; i++) {
                 root._sendRaw(Protocol.makeSub(topics[i]));
             }
+            root.connectionChanged(true);
             return;
         }
         if (!root.handshakeDone) return;
@@ -132,8 +167,12 @@ Singleton {
 
     function subscribe(topic, callback) {
         if (!root._subscribers[topic]) root._subscribers[topic] = [];
-        root._subscribers[topic].push(callback);
-        if (root.handshakeDone) root._sendRaw(Protocol.makeSub(topic));
+        var subs = root._subscribers[topic];
+        if (subs.indexOf(callback) >= 0) return;
+
+        var wasEmpty = subs.length === 0;
+        subs.push(callback);
+        if (wasEmpty && root.handshakeDone) root._sendRaw(Protocol.makeSub(topic));
     }
 
     function unsubscribe(topic, callback) {
@@ -154,5 +193,8 @@ Singleton {
         return msg.id;
     }
 
-    Component.onCompleted: root._connect()
+    Component.onCompleted: {
+        root._ensureReconnectLoop();
+        root._connect();
+    }
 }
