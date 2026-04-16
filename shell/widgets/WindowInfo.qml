@@ -9,11 +9,21 @@ Item {
     id: root
 
     property real maxWidth: 320
+    readonly property real _textBudget: Math.max(
+        0,
+        root.maxWidth - separator.implicitWidth - content.spacing * 2
+    )
+    readonly property real _segmentMaxWidth: Math.floor(_textBudget / 2)
+    readonly property real _appWidth: Math.min(appLabel.implicitWidth, root._segmentMaxWidth)
+    readonly property real _titleWidth: Math.min(titleLabel.implicitWidth, root._segmentMaxWidth)
 
-    width: Math.min(implicitWidth, maxWidth)
-    implicitWidth: appLabel.implicitWidth
+    width: Math.min(
+        root.maxWidth,
+        root._appWidth + separator.implicitWidth + root._titleWidth + content.spacing * 2
+    )
+    implicitWidth: root._appWidth
                  + separator.implicitWidth
-                 + titleLabel.implicitWidth
+                 + root._titleWidth
                  + content.spacing * 2
     implicitHeight: Math.max(
         appLabel.implicitHeight,
@@ -41,7 +51,7 @@ Item {
 
         Text {
             id: appLabel
-            width: Math.min(implicitWidth, Math.floor(root.width * 0.4))
+            width: root._appWidth
             text: root._appName
             color: root._hasWindow ? Theme.fgSecondary : Theme.fgMuted
             font.family: Theme.fontFamily
@@ -63,10 +73,7 @@ Item {
 
         Text {
             id: titleLabel
-            width: Math.max(
-                0,
-                root.width - appLabel.width - separator.implicitWidth - content.spacing * 2
-            )
+            width: root._titleWidth
             text: root._title
             color: root._hasWindow ? Theme.fgSecondary : Theme.fgMuted
             font.family: Theme.fontFamily
