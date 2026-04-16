@@ -147,12 +147,13 @@ impl NotifServer {
     ) -> u32 {
         let urgency = parse_urgency(&hints);
         let parsed_actions = parse_actions(&actions);
+        let (app_name, summary) = normalize_notification_text(app_name, summary);
 
         let mut state = self.shared.write().await;
         let id = if replaces_id > 0 {
             let data = NotifData {
-                app_name,
-                summary,
+                app_name: &app_name,
+                summary: &summary,
                 body,
                 icon: app_icon,
                 urgency: &urgency,
@@ -162,8 +163,8 @@ impl NotifServer {
             replaces_id
         } else {
             let data = NotifData {
-                app_name,
-                summary,
+                app_name: &app_name,
+                summary: &summary,
                 body,
                 icon: app_icon,
                 urgency: &urgency,
@@ -336,6 +337,21 @@ fn parse_actions(actions: &[String]) -> Vec<NotifAction> {
             }
         })
         .collect()
+}
+
+fn normalize_notification_text(app_name: &str, summary: &str) -> (String, String) {
+    let app_name = app_name.trim();
+    let summary = summary.trim();
+
+    if !app_name.is_empty() {
+        return (app_name.to_string(), summary.to_string());
+    }
+
+    if !summary.is_empty() {
+        return (summary.to_string(), String::new());
+    }
+
+    (String::new(), String::new())
 }
 
 // ---------------------------------------------------------------------------
