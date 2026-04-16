@@ -26,6 +26,15 @@ Item {
 
         Behavior on opacity { NumberAnimation { duration: Theme.motionFast } }
 
+        // Consume clicks inside the popup so they do not fall through to
+        // MainBar's outside-click dismiss layer.
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.AllButtons
+            onClicked: function(mouse) { mouse.accepted = true; }
+            onPressed: function(mouse) { mouse.accepted = true; }
+        }
+
         Column {
             anchors {
                 fill: parent

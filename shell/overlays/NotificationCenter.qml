@@ -22,6 +22,15 @@ Rectangle {
 
     Behavior on opacity { NumberAnimation { duration: Theme.motionFast } }
 
+    // Consume background clicks so they do not fall through to MainBar's
+    // global outside-click dismiss layer.
+    MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.AllButtons
+        onClicked: function(mouse) { mouse.accepted = true; }
+        onPressed: function(mouse) { mouse.accepted = true; }
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────
     function _timeLabel(ts) {
         if (!ts) return "";
