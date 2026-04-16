@@ -233,9 +233,11 @@ fn parse_window_workspace_map(json: &str) -> HashMap<i64, i64> {
 fn parse_focused_window(json: &str) -> Option<FocusedWindow> {
     let val: serde_json::Value = serde_json::from_str(json).ok()?;
     let win = val.get("Ok")?.get("FocusedWindow")?.as_object()?;
+    let app_id = win.get("app_id")?.as_str()?.to_string();
     Some(FocusedWindow {
         id: win.get("id")?.as_i64()?,
-        app_id: win.get("app_id")?.as_str()?.to_string(),
+        display_name: app_display_name(&app_id),
+        app_id,
         title: win.get("title")?.as_str()?.to_string(),
     })
 }
@@ -268,7 +270,12 @@ fn process_event(
                 let id = w.get("id")?.as_i64()?;
                 let app_id = w.get("app_id")?.as_str()?.to_string();
                 let title = w.get("title")?.as_str()?.to_string();
-                Some(FocusedWindow { id, app_id, title })
+                Some(FocusedWindow {
+                    id,
+                    display_name: app_display_name(&app_id),
+                    app_id,
+                    title,
+                })
             }
         });
     }
@@ -325,6 +332,7 @@ struct WorkspaceInfo {
 
 struct FocusedWindow {
     id: i64,
+    display_name: String,
     app_id: String,
     title: String,
 }
@@ -351,12 +359,22 @@ fn build_snapshot(
     let fw = match focused {
         Some(w) => json_map([
             ("id", Value::from(w.id)),
+            ("display_name", Value::from(w.display_name.as_str())),
             ("app_id", Value::from(w.app_id.as_str())),
             ("title", Value::from(w.title.as_str())),
         ]),
         None => Value::Null,
     };
     json_map([("workspaces", Value::Array(ws)), ("focused_window", fw)])
+}
+
+fn app_display_name(app_id: &str) -> String {
+    match app_id {
+        "vivaldi-stable" => "Vivaldi".to_string(),
+        "emacs" => "GNU Emacs".to_string(),
+        "nvim" => "Neovim".to_string(),
+        _ => app_id.to_string(),
+    }
 }
 
 fn workspace_to_value(ws: &WorkspaceInfo, window_count: i64) -> Value {
