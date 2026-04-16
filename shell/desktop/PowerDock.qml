@@ -13,21 +13,13 @@ Scope {
     Variants {
         model: Quickshell.screens
 
-        PanelWindow {
-            id: bar
+        Item {
+            id: root
 
             required property var modelData
-            screen: modelData
-            visible: Meta.ready && Meta.hasScreenRoles && Meta.screenRoles[modelData.name] === "main"
-
-            anchors.left: true
-            anchors.right: true
-            anchors.bottom: true
-
-            color: "transparent"
-            exclusiveZone: 0
-            implicitHeight: Theme.powerDockHeight + Theme.powerTriggerHeight
-
+            readonly property bool isMainScreen: Meta.ready
+                                              && Meta.hasScreenRoles
+                                              && Meta.screenRoles[modelData.name] === "main"
             property bool expanded: false
             readonly property bool hoveringTrigger: triggerMouse.containsMouse
             readonly property bool hoveringMenu: menuMouse.containsMouse
@@ -50,14 +42,14 @@ Scope {
             }
 
             function _syncHoverState() {
-                if (bar.hoveringTrigger) {
+                if (root.hoveringTrigger) {
                     closeTimer.stop();
-                    if (!bar.expanded) openTimer.restart();
+                    if (!root.expanded) openTimer.restart();
                     return;
                 }
 
                 openTimer.stop();
-                if (bar.expanded && !bar.hoveringMenu) closeTimer.restart();
+                if (root.expanded && !root.hoveringMenu) closeTimer.restart();
                 else closeTimer.stop();
             }
 
@@ -65,102 +57,141 @@ Scope {
                 var enabled = Meta.powerActions[actionId];
                 if (enabled !== undefined && !enabled) return;
 
-                var command = bar._commandFor(actionId);
+                var command = root._commandFor(actionId);
                 if (!command || !command.length) return;
 
                 actionProcess.running = false;
                 actionProcess.command = command;
                 actionProcess.running = true;
-                bar.expanded = false;
+                root.expanded = false;
             }
 
-            onHoveringTriggerChanged: bar._syncHoverState()
-            onHoveringMenuChanged: bar._syncHoverState()
+            onHoveringTriggerChanged: root._syncHoverState()
+            onHoveringMenuChanged: root._syncHoverState()
             onExpandedChanged: {
-                bar._syncHoverState();
-                if (bar.expanded) focusScope.forceActiveFocus();
+                root._syncHoverState();
+                if (root.expanded) focusScope.forceActiveFocus();
             }
 
             Timer {
                 id: openTimer
                 interval: Theme.powerTriggerDelayMs
-                onTriggered: bar.expanded = true
+                onTriggered: root.expanded = true
             }
 
             Timer {
                 id: closeTimer
                 interval: Theme.powerCloseDelayMs
-                onTriggered: bar.expanded = false
+                onTriggered: root.expanded = false
             }
 
             Process {
                 id: actionProcess
             }
 
-            FocusScope {
-                id: focusScope
-                anchors.fill: parent
-                focus: bar.expanded
+            PanelWindow {
+                id: triggerWindow
 
-                Keys.onEscapePressed: function(event) {
-                    if (!bar.expanded) return;
-                    bar.expanded = false;
-                    event.accepted = true;
+                screen: root.modelData
+                visible: root.isMainScreen
+
+                anchors.left: true
+                anchors.right: true
+                anchors.bottom: true
+
+                color: "transparent"
+                exclusiveZone: 0
+                implicitHeight: Theme.powerTriggerHeight
+                mask: Region {
+                    item: triggerZone
                 }
 
                 Item {
-                    id: triggerZone
-                    width: Theme.powerTriggerWidth
-                    height: Theme.powerTriggerHeight
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.bottom: parent.bottom
+                    anchors.fill: parent
+
+                    Item {
+                        id: triggerZone
+                        width: Theme.powerTriggerWidth
+                        height: Theme.powerTriggerHeight
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.bottom: parent.bottom
+                    }
 
                     Rectangle {
-                        anchors.fill: parent
+                        anchors.fill: triggerZone
                         color: Qt.rgba(1, 1, 1, 0.01)
                     }
 
                     MouseArea {
                         id: triggerMouse
-                        anchors.fill: parent
+                        anchors.fill: triggerZone
                         acceptedButtons: Qt.NoButton
                         hoverEnabled: true
                     }
                 }
+            }
 
-                PowerMenu {
-                    id: powerMenu
-                    width: Theme.powerDockWidth
-                    height: Theme.powerDockHeight
-                    x: Math.floor((focusScope.width - width) / 2)
-                    y: bar.expanded
-                       ? focusScope.height - Theme.powerTriggerHeight - Theme.powerDockHeight
-                       : focusScope.height
-                    opacity: bar.expanded ? Theme.opacityPopup : 0
-                    visible: bar.expanded || opacity > 0
+            PanelWindow {
+                id: menuWindow
 
-                    onActionRequested: actionId => bar._runAction(actionId)
-                    onCloseRequested: bar.expanded = false
+                screen: root.modelData
+                visible: root.isMainScreen && (root.expanded || powerMenu.opacity > 0)
 
-                    Behavior on y {
-                        NumberAnimation {
-                            duration: bar.expanded ? Theme.motionSlow : Theme.motionNormal
-                            easing.type: bar.expanded ? Easing.OutCubic : Easing.InCubic
-                        }
+                anchors.left: true
+                anchors.right: true
+                anchors.bottom: true
+
+                color: "transparent"
+                exclusiveZone: 0
+                implicitHeight: Theme.powerDockHeight
+                mask: Region {
+                    item: powerMenu
+                }
+
+                FocusScope {
+                    id: focusScope
+                    anchors.fill: parent
+                    focus: root.expanded
+
+                    Keys.onEscapePressed: function(event) {
+                        if (!root.expanded) return;
+                        root.expanded = false;
+                        event.accepted = true;
                     }
 
-                    Behavior on opacity {
-                        NumberAnimation {
-                            duration: bar.expanded ? Theme.motionNormal : Theme.motionFast
-                            easing.type: bar.expanded ? Easing.OutCubic : Easing.InCubic
-                        }
-                    }
+                    PowerMenu {
+                        id: powerMenu
+                        width: Theme.powerDockWidth
+                        height: parent.height
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.bottom: parent.bottom
+                        opacity: root.expanded ? Theme.opacityPopup : 0
+                        visible: root.expanded || opacity > 0
+                        y: root.expanded ? 0 : height
 
-                    MouseArea {
-                        id: menuMouse
-                        anchors.fill: parent
-                        acceptedButtons: Qt.NoButton
-                        hoverEnabled: true
+                        onActionRequested: actionId => root._runAction(actionId)
+                        onCloseRequested: root.expanded = false
+
+                        Behavior on y {
+                            NumberAnimation {
+                                duration: root.expanded ? Theme.motionSlow : Theme.motionNormal
+                                easing.type: root.expanded ? Easing.OutCubic : Easing.InCubic
+                            }
+                        }
+
+                        Behavior on opacity {
+                            NumberAnimation {
+                                duration: root.expanded ? Theme.motionNormal : Theme.motionFast
+                                easing.type: root.expanded ? Easing.OutCubic : Easing.InCubic
+                            }
+                        }
+
+                        MouseArea {
+                            id: menuMouse
+                            anchors.fill: parent
+                            acceptedButtons: Qt.NoButton
+                            hoverEnabled: true
+                        }
                     }
                 }
             }
