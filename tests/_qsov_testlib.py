@@ -322,8 +322,18 @@ def maybe_warn_unavailable(harness: Harness, service: str, payload: dict[str, An
         harness.warn("mpris has no players; media control mutate tests will be skipped")
     elif service == "niri" and not payload.get("workspaces"):
         harness.warn("niri has no workspaces; compositor IPC may be unavailable")
-    elif service == "weather" and payload.get("offline") is True:
-        harness.warn("weather.offline=true; no coordinates, cache, or network fetch available")
+    elif service == "weather":
+        status = payload.get("status")
+        error = payload.get("error")
+        if status in {"init_failed", "refresh_failed"}:
+            if isinstance(error, dict):
+                harness.warn(
+                    f"weather.status={status}; {error.get('kind', 'unknown')}: {error.get('message', '')}"
+                )
+            else:
+                harness.warn(f"weather.status={status}; error details unavailable")
+        elif status == "loading" and payload.get("last_success_at") is None:
+            harness.warn("weather is still loading and has no successful snapshot yet")
 
 
 def choose_socket(args: argparse.Namespace) -> str:
