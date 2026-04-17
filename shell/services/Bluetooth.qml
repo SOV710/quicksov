@@ -28,6 +28,8 @@ Singleton {
     readonly property var availableDevices: root.sortedDevices.filter(function(d) { return !d.connected && !d.paired; })
     readonly property bool scanPending: root.isPending("scan")
     readonly property bool powerPending: root.isPending("power")
+    readonly property string scanBlockedReason: root._scanBlockedReason()
+    readonly property bool scanBlocked: root.scanBlockedReason !== ""
 
     function _copyPending() {
         var copy = ({});
@@ -58,6 +60,15 @@ Singleton {
 
     function devicePendingAction(address) {
         return root.pendingActions[root._deviceKey(address)] || "";
+    }
+
+    function _scanBlockedReason() {
+        for (var key in root.pendingActions) {
+            var action = root.pendingActions[key];
+            if (action === "Connecting") return "Scan paused while connecting";
+            if (action === "Pairing") return "Scan paused while pairing";
+        }
+        return "";
     }
 
     function _setError(message) {
@@ -156,12 +167,12 @@ Singleton {
     }
 
     function startScan() {
-        if (!root.btAvailable || !root.btEnabled || root.scanPending) return;
+        if (!root.btAvailable || !root.btEnabled || root.scanPending || root.scanBlocked) return;
         root._request("scan_start", {}, "scan", "Starting scan");
     }
 
     function stopScan() {
-        if (!root.btAvailable || !root.btEnabled || root.scanPending) return;
+        if (!root.btAvailable || !root.btEnabled || root.scanPending || root.scanBlocked) return;
         root._request("scan_stop", {}, "scan", "Stopping scan");
     }
 

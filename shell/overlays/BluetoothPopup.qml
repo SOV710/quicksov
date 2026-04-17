@@ -127,9 +127,11 @@ Rectangle {
             HeaderChip {
                 label: Bluetooth.scanPending
                        ? (Bluetooth.discovering ? "Stopping" : "Starting")
+                       : Bluetooth.scanBlocked
+                         ? "Paused"
                        : (Bluetooth.discovering ? "Stop" : "Refresh")
                 iconPath: Bluetooth.discovering ? "lucide/loader-circle.svg" : "lucide/rotate-cw.svg"
-                enabled: Bluetooth.ready && Bluetooth.btAvailable && Bluetooth.btEnabled
+                enabled: Bluetooth.ready && Bluetooth.btAvailable && Bluetooth.btEnabled && !Bluetooth.scanBlocked
                 active: Bluetooth.discovering || Bluetooth.scanPending
                 pending: Bluetooth.scanPending
                 spinning: Bluetooth.discovering
@@ -152,6 +154,16 @@ Rectangle {
             width: parent.width
             text: Bluetooth.lastError
             color: Theme.colorError
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontBody
+            wrapMode: Text.WordWrap
+        }
+
+        Text {
+            visible: Bluetooth.scanBlockedReason !== ""
+            width: parent.width
+            text: Bluetooth.scanBlockedReason
+            color: Theme.fgMuted
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontBody
             wrapMode: Text.WordWrap
