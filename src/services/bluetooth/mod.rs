@@ -34,6 +34,7 @@ pub fn spawn(_cfg: &Config) -> ServiceHandle {
 
 fn unavailable_snapshot() -> Value {
     json_map([
+        ("available", Value::Bool(false)),
         ("powered", Value::Bool(false)),
         ("discovering", Value::Bool(false)),
         ("devices", Value::Array(vec![])),
@@ -463,6 +464,7 @@ fn build_snapshot(state: &BtState) -> Value {
         .and_then(|path| state.adapters.get(path));
 
     json_map([
+        ("available", Value::Bool(!state.adapters.is_empty())),
         (
             "powered",
             Value::Bool(adapter.map(|adapter| adapter.powered).unwrap_or(false)),
