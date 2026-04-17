@@ -25,6 +25,8 @@ Singleton {
     property var lastSuccessMs: null
     property var errorInfo: null
     property string weatherError: ""
+    property string currentTimeIso: ""
+    property string timezoneAbbreviation: ""
 
     function _normalizedIconName(code) {
         if (code === 0)
@@ -77,6 +79,12 @@ Singleton {
         root.ttlSec         = typeof payload.ttl_sec === "number" ? payload.ttl_sec : 0;
         root.location       = payload.location || null;
         root.current        = payload.current || null;
+        root.currentTimeIso = root.current && typeof root.current.time === "string"
+            ? root.current.time
+            : "";
+        root.timezoneAbbreviation = root.current && typeof root.current.timezone_abbreviation === "string"
+            ? root.current.timezone_abbreviation
+            : "";
         root.hourlyForecast = payload.hourly || [];
         root.lastSuccessMs  = payload.last_success_at !== undefined && payload.last_success_at !== null
             ? payload.last_success_at * 1000
@@ -97,6 +105,8 @@ Singleton {
             root.ttlSec = 0;
             root.location = null;
             root.current = null;
+            root.currentTimeIso = "";
+            root.timezoneAbbreviation = "";
             root.hourlyForecast = [];
             root.lastSuccessMs = null;
             root.errorInfo = null;

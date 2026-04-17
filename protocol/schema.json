@@ -704,13 +704,15 @@
             "type": ["object", "null"],
             "required": ["temperature_c", "apparent_c", "humidity_pct", "wind_kmh", "wmo_code", "icon", "description"],
             "properties": {
+              "time": { "type": "string" },
               "temperature_c": { "type": "number" },
               "apparent_c": { "type": "number" },
               "humidity_pct": { "type": "integer" },
               "wind_kmh": { "type": "number" },
               "wmo_code": { "type": "integer" },
               "icon": { "type": "string" },
-              "description": { "type": "string" }
+              "description": { "type": "string" },
+              "timezone_abbreviation": { "type": "string" }
             }
           },
           "hourly": {

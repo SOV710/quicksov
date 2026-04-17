@@ -14,6 +14,11 @@ Item {
     property color gridColor: Theme.borderSubtle
     property color axisTextColor: Theme.fgMuted
     property color lineColor: Theme.accentBlue
+    property real currentHourFloat: {
+        var now = Time.now;
+        return now.getHours() + now.getMinutes() / 60.0 + now.getSeconds() / 3600.0;
+    }
+    property string currentTimeLabel: Qt.formatTime(Time.now, "HH:mm")
 
     readonly property var pointsData: _normalizedPoints()
     readonly property bool hasEnoughData: pointsData.length > 1
@@ -21,11 +26,6 @@ Item {
     readonly property real _maxTempRaw: _rawBound(false)
     readonly property real _displayMinTemp: Math.floor((_minTempRaw === _maxTempRaw ? _minTempRaw - 1 : _minTempRaw) - 1)
     readonly property real _displayMaxTemp: Math.ceil((_maxTempRaw === _minTempRaw ? _maxTempRaw + 1 : _maxTempRaw) + 1)
-    readonly property real _currentHourFloat: {
-        var now = Time.now;
-        return now.getHours() + now.getMinutes() / 60.0 + now.getSeconds() / 3600.0;
-    }
-
     function _colorWithAlpha(color, alpha) {
         return Qt.rgba(color.r, color.g, color.b, alpha);
     }
@@ -120,6 +120,8 @@ Item {
     onGridColorChanged: _requestPaint()
     onAxisTextColorChanged: _requestPaint()
     onLineColorChanged: _requestPaint()
+    onCurrentHourFloatChanged: _requestPaint()
+    onCurrentTimeLabelChanged: _requestPaint()
 
     Connections {
         target: Time
@@ -203,7 +205,7 @@ Item {
             ctx.lineCap = "round";
             ctx.stroke();
 
-            var currentHour = root._currentHourFloat;
+            var currentHour = root.currentHourFloat;
             var markerX = root._xForHour(currentHour, plotLeft, plotWidth);
             var markerY = root._yForTemp(root._tempAt(currentHour), plotTop, plotHeight);
 
@@ -240,7 +242,7 @@ Item {
             ctx.textBaseline = "bottom";
             ctx.fillStyle = root.accentColor;
             ctx.fillText(
-                Qt.formatTime(Time.now, "HH:mm"),
+                root.currentTimeLabel,
                 Math.max(plotLeft + Theme.spaceMd, Math.min(plotLeft + plotWidth - Theme.spaceMd, markerX)),
                 Math.max(plotTop + Theme.spaceMd, markerY - Theme.spaceMd)
             );

@@ -477,13 +477,15 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
     "current": {
       "type": ["object","null"],
       "properties": {
+        "time":           { "type": "string", "description": "ISO 8601; provider-local current time" },
         "temperature_c":  { "type": "number" },
         "apparent_c":     { "type": "number" },
         "humidity_pct":   { "type": "integer" },
         "wind_kmh":       { "type": "number" },
         "wmo_code":       { "type": "integer" },
         "icon":           { "type": "string", "description": "Lucide icon name, mapped from WMO" },
-        "description":    { "type": "string" }
+        "description":    { "type": "string" },
+        "timezone_abbreviation": { "type": "string", "description": "provider-local timezone abbreviation, e.g. GMT+9" }
       },
       "required": ["temperature_c","apparent_c","humidity_pct","wind_kmh","wmo_code","icon","description"]
     },

@@ -30,12 +30,9 @@ Item {
         return day === undefined ? 1 : (day % 7);
     }
     readonly property string _todayKey: Qt.formatDate(Time.now, "yyyy-MM-dd")
-    readonly property string _weatherDayKey: {
-        if (!Weather.hourlyForecast.length)
-            return "";
-        var first = Weather.hourlyForecast[0];
-        return first && typeof first.time === "string" ? first.time.slice(0, 10) : "";
-    }
+    readonly property string _weatherDayKey: _resolveWeatherDayKey()
+    readonly property real _weatherCurrentHourFloat: _resolveWeatherCurrentHourFloat()
+    readonly property string _weatherCurrentTimeLabel: _resolveWeatherCurrentTimeLabel()
     readonly property var _calendarCells: _buildCalendarCells()
     readonly property var _todayWeatherSeries: _buildTodayWeatherSeries()
     readonly property bool _weatherExpired: Weather.isExpired(Time.now.getTime())
@@ -86,7 +83,7 @@ Item {
         var points = [];
         for (var i = 0; i < Weather.hourlyForecast.length; ++i) {
             var entry = Weather.hourlyForecast[i];
-            if (!entry || typeof entry.time !== "string" || entry.time.slice(0, 10) !== root._todayKey)
+            if (!entry || typeof entry.time !== "string" || entry.time.slice(0, 10) !== root._weatherDayKey)
                 continue;
 
             var hour = parseInt(entry.time.slice(11, 13), 10);
@@ -103,6 +100,37 @@ Item {
         }
         points.sort(function(a, b) { return a.hour - b.hour; });
         return points;
+    }
+
+    function _resolveWeatherDayKey() {
+        if (Weather.currentTimeIso && Weather.currentTimeIso.length >= 10)
+            return Weather.currentTimeIso.slice(0, 10);
+        if (Weather.hourlyForecast.length) {
+            var first = Weather.hourlyForecast[0];
+            if (first && typeof first.time === "string")
+                return first.time.slice(0, 10);
+        }
+        return root._todayKey;
+    }
+
+    function _resolveWeatherCurrentHourFloat() {
+        var iso = Weather.currentTimeIso;
+        if (iso && iso.length >= 16) {
+            var hour = parseInt(iso.slice(11, 13), 10);
+            var minute = parseInt(iso.slice(14, 16), 10);
+            if (!isNaN(hour) && !isNaN(minute))
+                return hour + minute / 60.0;
+        }
+
+        var now = Time.now;
+        return now.getHours() + now.getMinutes() / 60.0 + now.getSeconds() / 3600.0;
+    }
+
+    function _resolveWeatherCurrentTimeLabel() {
+        var iso = Weather.currentTimeIso;
+        if (iso && iso.length >= 16)
+            return iso.slice(11, 16);
+        return Qt.formatTime(Time.now, "HH:mm");
     }
 
     function _weekdayLabel(index) {
@@ -142,7 +170,6 @@ Item {
 
         if (Weather.current === null
                 || root._todayWeatherSeries.length < 2
-                || root._weatherDayKey !== root._todayKey
                 || root._weatherExpired) {
             Weather.refresh();
         }
@@ -564,7 +591,8 @@ Item {
 
                                     Text {
                                         text: Weather.current
-                                              ? ("Feels like " + root._formatTemp(Weather.current.apparent_c))
+                                              ? ("Feels like " + root._formatTemp(Weather.current.apparent_c)
+                                                 + (Weather.timezoneAbbreviation ? (" · " + Weather.timezoneAbbreviation) : ""))
                                               : ""
                                         color: Theme.fgMuted
                                         font.family: Theme.fontFamily
@@ -601,6 +629,8 @@ Item {
                                 gridColor: Theme.borderDefault
                                 axisTextColor: Theme.fgMuted
                                 lineColor: Theme.accentBlue
+                                currentHourFloat: root._weatherCurrentHourFloat
+                                currentTimeLabel: root._weatherCurrentTimeLabel
                             }
 
                             RowLayout {

@@ -201,6 +201,7 @@ impl OpenMeteoProvider {
                 longitude: job.longitude,
             },
             current: WeatherCurrent {
+                time: current.time,
                 temperature_c: current.temperature_2m,
                 apparent_c: current.apparent_temperature,
                 humidity_pct: current.relative_humidity_2m,
@@ -208,6 +209,7 @@ impl OpenMeteoProvider {
                 wmo_code: current.weather_code,
                 icon: icon.to_string(),
                 description: description.to_string(),
+                timezone_abbreviation: payload.timezone_abbreviation.unwrap_or_default(),
             },
             hourly,
             last_success_at: unix_now_secs(),
@@ -393,6 +395,7 @@ struct WeatherLocation {
 
 #[derive(Clone, Serialize, Deserialize)]
 struct WeatherCurrent {
+    time: String,
     temperature_c: f64,
     apparent_c: f64,
     humidity_pct: i64,
@@ -400,6 +403,7 @@ struct WeatherCurrent {
     wmo_code: i64,
     icon: String,
     description: String,
+    timezone_abbreviation: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -436,10 +440,12 @@ struct CachedWeatherSnapshot {
 struct OpenMeteoResponse {
     current: Option<OpenMeteoCurrent>,
     hourly: Option<OpenMeteoHourly>,
+    timezone_abbreviation: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct OpenMeteoCurrent {
+    time: String,
     temperature_2m: f64,
     apparent_temperature: f64,
     relative_humidity_2m: i64,
