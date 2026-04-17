@@ -97,9 +97,28 @@
 
 ### 3.4 clock-popup
 
-**宽度**：360px
+**几何**：
+- 宽度目标 920px；实际为 `min(920, screen.width - 48)`
+- 高度目标 440px；实际为 `min(440, screen.height - barHeight - 64)`
+- 不再是轻量小 popup，而是从主屏顶部 bar 下方展开的**大 panel**
 
-**结构**：月份导航栏 → 日历网格（当日 accent ring + medium）→ 分隔线 → 天气区块。
+**结构**：
+- 左卡：月份标题 + Today / 月份切换按钮 + 6×7 month grid + 当前日期 footer
+- 右卡：地点 / 状态 / refresh header + 当前天气摘要 + 24h 温度曲线 + 底部 metrics
+- 左右两卡独立视觉包络：外层 `radius.lg`，内卡 `radius.md`
+
+**交互**：
+- click bar clock → 打开 / 关闭 panel
+- click panel 外区域或 `Esc` → 关闭
+- 左卡滚轮 / 左右按钮切月
+- 打开 panel 时默认回到当前月
+- 右卡 refresh 按钮触发 daemon `weather.refresh`
+
+**month grid 视觉规则**：
+- 固定 6 行，避免月切换时高度跳变
+- 非本月日期保留，但使用 `fgMuted`
+- 今日使用 accent border + `surfaceActive`
+- 不引入伪交互：v1 日期格仅 hover，不提供事件点击
 
 **天气数据源**：
 - Backend：**Open-Meteo**（免费、无 API key、隐私友好）
@@ -110,8 +129,21 @@
   - 轮询间隔 600s（配置项）
   - 成功快照 canonical cache 持久化到 `~/.cache/quicksov/weather/current.json`
   - State snapshot 额外下发 `provider` / `status` / `ttl_sec` / `last_success_at` / `error`
-- **WMO code → Lucide icon 映射**由 daemon 维护（`0 → sun`、`1-3 → cloud-sun`、`61-65 → cloud-rain`、`71-75 → cloud-snow`...）
+- **WMO code → Lucide icon 映射**由 daemon 维护，但必须只使用本仓库实际存在的图标子集（如 `sun` / `cloud-sun` / `cloud-fog` / `cloud-drizzle` / `cloud-rain` / `cloud-snow` / `cloud-lightning` / `cloud`）
 - 刷新失败不直接清空上一份成功数据；前端根据 `last_success_at + ttl_sec` 自行决定何时将旧数据视为过期
+
+**weather 曲线规则**：
+- 固定显示当日 `00:00 → 23:00` 的 24h 温度曲线
+- x 轴固定，不围绕当前时间平移
+- 当前时间在曲线上是一个实时移动的 accent marker（由本地 `Time.now` 驱动）
+- y 轴仅显示简化的 3 个温度刻度，避免信息密度过高
+- 当前温度、描述、体感温度放在曲线外围，不压到 plot 上
+
+**weather 状态语义**：
+- `loading` / `refreshing`：显示 loading 状态，不伪造曲线
+- `ready`：显示完整天气卡
+- `refresh_failed` 且 TTL 内：保留旧曲线，状态标签显示 `Stale`
+- `init_failed` 或 TTL 过期：隐藏曲线，显示 unavailable 状态
 
 ### 3.5 tray
 
