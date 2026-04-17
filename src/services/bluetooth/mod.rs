@@ -5,6 +5,7 @@
 //! `bluetooth` service — BlueZ D-Bus backend.
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use futures::StreamExt;
 use serde_json::Value;
@@ -45,19 +46,20 @@ fn unavailable_snapshot() -> Value {
 // Internal state
 // ---------------------------------------------------------------------------
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct BtState {
     adapter_path: Option<String>,
     adapters: HashMap<String, BtAdapter>,
     devices: HashMap<String, BtDevice>,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct BtAdapter {
     powered: bool,
     discovering: bool,
 }
 
+#[derive(Clone)]
 struct BtDevice {
     address: String,
     name: String,
@@ -116,6 +118,7 @@ async fn connect_and_run(
 
     let mut bt_state = scan_objects(&obj_mgr).await?;
     state_tx.send_replace(build_snapshot(&bt_state));
+    let (action_done_tx, mut action_done_rx) = mpsc::unbounded_channel::<()>();
 
     let mut added = signal_stream(
         &conn,
@@ -155,8 +158,17 @@ async fn connect_and_run(
         tokio::select! {
             req = request_rx.recv() => {
                 let Some(req) = req else { break };
-                handle_request(req, &conn, &bt_state).await;
-                // Keep local actions strongly consistent even if BlueZ coalesces signals.
+                let conn = conn.clone();
+                let state_snapshot = bt_state.clone();
+                let action_done_tx = action_done_tx.clone();
+                tokio::spawn(async move {
+                    handle_request(req, &conn, &state_snapshot).await;
+                    action_done_tx.send(()).ok();
+                });
+            }
+            action_done = action_done_rx.recv() => {
+                let Some(()) = action_done else { break };
+                // Reconcile local state once long-running BlueZ actions complete.
                 if let Ok(new_state) = scan_objects(&obj_mgr).await {
                     bt_state = new_state;
                     state_tx.send_replace(build_snapshot(&bt_state));
@@ -523,9 +535,11 @@ async fn handle_power(
     })?;
     let path = adapter_path(state)?;
     let proxy = adapter_proxy(conn, &path).await?;
-    proxy
-        .set_property("Powered", on)
+    tokio::time::timeout(Duration::from_secs(5), proxy.set_property("Powered", on))
         .await
+        .map_err(|_| ServiceError::Internal {
+            msg: "bluetooth power request timed out".to_string(),
+        })?
         .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
     Ok(Value::Null)
 }
@@ -536,9 +550,11 @@ async fn handle_scan_start(
 ) -> Result<Value, ServiceError> {
     let path = adapter_path(state)?;
     let proxy = adapter_proxy(conn, &path).await?;
-    let _: () = proxy
-        .call("StartDiscovery", &())
+    let _: () = tokio::time::timeout(Duration::from_secs(5), proxy.call("StartDiscovery", &()))
         .await
+        .map_err(|_| ServiceError::Internal {
+            msg: "bluetooth scan start timed out".to_string(),
+        })?
         .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
     Ok(Value::Null)
 }
@@ -546,9 +562,11 @@ async fn handle_scan_start(
 async fn handle_scan_stop(conn: &zbus::Connection, state: &BtState) -> Result<Value, ServiceError> {
     let path = adapter_path(state)?;
     let proxy = adapter_proxy(conn, &path).await?;
-    let _: () = proxy
-        .call("StopDiscovery", &())
+    let _: () = tokio::time::timeout(Duration::from_secs(5), proxy.call("StopDiscovery", &()))
         .await
+        .map_err(|_| ServiceError::Internal {
+            msg: "bluetooth scan stop timed out".to_string(),
+        })?
         .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
     Ok(Value::Null)
 }
@@ -564,9 +582,11 @@ async fn handle_device_action(
     })?;
     let dev = find_device(state, address)?;
     let proxy = device_proxy(conn, &dev.path).await?;
-    let _: () = proxy
-        .call(method, &())
+    let _: () = tokio::time::timeout(Duration::from_secs(20), proxy.call(method, &()))
         .await
+        .map_err(|_| ServiceError::Internal {
+            msg: format!("bluetooth {method} request timed out"),
+        })?
         .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
     Ok(Value::Null)
 }
@@ -584,10 +604,15 @@ async fn handle_forget(
     let proxy = adapter_proxy(conn, &adapter).await?;
     let dev_path = zbus::zvariant::ObjectPath::try_from(dev.path.as_str())
         .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
-    let _: () = proxy
-        .call("RemoveDevice", &(dev_path,))
-        .await
-        .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
+    let _: () = tokio::time::timeout(
+        Duration::from_secs(10),
+        proxy.call("RemoveDevice", &(dev_path,)),
+    )
+    .await
+    .map_err(|_| ServiceError::Internal {
+        msg: "bluetooth forget request timed out".to_string(),
+    })?
+    .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
     Ok(Value::Null)
 }
 
