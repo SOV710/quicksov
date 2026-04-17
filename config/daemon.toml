@@ -49,6 +49,8 @@ log_level = "info"
 # ---------------------------------------------------------------------------
 # Network — wpa_supplicant control socket path
 # Adjust the interface name if yours differs (e.g. wlan0, wlp3s0).
+# Wi-Fi enable/disable and airplane-mode actions are implemented via `rfkill`
+# at runtime; no extra config is needed, but the `rfkill` command must exist in PATH.
 # ---------------------------------------------------------------------------
 
 [services.network]
