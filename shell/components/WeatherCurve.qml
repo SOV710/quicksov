@@ -26,6 +26,7 @@ Item {
     readonly property real _maxTempRaw: _rawBound(false)
     readonly property real _displayMinTemp: Math.floor((_minTempRaw === _maxTempRaw ? _minTempRaw - 1 : _minTempRaw) - 1)
     readonly property real _displayMaxTemp: Math.ceil((_maxTempRaw === _minTempRaw ? _maxTempRaw + 1 : _maxTempRaw) + 1)
+
     function _colorWithAlpha(color, alpha) {
         return Qt.rgba(color.r, color.g, color.b, alpha);
     }
@@ -109,6 +110,88 @@ Item {
         return hour.toString().padStart(2, "0");
     }
 
+    function _plotPoints(plotLeft, plotTop, plotWidth, plotHeight) {
+        var points = [];
+        for (var i = 0; i < root.pointsData.length; ++i) {
+            var point = root.pointsData[i];
+            points.push({
+                x: root._xForHour(point.hour, plotLeft, plotWidth),
+                y: root._yForTemp(point.temperature_c, plotTop, plotHeight)
+            });
+        }
+        return points;
+    }
+
+    function _monotoneTangents(points) {
+        var count = points.length;
+        if (count < 2)
+            return [];
+
+        var dx = [];
+        var slope = [];
+        var tangent = [];
+        var i;
+
+        for (i = 0; i < count - 1; ++i) {
+            dx[i] = points[i + 1].x - points[i].x;
+            if (dx[i] <= 0)
+                dx[i] = 1;
+            slope[i] = (points[i + 1].y - points[i].y) / dx[i];
+        }
+
+        tangent[0] = slope[0];
+        for (i = 1; i < count - 1; ++i) {
+            if (slope[i - 1] === 0 || slope[i] === 0 || slope[i - 1] * slope[i] <= 0) {
+                tangent[i] = 0;
+            } else {
+                var w1 = 2 * dx[i] + dx[i - 1];
+                var w2 = dx[i] + 2 * dx[i - 1];
+                tangent[i] = (w1 + w2) / ((w1 / slope[i - 1]) + (w2 / slope[i]));
+            }
+        }
+        tangent[count - 1] = slope[count - 2];
+
+        for (i = 0; i < count - 1; ++i) {
+            if (slope[i] === 0) {
+                tangent[i] = 0;
+                tangent[i + 1] = 0;
+                continue;
+            }
+
+            var a = tangent[i] / slope[i];
+            var b = tangent[i + 1] / slope[i];
+            var sum = a * a + b * b;
+            if (sum > 9) {
+                var scale = 3 / Math.sqrt(sum);
+                tangent[i] = scale * a * slope[i];
+                tangent[i + 1] = scale * b * slope[i];
+            }
+        }
+
+        return tangent;
+    }
+
+    function _traceMonotonePath(ctx, points) {
+        if (!points.length)
+            return;
+
+        ctx.moveTo(points[0].x, points[0].y);
+        if (points.length === 1)
+            return;
+
+        var tangent = root._monotoneTangents(points);
+        for (var i = 0; i < points.length - 1; ++i) {
+            var p0 = points[i];
+            var p1 = points[i + 1];
+            var h = p1.x - p0.x;
+            var cp1x = p0.x + h / 3;
+            var cp1y = p0.y + tangent[i] * h / 3;
+            var cp2x = p1.x - h / 3;
+            var cp2y = p1.y - tangent[i + 1] * h / 3;
+            ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p1.x, p1.y);
+        }
+    }
+
     function _requestPaint() {
         curveCanvas.requestPaint();
     }
@@ -147,6 +230,7 @@ Item {
             var plotTop = topPad;
             var plotWidth = Math.max(1, width - leftPad - rightPad);
             var plotHeight = Math.max(1, height - topPad - bottomPad);
+            var plotPoints = root._plotPoints(plotLeft, plotTop, plotWidth, plotHeight);
             var ticks = [
                 root._displayMaxTemp,
                 (root._displayMaxTemp + root._displayMinTemp) / 2.0,
@@ -174,15 +258,7 @@ Item {
             }
 
             ctx.beginPath();
-            for (var p = 0; p < root.pointsData.length; ++p) {
-                var point = root.pointsData[p];
-                var px = root._xForHour(point.hour, plotLeft, plotWidth);
-                var py = root._yForTemp(point.temperature_c, plotTop, plotHeight);
-                if (p === 0)
-                    ctx.moveTo(px, py);
-                else
-                    ctx.lineTo(px, py);
-            }
+            root._traceMonotonePath(ctx, plotPoints);
             ctx.lineTo(plotLeft + plotWidth, plotTop + plotHeight);
             ctx.lineTo(plotLeft, plotTop + plotHeight);
             ctx.closePath();
@@ -190,15 +266,7 @@ Item {
             ctx.fill();
 
             ctx.beginPath();
-            for (var lp = 0; lp < root.pointsData.length; ++lp) {
-                var linePoint = root.pointsData[lp];
-                var lx = root._xForHour(linePoint.hour, plotLeft, plotWidth);
-                var ly = root._yForTemp(linePoint.temperature_c, plotTop, plotHeight);
-                if (lp === 0)
-                    ctx.moveTo(lx, ly);
-                else
-                    ctx.lineTo(lx, ly);
-            }
+            root._traceMonotonePath(ctx, plotPoints);
             ctx.strokeStyle = root.lineColor;
             ctx.lineWidth = 2;
             ctx.lineJoin = "round";
