@@ -172,7 +172,12 @@
 | 数据源 | daemon `net.link`（netlink，接口/IP/路由） + `net.wifi`（wpa_supplicant ctrl socket） |
 | 监听接口 | `wlo1`、`enp109s0` |
 | 视觉 | WiFi 4 格信号 icon（按 RSSI 填充）；离线 `wifi-off`；以太网 `ethernet` |
-| 交互 | click → popup：当前 SSID/IP/网速；可用 WiFi 列表；下方 VPN 开关 |
+| 几何 | click popup；宽 376px；最大高 520px；锚定 MainBar network icon，下方 `gap_from_bar` |
+| 头部 | 左侧 `Network` 标题 + 副标题；右侧 `Refresh`、`Wi-Fi On/Off`、`Flight` 三个 chip |
+| 状态归约 | daemon 额外提供 `availability` / `availability_reason` / `rfkill_*` / `airplane_mode`，区分 ready / disabled / unavailable |
+| 列表分组 | `Current` → `Saved` → `Available`；每行显示 SSID、状态副标题（Connected / Saved / Open / WPA2 / 频段 / 信号） |
+| 交互 | click bar icon → 打开/关闭 popup；打开时按需自动 `scan`；secure 且未保存的网络 inline 输入密码；点击 popup 外关闭 |
+| 首版范围 | 实现 Wi-Fi 扫描、连接、断开、忘记网络、Wi-Fi on/off、airplane-mode；**不实现 VPN 区块** |
 
 **实现约束**：
 - 扫描与连接由 `wpa_cli` 协议或直接 socket 通信实现
