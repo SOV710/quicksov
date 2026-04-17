@@ -22,6 +22,15 @@ from _qsov_testlib import (
 REQUIRED = [
     "interface",
     "state",
+    "present",
+    "enabled",
+    "availability",
+    "availability_reason",
+    "interface_operstate",
+    "rfkill_available",
+    "rfkill_soft_blocked",
+    "rfkill_hard_blocked",
+    "airplane_mode",
     "ssid",
     "bssid",
     "rssi_dbm",
@@ -39,6 +48,11 @@ def run() -> int:
     parser.add_argument("--psk", default=None, help="PSK for --mutate connect test")
     parser.add_argument("--save", action="store_true", help="use save=true for --mutate connect")
     parser.add_argument("--forget-ssid", default=None, help="SSID for --mutate forget test")
+    parser.add_argument(
+        "--mutate-rfkill",
+        action="store_true",
+        help="run rfkill set_enabled / airplane_mode actions (dangerous: changes local radio state)",
+    )
     args = parser.parse_args()
 
     h = Harness("net.wifi", strict=args.strict)
@@ -61,6 +75,10 @@ def run() -> int:
                 h.ok("net.wifi.state enum is valid")
             else:
                 h.error(f"net.wifi.state invalid: {snapshot!r}")
+            if snapshot.get("availability") in {"ready", "disabled", "unavailable"}:
+                h.ok("net.wifi.availability enum is valid")
+            else:
+                h.error(f"net.wifi.availability invalid: {snapshot!r}")
         client.unsub("net.wifi")
 
         bad_action = client.req("net.wifi", "no_such_action", {})
@@ -74,6 +92,14 @@ def run() -> int:
         bad_forget = client.req("net.wifi", "forget", {})
         if expect_envelope(h, bad_forget, kind=ERR, topic="net.wifi", code="E_ACTION_PAYLOAD"):
             h.ok("net.wifi forget {} returns E_ACTION_PAYLOAD")
+
+        bad_set_enabled = client.req("net.wifi", "set_enabled", {})
+        if expect_envelope(h, bad_set_enabled, kind=ERR, topic="net.wifi", code="E_ACTION_PAYLOAD"):
+            h.ok("net.wifi set_enabled {} returns E_ACTION_PAYLOAD")
+
+        bad_set_airplane = client.req("net.wifi", "set_airplane_mode", {})
+        if expect_envelope(h, bad_set_airplane, kind=ERR, topic="net.wifi", code="E_ACTION_PAYLOAD"):
+            h.ok("net.wifi set_airplane_mode {} returns E_ACTION_PAYLOAD")
 
         scan = client.req("net.wifi", "scan", {})
         expect_rep_or_warn_service_err(h, scan, "net.wifi", "net.wifi scan {}")
@@ -99,6 +125,15 @@ def run() -> int:
                 h.warn("skipping net.wifi forget test: provide --forget-ssid or --ssid")
         else:
             h.warn("mutating Wi-Fi tests skipped; rerun with --mutate")
+
+        if args.mutate_rfkill:
+            reply = client.req("net.wifi", "set_enabled", {"enabled": True})
+            expect_rep_or_warn_service_err(h, reply, "net.wifi", "net.wifi set_enabled {enabled:true}")
+
+            reply = client.req("net.wifi", "set_airplane_mode", {"enabled": False})
+            expect_rep_or_warn_service_err(h, reply, "net.wifi", "net.wifi set_airplane_mode {enabled:false}")
+        else:
+            h.warn("rfkill mutate tests skipped; rerun with --mutate-rfkill only on a safe local session")
     finally:
         client.close()
 

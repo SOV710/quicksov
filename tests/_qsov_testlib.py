@@ -312,8 +312,13 @@ def get_map_value(payload: dict[str, Any], key: str, expected_type: type | tuple
 def maybe_warn_unavailable(harness: Harness, service: str, payload: dict[str, Any]) -> None:
     if service == "battery" and not payload.get("present", True):
         harness.warn("battery.present=false; no battery or battery backend unavailable")
-    elif service == "net.wifi" and payload.get("state") == "unknown":
-        harness.warn("net.wifi.state=unknown; likely wpa_supplicant unavailable or permission denied")
+    elif service == "net.wifi":
+        availability = payload.get("availability")
+        reason = payload.get("availability_reason")
+        if availability in {"disabled", "unavailable"}:
+            harness.warn(f"net.wifi.availability={availability}; reason={reason}")
+        elif payload.get("state") == "unknown":
+            harness.warn("net.wifi.state=unknown with ready availability; backend may still be warming up")
     elif service == "bluetooth":
         if payload.get("available") is False:
             harness.warn("bluetooth.available=false; no Bluetooth adapter present")
