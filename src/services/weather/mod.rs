@@ -905,12 +905,10 @@ fn wmo_to_icon_desc(code: i64) -> (&'static str, &'static str) {
         0 => ("sun", "Clear sky"),
         1..=3 => ("cloud-sun", "Mainly clear / partly cloudy"),
         45 | 48 => ("cloud-fog", "Foggy"),
-        51 | 53 | 55 => ("cloud-drizzle", "Drizzle"),
-        61 | 63 | 65 => ("cloud-rain", "Rain"),
-        71 | 73 | 75 => ("cloud-snow", "Snow"),
-        80..=82 => ("cloud-showers-heavy", "Rain showers"),
-        95 => ("cloud-lightning", "Thunderstorm"),
-        96 | 99 => ("cloud-lightning-rain", "Thunderstorm with hail"),
+        51 | 53 | 55 | 56 | 57 => ("cloud-drizzle", "Drizzle"),
+        61 | 63 | 65 | 66 | 67 | 80..=82 => ("cloud-rain", "Rain"),
+        71 | 73 | 75 | 77 | 85 | 86 => ("cloud-snow", "Snow"),
+        95 | 96 | 99 => ("cloud-lightning", "Thunderstorm"),
         _ => ("cloud", "Unknown"),
     }
 }
