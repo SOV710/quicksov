@@ -70,6 +70,8 @@ Singleton {
 
     readonly property int bluetoothPanelWidth: auxExpandedWidth + spaceXl * 2
     readonly property int bluetoothPanelMaxHeight: 480
+    readonly property int networkPanelWidth: auxExpandedWidth + spaceXxl + spaceXl
+    readonly property int networkPanelMaxHeight: 520
 
     readonly property int clockPanelMaxWidth: 920
     readonly property int clockPanelMaxHeight: 440
