@@ -21,16 +21,17 @@
 - Unavailable / disabled 状态处理
 
 
-Uncompleted
----
-
-
 ## 0.0.5
 
 - Wifi 控件 panel
 - 当前连接网络信息
 - 可选 AP 列表
 - disconnected / unavailable 状态处理
+
+
+Uncompleted
+---
+
 
 ## 0.0.6
 
