@@ -19,7 +19,7 @@ from _qsov_testlib import (
     maybe_warn_unavailable,
 )
 
-REQUIRED = ["powered", "discovering", "devices"]
+REQUIRED = ["available", "powered", "discovering", "devices"]
 DEVICE_REQUIRED = [
     "address",
     "name",
@@ -91,12 +91,13 @@ def recv_pub_snapshot(
         h, env.get("payload"), detailed_devices=detailed_devices
     )
     if snapshot is not None:
+        available = snapshot.get("available")
         powered = snapshot.get("powered")
         discovering = snapshot.get("discovering")
         devices = snapshot.get("devices")
         n = len(devices) if isinstance(devices, list) else "?"
         h.ok(
-            f"{label}: snapshot powered={powered!r} discovering={discovering!r} devices={n}"
+            f"{label}: snapshot available={available!r} powered={powered!r} discovering={discovering!r} devices={n}"
         )
     return snapshot
 

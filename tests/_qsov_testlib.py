@@ -314,8 +314,11 @@ def maybe_warn_unavailable(harness: Harness, service: str, payload: dict[str, An
         harness.warn("battery.present=false; no battery or battery backend unavailable")
     elif service == "net.wifi" and payload.get("state") == "unknown":
         harness.warn("net.wifi.state=unknown; likely wpa_supplicant unavailable or permission denied")
-    elif service == "bluetooth" and payload.get("powered") is False and not payload.get("devices"):
-        harness.warn("bluetooth appears off or adapter unavailable")
+    elif service == "bluetooth":
+        if payload.get("available") is False:
+            harness.warn("bluetooth.available=false; no Bluetooth adapter present")
+        elif payload.get("powered") is False:
+            harness.warn("bluetooth powered off")
     elif service == "audio" and not payload.get("sinks") and not payload.get("sources"):
         harness.warn("audio has no sinks/sources; PipeWire may be unavailable")
     elif service == "mpris" and not payload.get("players"):
