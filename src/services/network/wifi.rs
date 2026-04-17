@@ -310,29 +310,59 @@ impl WifiRuntime {
                 msg: "wifi backend unavailable after socket setup".to_string(),
             })?;
 
-        let ssid = extract_str(payload, "ssid").ok_or_else(|| ServiceError::ActionPayload {
+        let raw_ssid = extract_str(payload, "ssid").ok_or_else(|| ServiceError::ActionPayload {
             msg: "missing 'ssid' field".to_string(),
         })?;
-        let psk = extract_str(payload, "psk");
+        let raw_psk = extract_str(payload, "psk");
         let save = extract_bool(payload, "save").unwrap_or(false);
-        let ssid = escape_wpa_string(ssid)?;
-        let psk = psk.map(escape_wpa_string).transpose()?;
+        let escaped_ssid = escape_wpa_string(raw_ssid)?;
+        let escaped_psk = raw_psk.map(escape_wpa_string).transpose()?;
 
-        let id_str = wpa_cmd(sock, "ADD_NETWORK")
-            .await
-            .map_err(service_error_from_wifi_error)?;
-        let id = parse_network_id(&id_str, "ADD_NETWORK").map_err(service_error_from_wifi_error)?;
-
-        wpa_expect_ok(sock, &format!("SET_NETWORK {id} ssid \"{ssid}\""))
+        let saved_networks = list_saved_networks(sock)
             .await
             .map_err(service_error_from_wifi_error)?;
 
-        if let Some(key) = psk {
-            wpa_expect_ok(sock, &format!("SET_NETWORK {id} psk \"{key}\""))
+        let id = if let Some(existing) = saved_networks.iter().find(|network| network.ssid == raw_ssid)
+        {
+            if let Some(key) = escaped_psk.as_deref() {
+                wpa_expect_ok(sock, &format!("SET_NETWORK {} psk \"{}\"", existing.id, key))
+                    .await
+                    .map_err(service_error_from_wifi_error)?;
+            }
+            existing.id.clone()
+        } else {
+            let secure = scan_result_requires_psk(sock, raw_ssid).await;
+            if secure && raw_psk.is_none() {
+                return Err(ServiceError::ActionPayload {
+                    msg: format!("network '{raw_ssid}' requires a psk"),
+                });
+            }
+
+            let id_str = wpa_cmd(sock, "ADD_NETWORK")
                 .await
                 .map_err(service_error_from_wifi_error)?;
-        } else {
-            wpa_expect_ok(sock, &format!("SET_NETWORK {id} key_mgmt NONE"))
+            let id =
+                parse_network_id(&id_str, "ADD_NETWORK").map_err(service_error_from_wifi_error)?;
+
+            wpa_expect_ok(sock, &format!("SET_NETWORK {id} ssid \"{escaped_ssid}\""))
+                .await
+                .map_err(service_error_from_wifi_error)?;
+
+            if let Some(key) = escaped_psk.as_deref() {
+                wpa_expect_ok(sock, &format!("SET_NETWORK {id} psk \"{key}\""))
+                    .await
+                    .map_err(service_error_from_wifi_error)?;
+            } else {
+                wpa_expect_ok(sock, &format!("SET_NETWORK {id} key_mgmt NONE"))
+                    .await
+                    .map_err(service_error_from_wifi_error)?;
+            }
+
+            id
+        };
+
+        if save {
+            wpa_expect_ok(sock, &format!("ENABLE_NETWORK {id}"))
                 .await
                 .map_err(service_error_from_wifi_error)?;
         }
@@ -925,31 +955,25 @@ async fn read_signal(sock: &UnixDatagram) -> (Option<i64>, Option<i64>) {
 }
 
 async fn read_saved_networks(sock: &UnixDatagram) -> Vec<Value> {
-    let reply = match wpa_cmd(sock, "LIST_NETWORKS").await {
-        Ok(r) => r,
+    let rows = match list_saved_networks(sock).await {
+        Ok(rows) => rows,
         Err(_) => return vec![],
     };
 
-    reply
-        .lines()
-        .skip(1)
-        .filter_map(|line| {
-            let parts: Vec<&str> = line.split('\t').collect();
-            if parts.len() >= 2 {
-                let ssid = parts[1];
-                let flags = parts.get(3).unwrap_or(&"");
-                let is_current = flags.contains("[CURRENT]");
-                Some(json_map([
-                    ("ssid", Value::from(ssid)),
-                    (
-                        "priority",
-                        Value::from(if is_current { 1_i64 } else { 0_i64 }),
-                    ),
-                    ("auto", Value::Bool(true)),
-                ]))
-            } else {
-                None
-            }
+    rows.into_iter()
+        .map(|row| {
+            json_map([
+                ("ssid", Value::from(row.ssid)),
+                (
+                    "priority",
+                    Value::from(if row.flags.contains("[CURRENT]") {
+                        1_i64
+                    } else {
+                        0_i64
+                    }),
+                ),
+                ("auto", Value::Bool(true)),
+            ])
         })
         .collect()
 }
@@ -961,6 +985,73 @@ async fn read_scan_results(sock: &UnixDatagram) -> Vec<Value> {
     };
 
     reply.lines().skip(1).filter_map(parse_scan_line).collect()
+}
+
+#[derive(Clone, Debug)]
+struct SavedNetworkRow {
+    id: String,
+    ssid: String,
+    flags: String,
+}
+
+async fn list_saved_networks(sock: &UnixDatagram) -> Result<Vec<SavedNetworkRow>, WifiError> {
+    let reply = wpa_cmd(sock, "LIST_NETWORKS").await?;
+
+    Ok(reply
+        .lines()
+        .skip(1)
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() < 2 {
+                return None;
+            }
+
+            Some(SavedNetworkRow {
+                id: parts[0].to_string(),
+                ssid: parts[1].to_string(),
+                flags: parts.get(3).copied().unwrap_or("").to_string(),
+            })
+        })
+        .collect())
+}
+
+async fn scan_result_requires_psk(sock: &UnixDatagram, ssid: &str) -> bool {
+    let results = read_scan_results(sock).await;
+    for result in results {
+        let Some(obj) = result.as_object() else {
+            continue;
+        };
+        let Some(result_ssid) = obj.get("ssid").and_then(|value| value.as_str()) else {
+            continue;
+        };
+        if result_ssid != ssid {
+            continue;
+        }
+
+        let flags = obj
+            .get("flags")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
+        return flags_require_psk(&flags);
+    }
+
+    false
+}
+
+fn flags_require_psk(flags: &[Value]) -> bool {
+    flags.iter().any(|flag| {
+        let Some(flag) = flag.as_str() else {
+            return false;
+        };
+        flag.contains("WPA")
+            || flag.contains("RSN")
+            || flag.contains("PSK")
+            || flag.contains("SAE")
+            || flag.contains("WEP")
+            || flag.contains("OWE")
+            || flag.contains("802.1X")
+    })
 }
 
 fn parse_scan_line(line: &str) -> Option<Value> {
