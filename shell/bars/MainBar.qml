@@ -39,7 +39,7 @@ Scope {
             // Expand to cover bar + whichever popup is open (tallest wins)
             property int _popupHeight: {
                 var h = 0;
-                if (clockPopup.popupVisible) h = Math.max(h, 180 + Theme.spaceXs);
+                if (clockPopup.popupVisible) h = Math.max(h, clockPopup.implicitHeight + Theme.spaceXs);
                 if (notifCenter.visible)     h = Math.max(h, notifCenter.implicitHeight + Theme.spaceXs);
                 if (volumePopup.visible)     h = Math.max(h, volumePopup.implicitHeight + Theme.spaceXs);
                 return h;
@@ -160,6 +160,10 @@ Scope {
             ClockPopup {
                 id: clockPopup
                 z: 2
+                availableWidth: barRect.width - Theme.spaceXl * 2
+                availableHeight: bar.screen
+                                 ? (bar.screen.height - Theme.barHeight - Theme.barOuterMargin * 2 - Theme.spaceXl * 2)
+                                 : Theme.clockPanelMaxHeight
                 anchors {
                     top:              barRect.bottom
                     topMargin:        Theme.spaceXs

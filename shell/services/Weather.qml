@@ -26,6 +26,47 @@ Singleton {
     property var errorInfo: null
     property string weatherError: ""
 
+    function _normalizedIconName(code) {
+        if (code === 0)
+            return "sun";
+        if (code >= 1 && code <= 3)
+            return "cloud-sun";
+        if (code === 45 || code === 48)
+            return "cloud-fog";
+        if ((code >= 51 && code <= 57))
+            return "cloud-drizzle";
+        if ((code >= 61 && code <= 67) || (code >= 80 && code <= 82))
+            return "cloud-rain";
+        if ((code >= 71 && code <= 77) || code === 85 || code === 86)
+            return "cloud-snow";
+        if (code === 95 || code === 96 || code === 99)
+            return "cloud-lightning";
+        return "cloud";
+    }
+
+    function iconNameForWmo(code) {
+        if (typeof code !== "number")
+            return "cloud";
+        return root._normalizedIconName(code);
+    }
+
+    function iconPathForWmo(code) {
+        return "lucide/" + root.iconNameForWmo(code) + ".svg";
+    }
+
+    function isExpired(nowMs) {
+        if (root.lastSuccessMs === null || root.ttlSec <= 0)
+            return false;
+        var at = typeof nowMs === "number" ? nowMs : Date.now();
+        return (at - root.lastSuccessMs) > (root.ttlSec * 1000);
+    }
+
+    function hasUsableSnapshot(nowMs) {
+        return root.current !== null
+            && root.hourlyForecast.length > 0
+            && !root.isExpired(nowMs);
+    }
+
     function refresh() {
         Client.request("weather", "refresh", {}, null);
     }

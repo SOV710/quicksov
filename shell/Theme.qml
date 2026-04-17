@@ -68,6 +68,12 @@ Singleton {
     readonly property int powerActionSize: 64
     readonly property int powerConfirmTimeoutMs: 3000
 
+    readonly property int clockPanelMaxWidth: 920
+    readonly property int clockPanelMaxHeight: 440
+    readonly property int clockPanelMinWidth: 760
+    readonly property int clockWeatherChartHeight: 200
+    readonly property int clockWeatherIconSize: 40
+
     // --- Dynamic color tokens (updated from daemon theme topic) ---
     property string bgCanvas: "#1a1b26"
     property string bgSurface: "#1a1b26"
