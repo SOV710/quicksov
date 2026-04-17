@@ -34,6 +34,7 @@ Scope {
 
             readonly property bool _anyPopupOpen: clockPopup.popupVisible
                                                  || notifCenter.visible
+                                                 || bluetoothPopup.visible
                                                  || volumePopup.visible
 
             // Expand to cover bar + whichever popup is open (tallest wins)
@@ -41,6 +42,7 @@ Scope {
                 var h = 0;
                 if (clockPopup.popupVisible) h = Math.max(h, clockPopup.implicitHeight + Theme.spaceXs);
                 if (notifCenter.visible)     h = Math.max(h, notifCenter.implicitHeight + Theme.spaceXs);
+                if (bluetoothPopup.visible)  h = Math.max(h, bluetoothPopup.implicitHeight + Theme.spaceXs);
                 if (volumePopup.visible)     h = Math.max(h, volumePopup.implicitHeight + Theme.spaceXs);
                 return h;
             }
@@ -61,6 +63,7 @@ Scope {
                 onClicked: function() {
                     clockPopup.popupVisible = false;
                     notifCenter.visible = false;
+                    bluetoothPopup.visible = false;
                     volumePopup.visible = false;
                 }
             }
@@ -110,15 +113,16 @@ Scope {
                 }
 
                 // CENTER zone — absolutely centered
-                Clock {
-                    id: clockWidget
-                    anchors.centerIn: parent
-                    onOpenPopup: {
-                        notifCenter.visible = false;
-                        volumePopup.visible = false;
-                        clockPopup.popupVisible = !clockPopup.popupVisible;
+                    Clock {
+                        id: clockWidget
+                        anchors.centerIn: parent
+                        onOpenPopup: {
+                            notifCenter.visible = false;
+                            bluetoothPopup.visible = false;
+                            volumePopup.visible = false;
+                            clockPopup.popupVisible = !clockPopup.popupVisible;
+                        }
                     }
-                }
 
                 // RIGHT zone
                 Row {
@@ -135,6 +139,7 @@ Scope {
                         anchors.verticalCenter: parent.verticalCenter
                         onToggled: {
                             clockPopup.popupVisible = false;
+                            bluetoothPopup.visible = false;
                             volumePopup.visible = false;
                             notifCenter.visible = !notifCenter.visible;
                         }
@@ -146,10 +151,20 @@ Scope {
                         onClicked: {
                             clockPopup.popupVisible = false;
                             notifCenter.visible = false;
+                            bluetoothPopup.visible = false;
                             volumePopup.visible = !volumePopup.visible;
                         }
                     }
-                    BluetoothIndicator{ anchors.verticalCenter: parent.verticalCenter }
+                    BluetoothIndicator {
+                        id: bluetoothWidget
+                        anchors.verticalCenter: parent.verticalCenter
+                        onClicked: {
+                            clockPopup.popupVisible = false;
+                            notifCenter.visible = false;
+                            volumePopup.visible = false;
+                            bluetoothPopup.visible = !bluetoothPopup.visible;
+                        }
+                    }
                     NetworkIndicator  { anchors.verticalCenter: parent.verticalCenter }
                     BatteryIndicator  { anchors.verticalCenter: parent.verticalCenter }
                     TrayHost          { anchors.verticalCenter: parent.verticalCenter }
@@ -181,6 +196,27 @@ Scope {
                     right:      barRect.right
                     rightMargin: Theme.barPadX
                 }
+            }
+
+            Item {
+                id: bluetoothPopupAnchor
+                x: barRect.x + rightZone.x + bluetoothWidget.x
+                y: barRect.y + rightZone.y + bluetoothWidget.y
+                width: bluetoothWidget ? bluetoothWidget.width : 0
+                height: bluetoothWidget ? bluetoothWidget.height : 0
+                visible: false
+            }
+
+            BluetoothPopup {
+                id: bluetoothPopup
+                z: 2
+                visible: false
+                readonly property real _preferredX: bluetoothPopupAnchor.x + (bluetoothPopupAnchor.width - width) / 2
+                readonly property real _minX: barRect.x + Theme.barPadX
+                readonly property real _maxX: Math.max(_minX, barRect.x + barRect.width - Theme.barPadX - width)
+
+                x: Math.max(_minX, Math.min(_preferredX, _maxX))
+                y: barRect.y + barRect.height + Theme.spaceXs
             }
 
             Item {
