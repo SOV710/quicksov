@@ -68,10 +68,18 @@ Singleton {
     readonly property int powerActionSize: 64
     readonly property int powerConfirmTimeoutMs: 3000
 
-    readonly property int bluetoothPanelWidth: auxExpandedWidth + spaceXl * 2
-    readonly property int bluetoothPanelMaxHeight: 480
-    readonly property int networkPanelWidth: auxExpandedWidth + spaceXxl + spaceXl
-    readonly property int networkPanelMaxHeight: 520
+    readonly property int rightPopupWidth: 420
+    readonly property int rightPopupMaxHeight: 560
+    readonly property int notificationPanelWidth: rightPopupWidth
+    readonly property int notificationPanelMaxHeight: rightPopupMaxHeight
+    readonly property int notificationListMaxHeight: 480
+    readonly property int volumePanelWidth: rightPopupWidth
+    readonly property int volumePanelMaxHeight: rightPopupMaxHeight
+    readonly property int volumeStreamsMaxHeight: 260
+    readonly property int bluetoothPanelWidth: rightPopupWidth
+    readonly property int bluetoothPanelMaxHeight: rightPopupMaxHeight
+    readonly property int networkPanelWidth: rightPopupWidth
+    readonly property int networkPanelMaxHeight: rightPopupMaxHeight
 
     readonly property int clockPanelMaxWidth: 920
     readonly property int clockPanelMaxHeight: 440

@@ -11,9 +11,12 @@ import "../services"
 Rectangle {
     id: root
 
-    width:  340
+    width: Theme.notificationPanelWidth
     implicitHeight: height
-    height: Math.min(contentCol.implicitHeight + Theme.spaceMd * 2, 520)
+    height: Math.min(
+        contentCol.implicitHeight + Theme.spaceMd * 2,
+        Theme.notificationPanelMaxHeight
+    )
     radius: Theme.radiusMd
     color:  Theme.bgSurface
     border.color: Theme.borderDefault
@@ -126,7 +129,7 @@ Rectangle {
             visible: Notification.notifications.length > 0
             width:  parent.width
             implicitHeight: contentHeight
-            height: Math.min(contentHeight, 440)
+            height: Math.min(contentHeight, Theme.notificationListMaxHeight)
             model:  Notification.notifications
             clip:   true
             spacing: Theme.spaceXs

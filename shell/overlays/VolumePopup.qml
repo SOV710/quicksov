@@ -11,11 +11,11 @@ import "../services"
 Rectangle {
     id: root
 
-    width: Theme.auxExpandedWidth + Theme.spaceMd * 2
+    width: Theme.volumePanelWidth
     implicitHeight: height
     height: Math.min(
         contentCol.implicitHeight + Theme.spaceMd * 2,
-        Theme.powerDockWidth + Theme.spaceSm * 2
+        Theme.volumePanelMaxHeight
     )
     radius: Theme.radiusMd
     color: Theme.bgSurface
@@ -297,7 +297,7 @@ Rectangle {
                 implicitHeight: contentHeight
                 height: Math.min(
                     contentHeight,
-                    Theme.powerDockHeight + Theme.spaceXl * 2
+                    Theme.volumeStreamsMaxHeight
                 )
                 model: Audio.streamsModel
                 spacing: Theme.spaceXs
