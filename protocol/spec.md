@@ -240,8 +240,9 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 ```json
 {
   "type": "object",
-  "required": ["powered","discovering","devices"],
+  "required": ["available","powered","discovering","devices"],
   "properties": {
+    "available":   { "type": "boolean", "description": "whether a BlueZ adapter exists" },
     "powered":     { "type": "boolean" },
     "discovering": { "type": "boolean" },
     "devices": {

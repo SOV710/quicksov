@@ -184,8 +184,11 @@
 | 属性 | 值 |
 |---|---|
 | 数据源 | daemon `bluetooth` service via BlueZ D-Bus |
-| 视觉状态 | 未开启：`bluetooth-off` + muted；开启未连：`bluetooth`；已连：`bluetooth-connected` + accent；扫描中：`bluetooth-searching` + 脉冲动画（opacity 0.4↔1.0，周期 1200ms） |
-| 交互 | click → popup：已配对设备列表（带各自电量）、"扫描新设备" 按钮 |
+| 几何 | click popup；宽 368px；最大高 480px；锚定 MainBar 蓝牙 icon，下方 `gap_from_bar` |
+| 视觉状态 | unavailable：`bluetooth-off` + muted + "No Bluetooth adapter"；disabled：`bluetooth-off` + muted + "Bluetooth is off"；enabled idle：`bluetooth`；已连：`bluetooth` + accent；扫描中：icon 脉冲/refresh loading（周期 1200ms） |
+| 头部 | 左侧 `Bluetooth` 标题 + 状态副标题；右侧 `Refresh/Stop` 与 `On/Off` 控件 |
+| 列表分组 | `Connected` → `Paired` → `Available`；每行显示 name/address、状态文案、电量（若有） |
+| 交互 | click bar icon → 打开/关闭 popup；`Refresh` 开始扫描、扫描中切为 `Stop`；不在打开时自动扫描；点击 popup 外关闭 |
 
 ### 3.9 volume
 

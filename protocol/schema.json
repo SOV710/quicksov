@@ -263,8 +263,9 @@
     "bluetooth": {
       "state_snapshot": {
         "type": "object",
-        "required": ["powered", "discovering", "devices"],
+        "required": ["available", "powered", "discovering", "devices"],
         "properties": {
+          "available": { "type": "boolean" },
           "powered": { "type": "boolean" },
           "discovering": { "type": "boolean" },
           "devices": {
