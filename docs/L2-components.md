@@ -172,7 +172,7 @@
 | 数据源 | daemon `net.link`（netlink，接口/IP/路由） + `net.wifi`（wpa_supplicant ctrl socket） |
 | 监听接口 | `wlo1`、`enp109s0` |
 | 视觉 | WiFi 4 格信号 icon（按 RSSI 填充）；离线 `wifi-off`；以太网 `ethernet` |
-| 几何 | click popup；宽 376px；最大高 520px；锚定 MainBar network icon，下方 `gap_from_bar` |
+| 几何 | click popup；宽 420px；最大高 560px；锚定 MainBar network icon，下方 `gap_from_bar` |
 | 头部 | 左侧 `Network` 标题 + 副标题；右侧 `Refresh`、`Wi-Fi On/Off`、`Flight` 三个 chip |
 | 状态归约 | daemon 额外提供 `availability` / `availability_reason` / `rfkill_*` / `airplane_mode`，区分 ready / disabled / unavailable |
 | 列表分组 | `Current` → `Saved` → `Available`；每行显示 SSID、状态副标题（Connected / Saved / Open / WPA2 / 频段 / 信号） |
@@ -189,7 +189,7 @@
 | 属性 | 值 |
 |---|---|
 | 数据源 | daemon `bluetooth` service via BlueZ D-Bus |
-| 几何 | click popup；宽 368px；最大高 480px；锚定 MainBar 蓝牙 icon，下方 `gap_from_bar` |
+| 几何 | click popup；宽 420px；最大高 560px；锚定 MainBar 蓝牙 icon，下方 `gap_from_bar` |
 | 视觉状态 | unavailable：`bluetooth-off` + muted + "No Bluetooth adapter"；disabled：`bluetooth-off` + muted + "Bluetooth is off"；enabled idle：`bluetooth`；已连：`bluetooth` + accent；扫描中：icon 脉冲/refresh loading（周期 1200ms） |
 | 头部 | 左侧 `Bluetooth` 标题 + 状态副标题；右侧 `Refresh/Stop` 与 `On/Off` 控件 |
 | 列表分组 | `Connected` → `Paired` → `Available`；每行显示 name/address、状态文案、电量（若有） |
@@ -201,6 +201,7 @@
 |---|---|
 | 数据源 | daemon `audio` service via PipeWire |
 | 视觉 | icon (按音量分档 `volume-2/1/x/muted`) + 百分比 |
+| 几何 | click popup；宽 420px；最大高 560px；Applications 列表区上限 260px |
 | 交互 | click → popup：大音量 slider、默认 sink 切换、per-app 音量列表；hover 滚轮 → ±5% |
 
 ### 3.10 notification-center
@@ -210,6 +211,7 @@
 | 位置 | RIGHT 最右 |
 | 数据源 | daemon `notification` service（实现 `org.freedesktop.Notifications` D-Bus server，完全取代 mako/dunst） |
 | 视觉 | `bell` icon；有未读时右上角 6px `color.danger` 红点 |
+| 几何 | click popup；宽 420px；最大高 560px；通知列表区上限 480px |
 | 交互 | click → 展开 NotificationCenter popup；长按或右键 → 清空全部 |
 
 **Toast 行为**：新 notification 到达时主屏右上角滑入 toast 卡片（`notification_in`），stay 5s 自动滑出，hover 暂停。最多堆叠 3 条。
