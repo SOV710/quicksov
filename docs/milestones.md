@@ -12,9 +12,6 @@
 - 双卡片布局主 Panel
 - weather service frontend
 
-Uncompleted
----
-
 
 ## 0.0.4
 
@@ -22,6 +19,11 @@ Uncompleted
 - 已连接设备
 - 列表刷新交互
 - Unavailable / disabled 状态处理
+
+
+Uncompleted
+---
+
 
 ## 0.0.5
 
