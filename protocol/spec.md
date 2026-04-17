@@ -189,6 +189,31 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
   "properties": {
     "interface": { "type": "string", "example": "wlo1" },
     "state":     { "type": "string", "enum": ["disconnected","scanning","associating","connected","unknown"] },
+    "present":   { "type": "boolean", "description": "Whether the target Wi-Fi interface exists in sysfs" },
+    "enabled":   { "type": "boolean", "description": "Whether Wi-Fi operations are currently enabled and usable" },
+    "availability": {
+      "type": "string",
+      "enum": ["ready", "disabled", "unavailable"],
+      "description": "High-level backend state, distinct from association state"
+    },
+    "availability_reason": {
+      "type": "string",
+      "enum": [
+        "none",
+        "no_adapter",
+        "rfkill_soft_blocked",
+        "rfkill_hard_blocked",
+        "wpa_socket_missing",
+        "permission_denied",
+        "backend_error",
+        "unknown"
+      ]
+    },
+    "interface_operstate": { "type": ["string","null"], "description": "Raw /sys/class/net/<iface>/operstate value" },
+    "rfkill_available": { "type": "boolean", "description": "Whether the rfkill command is available for set_enabled / airplane actions" },
+    "rfkill_soft_blocked": { "type": "boolean" },
+    "rfkill_hard_blocked": { "type": "boolean" },
+    "airplane_mode": { "type": "boolean", "description": "Best-effort derived state: all wireless rfkill entries blocked" },
     "ssid":      { "type": ["string","null"] },
     "bssid":     { "type": ["string","null"] },
     "rssi_dbm":  { "type": ["integer","null"] },
@@ -228,6 +253,8 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 - `connect` — payload `{ ssid: string, psk?: string, save?: boolean }`
 - `disconnect` — payload `{}`
 - `forget` — payload `{ ssid: string }`
+- `set_enabled` — payload `{ enabled: boolean }`，通过 `rfkill block/unblock wifi` 控制 Wi-Fi soft block
+- `set_airplane_mode` — payload `{ enabled: boolean }`，通过 `rfkill block/unblock all` 控制全局飞行模式 soft block
 
 **后端**: `wpa_supplicant` ctrl socket `/run/wpa_supplicant/wlo1`，通过 `wpa_cli` 协议（`SCAN`, `SCAN_RESULTS`, `ADD_NETWORK`, `SET_NETWORK`, `ENABLE_NETWORK`, `SELECT_NETWORK` 等）。
 

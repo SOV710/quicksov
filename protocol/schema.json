@@ -191,6 +191,30 @@
               "unknown"
             ]
           },
+          "present": { "type": "boolean" },
+          "enabled": { "type": "boolean" },
+          "availability": {
+            "type": "string",
+            "enum": ["ready", "disabled", "unavailable"]
+          },
+          "availability_reason": {
+            "type": "string",
+            "enum": [
+              "none",
+              "no_adapter",
+              "rfkill_soft_blocked",
+              "rfkill_hard_blocked",
+              "wpa_socket_missing",
+              "permission_denied",
+              "backend_error",
+              "unknown"
+            ]
+          },
+          "interface_operstate": { "type": ["string", "null"] },
+          "rfkill_available": { "type": "boolean" },
+          "rfkill_soft_blocked": { "type": "boolean" },
+          "rfkill_hard_blocked": { "type": "boolean" },
+          "airplane_mode": { "type": "boolean" },
           "ssid": { "type": ["string", "null"] },
           "bssid": { "type": ["string", "null"] },
           "rssi_dbm": { "type": ["integer", "null"] },
@@ -253,6 +277,26 @@
             "type": "object",
             "required": ["ssid"],
             "properties": { "ssid": { "type": "string" } }
+          },
+          "response": { "type": "null" }
+        },
+        "set_enabled": {
+          "request": {
+            "type": "object",
+            "required": ["enabled"],
+            "properties": {
+              "enabled": { "type": "boolean" }
+            }
+          },
+          "response": { "type": "null" }
+        },
+        "set_airplane_mode": {
+          "request": {
+            "type": "object",
+            "required": ["enabled"],
+            "properties": {
+              "enabled": { "type": "boolean" }
+            }
           },
           "response": { "type": "null" }
         }
