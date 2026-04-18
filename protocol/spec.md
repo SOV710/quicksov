@@ -564,7 +564,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 ```json
 {
   "type": "object",
-  "required": ["directory","availability","availability_reason","entries","current","transition"],
+  "required": ["directory","availability","availability_reason","entries","current","transition","render"],
   "properties": {
     "directory": {
       "type": "string",
@@ -572,7 +572,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
     },
     "availability": {
       "type": "string",
-      "enum": ["ready","empty","video_only","unavailable"]
+      "enum": ["ready","empty","unavailable"]
     },
     "availability_reason": {
       "type": "string",
@@ -592,7 +592,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
     },
     "current": {
       "type": ["object","null"],
-      "description": "Current renderable wallpaper. In v1 this only ever points to a static image entry.",
+      "description": "Current wallpaper entry. It can point to either an image or a video.",
       "required": ["path","name","kind"],
       "properties": {
         "path": { "type": "string" },
@@ -607,6 +607,15 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
         "type": { "type": "string", "enum": ["fade"] },
         "duration_ms": { "type": "integer", "minimum": 0 }
       }
+    },
+    "render": {
+      "type": "object",
+      "required": ["backend","video_enabled","video_audio"],
+      "properties": {
+        "backend": { "type": "string", "enum": ["mpv"] },
+        "video_enabled": { "type": "boolean" },
+        "video_audio": { "type": "boolean" }
+      }
     }
   }
 }
@@ -614,16 +623,18 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 
 **Actions**:
 - `refresh` — 重新扫描 wallpaper directory，payload `{}`
-- `next` — 切换到下一张静态图片，payload `{}`
-- `prev` — 切换到上一张静态图片，payload `{}`
-- `set_path` — 切换到指定静态图片，payload `{ path: string }`
+- `next` — 切换到下一张 wallpaper entry，payload `{}`
+- `prev` — 切换到上一张 wallpaper entry，payload `{}`
+- `set_path` — 切换到指定 wallpaper entry，payload `{ path: string }`
 
 **v1 约束**:
 - daemon 会索引静态图片与视频文件，两者都会出现在 `entries`
-- 但 `current` / `next` / `prev` / `set_path` **仅作用于静态图片**
-- 当目录中只有视频文件时，`availability = "video_only"`，由前端回退到纯色背景；视频渲染待后续版本实现
+- `current` / `next` / `prev` / `set_path` 作用于全部可索引条目
+- `render.backend = "mpv"` 表示前端使用 libmpv 原生 QML plugin 渲染视频
+- `render.video_enabled = false` 时，video 条目仍可被选中，但前端应回退到纯色背景
+- `render.video_audio = false` 是默认值；开启后前端允许视频壁纸带声音输出
 
-**后端**: daemon 本地目录扫描；默认目录 `$HOME/.config/quicksov/wallpapers`，可通过 `daemon.toml.[services.wallpaper].directory` 覆盖。
+**后端**: daemon 本地目录扫描；默认目录 `$HOME/.config/quicksov/wallpapers`，可通过 `daemon.toml.[services.wallpaper].directory` 覆盖。视频渲染配置来自 `daemon.toml.[services.wallpaper].video_enabled` 与 `video_audio`。
 
 ---
 

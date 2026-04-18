@@ -355,6 +355,8 @@ units = "metric"
 directory = "$HOME/.config/quicksov/wallpapers"
 transition = "fade"
 transition_duration_ms = 320
+video_enabled = true
+video_audio = false
 
 [services.network]
 wifi_backend = "wpa_supplicant"
@@ -409,6 +411,8 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
 ├── desktop/                        # 非 bar 的桌面 layer-shell surface
 │   ├── WallpaperLayer.qml
 │   └── PowerDock.qml
+├── Quicksov/
+│   └── WallpaperMpv/              # Qt6 native QML module, 由 build script 部署
 ├── bars/
 │   ├── MainBar.qml                 # 主屏 top bar
 │   └── AuxBar.qml                  # 副屏 auto-hide left bar
@@ -456,6 +460,8 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
 │   ├── components/
 │   ├── widgets/
 │   └── overlays/
+├── native/
+│   └── wallpaper_mpv/              # Qt6 C++ / libmpv plugin
 ├── config/                         # 配置模板
 │   ├── daemon.toml.example
 │   └── design-tokens.toml

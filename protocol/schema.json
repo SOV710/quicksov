@@ -809,12 +809,12 @@
     "wallpaper": {
       "state_snapshot": {
         "type": "object",
-        "required": ["directory", "availability", "availability_reason", "entries", "current", "transition"],
+        "required": ["directory", "availability", "availability_reason", "entries", "current", "transition", "render"],
         "properties": {
           "directory": { "type": "string" },
           "availability": {
             "type": "string",
-            "enum": ["ready", "empty", "video_only", "unavailable"]
+            "enum": ["ready", "empty", "unavailable"]
           },
           "availability_reason": {
             "type": "string",
@@ -847,6 +847,15 @@
             "properties": {
               "type": { "type": "string", "enum": ["fade"] },
               "duration_ms": { "type": "integer", "minimum": 0 }
+            }
+          },
+          "render": {
+            "type": "object",
+            "required": ["backend", "video_enabled", "video_audio"],
+            "properties": {
+              "backend": { "type": "string", "enum": ["mpv"] },
+              "video_enabled": { "type": "boolean" },
+              "video_audio": { "type": "boolean" }
             }
           }
         }

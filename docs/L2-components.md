@@ -32,9 +32,10 @@
 | 多屏策略 | v1 所有屏幕共享同一张当前壁纸，但每个屏幕各自创建独立 `PanelWindow` / surface |
 | Layer | `WlrLayer.Background`，`ExclusionMode.Ignore`，全屏锚定，不参与输入 |
 | 静态壁纸 | `Image.PreserveAspectCrop`，按屏幕尺寸解码 |
-| 切换动画 | 双缓冲 crossfade，默认 `fade 320ms` |
+| 视频壁纸 | `libmpv` 原生 QML plugin，单 decoder + 单 offscreen render target，多屏各自裁切采样 |
+| 切换动画 | 旧画面 snapshot overlay + fade，默认 `fade 320ms` |
 | 失败回退 | 无可渲染图片或目录不可用时，回退到 `Theme.bgCanvas` 纯色背景 |
-| video 状态 | daemon 会识别 `video` 类条目并出现在 `entries`，但 v1 不渲染；目录仅有视频时状态为 `video_only` |
+| video 配置 | `daemon.toml.[services.wallpaper].video_enabled` 控制是否启用视频；`video_audio` 控制是否放音 |
 
 **niri 约束**：
 - wallpaper 正确路径是 layer-shell `background` layer，而不是普通窗口
