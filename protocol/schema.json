@@ -87,8 +87,12 @@
     "battery": {
       "state_snapshot": {
         "type": "object",
-        "required": ["present", "on_battery", "level", "state"],
+        "required": ["availability", "present", "on_battery", "level", "state", "power_profile_available"],
         "properties": {
+          "availability": {
+            "type": "string",
+            "enum": ["ready", "no_battery", "backend_unavailable"]
+          },
           "present": { "type": "boolean" },
           "on_battery": { "type": "boolean" },
           "level": { "type": "integer", "minimum": 0, "maximum": 100 },
@@ -106,6 +110,12 @@
           },
           "time_to_empty_sec": { "type": ["integer", "null"] },
           "time_to_full_sec": { "type": ["integer", "null"] },
+          "power_profile_available": { "type": "boolean" },
+          "health_percent": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+          "energy_rate_w": { "type": ["number", "null"] },
+          "energy_now_wh": { "type": ["number", "null"] },
+          "energy_full_wh": { "type": ["number", "null"] },
+          "energy_design_wh": { "type": ["number", "null"] },
           "power_profile": {
             "type": "string",
             "enum": ["performance", "balanced", "power-saver", "unknown"]

@@ -121,15 +121,22 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 ```json
 {
   "type": "object",
-  "required": ["present", "on_battery", "level", "state"],
+  "required": ["availability", "present", "on_battery", "level", "state", "power_profile_available"],
   "properties": {
+    "availability":      { "type": "string", "enum": ["ready", "no_battery", "backend_unavailable"] },
     "present":           { "type": "boolean" },
     "on_battery":        { "type": "boolean", "description": "UPower OnBattery" },
     "level":             { "type": "integer", "minimum": 0, "maximum": 100, "description": "百分比" },
     "state":             { "type": "string", "enum": ["charging","discharging","empty","fully_charged","pending_charge","pending_discharge","unknown"] },
     "time_to_empty_sec": { "type": ["integer","null"] },
     "time_to_full_sec":  { "type": ["integer","null"] },
-    "power_profile":     { "type": "string", "enum": ["performance","balanced","power-saver","unknown"] }
+    "power_profile":     { "type": "string", "enum": ["performance","balanced","power-saver","unknown"] },
+    "power_profile_available": { "type": "boolean" },
+    "health_percent":    { "type": ["number","null"], "minimum": 0, "maximum": 100, "description": "Battery health derived from EnergyFull / EnergyFullDesign when available" },
+    "energy_rate_w":     { "type": ["number","null"], "description": "Positive charge/discharge rate in watts" },
+    "energy_now_wh":     { "type": ["number","null"], "description": "Current stored energy in Wh" },
+    "energy_full_wh":    { "type": ["number","null"], "description": "Current full capacity in Wh" },
+    "energy_design_wh":  { "type": ["number","null"], "description": "Design capacity in Wh" }
   }
 }
 ```
