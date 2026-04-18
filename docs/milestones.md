@@ -29,12 +29,22 @@
 - disconnected / unavailable 状态处理
 
 
-Uncompleted
----
-
-
 ## 0.0.6
 
 - battery 控件 panel
 - battery 状态 + 健康值显示
 - 无 battery 的台式机端显示 (无法做 E2E, 因为我没有台式机)
+
+Uncompleted
+---
+
+## 0.0.7
+
+- 用 qs 实现 wallpaper
+- 每个单屏一个独立的 wallpaper window
+- 支持静态壁纸和 `video` 类别的动态壁纸
+- wallpaper 切换动画
+
+## 0.0.8
+
+- mpris 播放器
