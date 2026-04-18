@@ -37,6 +37,7 @@ Scope {
                                                  || bluetoothPopup.visible
                                                  || networkPopup.visible
                                                  || volumePopup.visible
+                                                 || batteryPopup.visible
 
             // Expand to cover bar + whichever popup is open (tallest wins)
             property int _popupHeight: {
@@ -46,6 +47,7 @@ Scope {
                 if (bluetoothPopup.visible)  h = Math.max(h, bluetoothPopup.implicitHeight + Theme.spaceXs);
                 if (networkPopup.visible)    h = Math.max(h, networkPopup.implicitHeight + Theme.spaceXs);
                 if (volumePopup.visible)     h = Math.max(h, volumePopup.implicitHeight + Theme.spaceXs);
+                if (batteryPopup.visible)    h = Math.max(h, batteryPopup.implicitHeight + Theme.spaceXs);
                 return h;
             }
             implicitHeight: bar._anyPopupOpen && bar.screen
@@ -68,6 +70,7 @@ Scope {
                     bluetoothPopup.visible = false;
                     networkPopup.visible = false;
                     volumePopup.visible = false;
+                    batteryPopup.visible = false;
                 }
             }
 
@@ -124,6 +127,7 @@ Scope {
                             bluetoothPopup.visible = false;
                             networkPopup.visible = false;
                             volumePopup.visible = false;
+                            batteryPopup.visible = false;
                             clockPopup.popupVisible = !clockPopup.popupVisible;
                         }
                     }
@@ -146,6 +150,7 @@ Scope {
                             bluetoothPopup.visible = false;
                             networkPopup.visible = false;
                             volumePopup.visible = false;
+                            batteryPopup.visible = false;
                             notifCenter.visible = !notifCenter.visible;
                         }
                     }
@@ -158,6 +163,7 @@ Scope {
                             notifCenter.visible = false;
                             bluetoothPopup.visible = false;
                             networkPopup.visible = false;
+                            batteryPopup.visible = false;
                             volumePopup.visible = !volumePopup.visible;
                         }
                     }
@@ -169,6 +175,7 @@ Scope {
                             notifCenter.visible = false;
                             networkPopup.visible = false;
                             volumePopup.visible = false;
+                            batteryPopup.visible = false;
                             bluetoothPopup.visible = !bluetoothPopup.visible;
                         }
                     }
@@ -180,10 +187,22 @@ Scope {
                             notifCenter.visible = false;
                             bluetoothPopup.visible = false;
                             volumePopup.visible = false;
+                            batteryPopup.visible = false;
                             networkPopup.visible = !networkPopup.visible;
                         }
                     }
-                    BatteryIndicator  { anchors.verticalCenter: parent.verticalCenter }
+                    BatteryIndicator {
+                        id: batteryWidget
+                        anchors.verticalCenter: parent.verticalCenter
+                        onClicked: {
+                            clockPopup.popupVisible = false;
+                            notifCenter.visible = false;
+                            bluetoothPopup.visible = false;
+                            networkPopup.visible = false;
+                            volumePopup.visible = false;
+                            batteryPopup.visible = !batteryPopup.visible;
+                        }
+                    }
                     TrayHost          { anchors.verticalCenter: parent.verticalCenter }
                 }
             }
@@ -274,6 +293,27 @@ Scope {
                 z: 2
                 visible: false
                 readonly property real _preferredX: volumePopupAnchor.x + (volumePopupAnchor.width - width) / 2
+                readonly property real _minX: barRect.x + Theme.barPadX
+                readonly property real _maxX: Math.max(_minX, barRect.x + barRect.width - Theme.barPadX - width)
+
+                x: Math.max(_minX, Math.min(_preferredX, _maxX))
+                y: barRect.y + barRect.height + Theme.spaceXs
+            }
+
+            Item {
+                id: batteryPopupAnchor
+                x: barRect.x + rightZone.x + batteryWidget.x
+                y: barRect.y + rightZone.y + batteryWidget.y
+                width: batteryWidget ? batteryWidget.width : 0
+                height: batteryWidget ? batteryWidget.height : 0
+                visible: false
+            }
+
+            BatteryPopup {
+                id: batteryPopup
+                z: 2
+                visible: false
+                readonly property real _preferredX: batteryPopupAnchor.x + (batteryPopupAnchor.width - width) / 2
                 readonly property real _minX: barRect.x + Theme.barPadX
                 readonly property real _maxX: Math.max(_minX, barRect.x + barRect.width - Theme.barPadX - width)
 

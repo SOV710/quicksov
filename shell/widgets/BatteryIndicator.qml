@@ -10,13 +10,17 @@ import "../services"
 Item {
     id: root
 
+    signal clicked()
+
     implicitWidth: row.implicitWidth
     implicitHeight: row.implicitHeight
 
     readonly property string _icon: {
         if (!Battery.present) return "";
-        if (Battery.chargeStatus === "charging" || Battery.chargeStatus === "full")
+        if (Battery.chargeStatus === "charging")
             return "lucide/battery-charging.svg";
+        if (!Battery.onBattery && Battery.chargeStatus === "fully_charged")
+            return "lucide/battery-full.svg";
         var pct = Battery.percentage;
         if (pct > 70) return "lucide/battery-full.svg";
         if (pct > 30) return "lucide/battery-medium.svg";
@@ -25,7 +29,7 @@ Item {
     }
 
     readonly property color _color: {
-        if (Battery.chargeStatus === "charging" || Battery.chargeStatus === "full")
+        if (Battery.chargeStatus === "charging" || Battery.chargeStatus === "fully_charged")
             return Theme.colorSuccess;
         var pct = Battery.percentage;
         if (pct <= 15) return Theme.colorError;
@@ -55,5 +59,13 @@ Item {
             font.features: { "tnum": 1 }
             anchors.verticalCenter: parent.verticalCenter
         }
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        enabled: Battery.ready
+        hoverEnabled: enabled
+        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+        onClicked: root.clicked()
     }
 }
