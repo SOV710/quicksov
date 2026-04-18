@@ -806,6 +806,78 @@
       "backend": "scheduler + fetch worker, Open-Meteo HTTPS, default poll 600s, success TTL 1800s"
     },
 
+    "wallpaper": {
+      "state_snapshot": {
+        "type": "object",
+        "required": ["directory", "availability", "availability_reason", "entries", "current", "transition"],
+        "properties": {
+          "directory": { "type": "string" },
+          "availability": {
+            "type": "string",
+            "enum": ["ready", "empty", "video_only", "unavailable"]
+          },
+          "availability_reason": {
+            "type": "string",
+            "enum": ["none", "directory_missing", "permission_denied", "scan_failed"]
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["path", "name", "kind"],
+              "properties": {
+                "path": { "type": "string" },
+                "name": { "type": "string" },
+                "kind": { "type": "string", "enum": ["image", "video"] }
+              }
+            }
+          },
+          "current": {
+            "type": ["object", "null"],
+            "required": ["path", "name", "kind"],
+            "properties": {
+              "path": { "type": "string" },
+              "name": { "type": "string" },
+              "kind": { "type": "string", "enum": ["image", "video"] }
+            }
+          },
+          "transition": {
+            "type": "object",
+            "required": ["type", "duration_ms"],
+            "properties": {
+              "type": { "type": "string", "enum": ["fade"] },
+              "duration_ms": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      },
+      "actions": {
+        "refresh": {
+          "request": { "type": "object", "properties": {} },
+          "response": { "type": "null" }
+        },
+        "next": {
+          "request": { "type": "object", "properties": {} },
+          "response": { "type": "null" }
+        },
+        "prev": {
+          "request": { "type": "object", "properties": {} },
+          "response": { "type": "null" }
+        },
+        "set_path": {
+          "request": {
+            "type": "object",
+            "required": ["path"],
+            "properties": {
+              "path": { "type": "string" }
+            }
+          },
+          "response": { "type": "null" }
+        }
+      },
+      "backend": "local directory scan, current selection limited to static image entries in v1"
+    },
+
     "theme": {
       "state_snapshot": {
         "type": "object",

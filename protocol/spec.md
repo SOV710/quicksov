@@ -557,7 +557,77 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 
 ---
 
-### 5.10 `theme`
+### 5.10 `wallpaper`
+
+**State Snapshot**:
+
+```json
+{
+  "type": "object",
+  "required": ["directory","availability","availability_reason","entries","current","transition"],
+  "properties": {
+    "directory": {
+      "type": "string",
+      "description": "Resolved absolute wallpaper directory path"
+    },
+    "availability": {
+      "type": "string",
+      "enum": ["ready","empty","video_only","unavailable"]
+    },
+    "availability_reason": {
+      "type": "string",
+      "enum": ["none","directory_missing","permission_denied","scan_failed"]
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path","name","kind"],
+        "properties": {
+          "path": { "type": "string" },
+          "name": { "type": "string" },
+          "kind": { "type": "string", "enum": ["image","video"] }
+        }
+      }
+    },
+    "current": {
+      "type": ["object","null"],
+      "description": "Current renderable wallpaper. In v1 this only ever points to a static image entry.",
+      "required": ["path","name","kind"],
+      "properties": {
+        "path": { "type": "string" },
+        "name": { "type": "string" },
+        "kind": { "type": "string", "enum": ["image","video"] }
+      }
+    },
+    "transition": {
+      "type": "object",
+      "required": ["type","duration_ms"],
+      "properties": {
+        "type": { "type": "string", "enum": ["fade"] },
+        "duration_ms": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}
+```
+
+**Actions**:
+- `refresh` — 重新扫描 wallpaper directory，payload `{}`
+- `next` — 切换到下一张静态图片，payload `{}`
+- `prev` — 切换到上一张静态图片，payload `{}`
+- `set_path` — 切换到指定静态图片，payload `{ path: string }`
+
+**v1 约束**:
+- daemon 会索引静态图片与视频文件，两者都会出现在 `entries`
+- 但 `current` / `next` / `prev` / `set_path` **仅作用于静态图片**
+- 当目录中只有视频文件时，`availability = "video_only"`，由前端回退到纯色背景；视频渲染待后续版本实现
+
+**后端**: daemon 本地目录扫描；默认目录 `$HOME/.config/quicksov/wallpapers`，可通过 `daemon.toml.[services.wallpaper].directory` 覆盖。
+
+---
+
+### 5.11 `theme`
 
 **State Snapshot**: 整个 `design-tokens.toml` 解析后的 JSON 对象。Schema 由 `config/design-tokens.toml` 的结构定义，此处不复述。
 
@@ -565,7 +635,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 
 ---
 
-### 5.11 `meta`
+### 5.12 `meta`
 
 **State Snapshot**:
 

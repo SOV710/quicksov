@@ -47,6 +47,17 @@ log_level = "info"
 # shutdown = true
 
 # ---------------------------------------------------------------------------
+# Wallpaper — static wallpaper directory and transition config
+# The wallpaper service indexes both static images and video files, but the
+# current v1 renderer only displays static images.
+# ---------------------------------------------------------------------------
+
+# [services.wallpaper]
+# directory = "$HOME/.config/quicksov/wallpapers"
+# transition = "fade"
+# transition_duration_ms = 320
+
+# ---------------------------------------------------------------------------
 # Network — wpa_supplicant control socket path
 # Adjust the interface name if yours differs (e.g. wlan0, wlp3s0).
 # Wi-Fi enable/disable and airplane-mode actions are implemented via `rfkill`
