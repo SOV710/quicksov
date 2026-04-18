@@ -45,19 +45,29 @@ pub fn spawn(_cfg: &Config) -> ServiceHandle {
 }
 
 fn unavailable_snapshot() -> Value {
-    json_map([
-        ("present", Value::Bool(false)),
-        ("on_battery", Value::Bool(false)),
-        ("level", Value::from(0)),
-        ("state", Value::from("unknown")),
-        ("time_to_empty_sec", Value::Null),
-        ("time_to_full_sec", Value::Null),
-        ("power_profile", Value::from("unknown")),
-    ])
+    build_snapshot(&BatteryState::backend_unavailable())
+}
+
+#[derive(Clone, Copy)]
+enum BatteryAvailability {
+    Ready,
+    NoBattery,
+    BackendUnavailable,
+}
+
+impl BatteryAvailability {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Ready => "ready",
+            Self::NoBattery => "no_battery",
+            Self::BackendUnavailable => "backend_unavailable",
+        }
+    }
 }
 
 #[derive(Clone)]
 struct BatteryState {
+    availability: BatteryAvailability,
     present: bool,
     on_battery: bool,
     level: i64,
@@ -65,11 +75,18 @@ struct BatteryState {
     time_to_empty_sec: Option<i64>,
     time_to_full_sec: Option<i64>,
     power_profile: String,
+    power_profile_available: bool,
+    health_percent: Option<f64>,
+    energy_rate_w: Option<f64>,
+    energy_now_wh: Option<f64>,
+    energy_full_wh: Option<f64>,
+    energy_design_wh: Option<f64>,
 }
 
 impl BatteryState {
-    fn unavailable() -> Self {
+    fn backend_unavailable() -> Self {
         Self {
+            availability: BatteryAvailability::BackendUnavailable,
             present: false,
             on_battery: false,
             level: 0,
@@ -77,8 +94,79 @@ impl BatteryState {
             time_to_empty_sec: None,
             time_to_full_sec: None,
             power_profile: "unknown".to_string(),
+            power_profile_available: false,
+            health_percent: None,
+            energy_rate_w: None,
+            energy_now_wh: None,
+            energy_full_wh: None,
+            energy_design_wh: None,
         }
     }
+
+    fn no_battery() -> Self {
+        let mut state = Self::backend_unavailable();
+        state.availability = BatteryAvailability::NoBattery;
+        state
+    }
+
+    fn refresh_derived(&mut self) {
+        self.availability = if self.present {
+            BatteryAvailability::Ready
+        } else {
+            BatteryAvailability::NoBattery
+        };
+
+        if !self.present {
+            self.on_battery = false;
+            self.level = 0;
+            self.state_u32 = 0;
+            self.time_to_empty_sec = None;
+            self.time_to_full_sec = None;
+            self.health_percent = None;
+            self.energy_rate_w = None;
+            self.energy_now_wh = None;
+            self.energy_full_wh = None;
+            self.energy_design_wh = None;
+            return;
+        }
+
+        self.health_percent = match (self.energy_full_wh, self.energy_design_wh) {
+            (Some(full), Some(design)) if design > 0.0 => {
+                Some((full / design * 100.0).clamp(0.0, 100.0))
+            }
+            _ => None,
+        };
+    }
+}
+
+fn build_snapshot(state: &BatteryState) -> Value {
+    let tte_val = match state.time_to_empty_sec {
+        Some(v) if v > 0 => Value::from(v),
+        _ => Value::Null,
+    };
+    let ttf_val = match state.time_to_full_sec {
+        Some(v) if v > 0 => Value::from(v),
+        _ => Value::Null,
+    };
+    json_map([
+        ("availability", Value::from(state.availability.as_str())),
+        ("present", Value::Bool(state.present)),
+        ("on_battery", Value::Bool(state.on_battery)),
+        ("level", Value::from(state.level)),
+        ("state", Value::from(upower_state_str(state.state_u32))),
+        ("time_to_empty_sec", tte_val),
+        ("time_to_full_sec", ttf_val),
+        ("power_profile", Value::from(state.power_profile.as_str())),
+        (
+            "power_profile_available",
+            Value::Bool(state.power_profile_available),
+        ),
+        ("health_percent", float_value(state.health_percent)),
+        ("energy_rate_w", float_value(state.energy_rate_w)),
+        ("energy_now_wh", float_value(state.energy_now_wh)),
+        ("energy_full_wh", float_value(state.energy_full_wh)),
+        ("energy_design_wh", float_value(state.energy_design_wh)),
+    ])
 }
 
 async fn run(mut request_rx: mpsc::Receiver<ServiceRequest>, state_tx: watch::Sender<Value>) {
@@ -189,7 +277,7 @@ async fn read_full_state<'a>(
     conn: &'a zbus::Connection,
     pp_proxy: &mut Option<zbus::Proxy<'a>>,
 ) -> BatteryState {
-    let mut state = BatteryState::unavailable();
+    let mut state = BatteryState::no_battery();
 
     state.on_battery = get_prop::<bool>(upower, "OnBattery").await.unwrap_or(false);
     state.present = get_dev_prop::<bool>(device, "IsPresent")
@@ -197,33 +285,33 @@ async fn read_full_state<'a>(
         .unwrap_or(false);
     state.level = get_dev_prop::<f64>(device, "Percentage")
         .await
-        .unwrap_or(0.0) as i64;
+        .unwrap_or(0.0)
+        .round() as i64;
     state.state_u32 = get_dev_prop::<u32>(device, "State").await.unwrap_or(0);
     state.time_to_empty_sec = get_dev_prop::<i64>(device, "TimeToEmpty").await.ok();
     state.time_to_full_sec = get_dev_prop::<i64>(device, "TimeToFull").await.ok();
-    state.power_profile = read_power_profile(conn, pp_proxy).await;
+    state.energy_rate_w = get_dev_prop::<f64>(device, "EnergyRate")
+        .await
+        .ok()
+        .and_then(|value| positive_f64(value.abs()));
+    state.energy_now_wh = get_dev_prop::<f64>(device, "Energy")
+        .await
+        .ok()
+        .and_then(positive_f64);
+    state.energy_full_wh = get_dev_prop::<f64>(device, "EnergyFull")
+        .await
+        .ok()
+        .and_then(positive_f64);
+    state.energy_design_wh = get_dev_prop::<f64>(device, "EnergyFullDesign")
+        .await
+        .ok()
+        .and_then(positive_f64);
+    let (power_profile, power_profile_available) = read_power_profile(conn, pp_proxy).await;
+    state.power_profile = power_profile;
+    state.power_profile_available = power_profile_available;
+    state.refresh_derived();
 
     state
-}
-
-fn build_snapshot(state: &BatteryState) -> Value {
-    let tte_val = match state.time_to_empty_sec {
-        Some(v) if v > 0 => Value::from(v),
-        _ => Value::Null,
-    };
-    let ttf_val = match state.time_to_full_sec {
-        Some(v) if v > 0 => Value::from(v),
-        _ => Value::Null,
-    };
-    json_map([
-        ("present", Value::Bool(state.present)),
-        ("on_battery", Value::Bool(state.on_battery)),
-        ("level", Value::from(state.level)),
-        ("state", Value::from(upower_state_str(state.state_u32))),
-        ("time_to_empty_sec", tte_val),
-        ("time_to_full_sec", ttf_val),
-        ("power_profile", Value::from(state.power_profile.as_str())),
-    ])
 }
 
 fn upower_state_str(state: u32) -> &'static str {
@@ -268,7 +356,7 @@ async fn apply_device_change(
         state.present = present;
     }
     if let Some(level) = owned_prop::<f64>(&changed, "Percentage") {
-        state.level = level as i64;
+        state.level = level.round() as i64;
     }
     if let Some(state_u32) = owned_prop::<u32>(&changed, "State") {
         state.state_u32 = state_u32;
@@ -279,8 +367,21 @@ async fn apply_device_change(
     if let Some(time) = owned_prop::<i64>(&changed, "TimeToFull") {
         state.time_to_full_sec = positive_time(time);
     }
+    if let Some(rate) = owned_prop::<f64>(&changed, "EnergyRate") {
+        state.energy_rate_w = positive_f64(rate.abs());
+    }
+    if let Some(energy) = owned_prop::<f64>(&changed, "Energy") {
+        state.energy_now_wh = positive_f64(energy);
+    }
+    if let Some(energy_full) = owned_prop::<f64>(&changed, "EnergyFull") {
+        state.energy_full_wh = positive_f64(energy_full);
+    }
+    if let Some(energy_design) = owned_prop::<f64>(&changed, "EnergyFullDesign") {
+        state.energy_design_wh = positive_f64(energy_design);
+    }
 
     refresh_invalidated_device_props(state, device, &invalidated).await;
+    state.refresh_derived();
     Ok(())
 }
 
@@ -294,9 +395,12 @@ async fn apply_power_profile_change<'a>(
 
     if let Some(profile) = owned_prop::<String>(&changed, "ActiveProfile") {
         state.power_profile = profile;
+        state.power_profile_available = true;
     }
     if invalidated.iter().any(|name| name == "ActiveProfile") {
-        state.power_profile = read_power_profile(conn, pp_proxy).await;
+        let (power_profile, power_profile_available) = read_power_profile(conn, pp_proxy).await;
+        state.power_profile = power_profile;
+        state.power_profile_available = power_profile_available;
     }
     Ok(())
 }
@@ -322,7 +426,8 @@ async fn refresh_invalidated_device_props(
             "Percentage" => {
                 state.level = get_dev_prop::<f64>(device, "Percentage")
                     .await
-                    .unwrap_or(0.0) as i64;
+                    .unwrap_or(0.0)
+                    .round() as i64;
             }
             "State" => {
                 state.state_u32 = get_dev_prop::<u32>(device, "State").await.unwrap_or(0);
@@ -339,6 +444,30 @@ async fn refresh_invalidated_device_props(
                     .ok()
                     .and_then(positive_time);
             }
+            "EnergyRate" => {
+                state.energy_rate_w = get_dev_prop::<f64>(device, "EnergyRate")
+                    .await
+                    .ok()
+                    .and_then(|value| positive_f64(value.abs()));
+            }
+            "Energy" => {
+                state.energy_now_wh = get_dev_prop::<f64>(device, "Energy")
+                    .await
+                    .ok()
+                    .and_then(positive_f64);
+            }
+            "EnergyFull" => {
+                state.energy_full_wh = get_dev_prop::<f64>(device, "EnergyFull")
+                    .await
+                    .ok()
+                    .and_then(positive_f64);
+            }
+            "EnergyFullDesign" => {
+                state.energy_design_wh = get_dev_prop::<f64>(device, "EnergyFullDesign")
+                    .await
+                    .ok()
+                    .and_then(positive_f64);
+            }
             _ => {}
         }
     }
@@ -346,6 +475,17 @@ async fn refresh_invalidated_device_props(
 
 fn positive_time(value: i64) -> Option<i64> {
     (value > 0).then_some(value)
+}
+
+fn positive_f64(value: f64) -> Option<f64> {
+    (value.is_finite() && value > 0.0).then_some(value)
+}
+
+fn float_value(value: Option<f64>) -> Value {
+    value
+        .and_then(serde_json::Number::from_f64)
+        .map(Value::Number)
+        .unwrap_or(Value::Null)
 }
 
 fn owned_prop<T>(props: &HashMap<String, OwnedValue>, key: &str) -> Option<T>
@@ -360,16 +500,17 @@ where
 async fn read_power_profile<'a>(
     conn: &'a zbus::Connection,
     pp_proxy: &mut Option<zbus::Proxy<'a>>,
-) -> String {
+) -> (String, bool) {
     if pp_proxy.is_none() {
         *pp_proxy = build_power_profiles_proxy(conn).await;
     }
 
     match pp_proxy.as_ref() {
-        Some(proxy) => get_prop::<String>(proxy, "ActiveProfile")
-            .await
-            .unwrap_or_else(|_| "unknown".to_string()),
-        None => "unknown".to_string(),
+        Some(proxy) => match get_prop::<String>(proxy, "ActiveProfile").await {
+            Ok(profile) => (profile, true),
+            Err(_) => ("unknown".to_string(), false),
+        },
+        None => ("unknown".to_string(), false),
     }
 }
 

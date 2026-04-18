@@ -322,12 +322,17 @@ impl WifiRuntime {
             .await
             .map_err(service_error_from_wifi_error)?;
 
-        let id = if let Some(existing) = saved_networks.iter().find(|network| network.ssid == raw_ssid)
+        let id = if let Some(existing) = saved_networks
+            .iter()
+            .find(|network| network.ssid == raw_ssid)
         {
             if let Some(key) = escaped_psk.as_deref() {
-                wpa_expect_ok(sock, &format!("SET_NETWORK {} psk \"{}\"", existing.id, key))
-                    .await
-                    .map_err(service_error_from_wifi_error)?;
+                wpa_expect_ok(
+                    sock,
+                    &format!("SET_NETWORK {} psk \"{}\"", existing.id, key),
+                )
+                .await
+                .map_err(service_error_from_wifi_error)?;
             }
             existing.id.clone()
         } else {
