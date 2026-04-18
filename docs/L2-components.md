@@ -21,6 +21,33 @@
 
 **Niri 屏幕感知**：`Scope { Variants { model: Quickshell.screens; ... } }`，在 delegate 中读 `modelData.name` 决定加载哪个 bar 组件。映射由 `daemon.toml` 的 `[screens.mapping]` 驱动，daemon 通过 `meta` topic 的 `screens.roles` 字段推送给 qs（ADR-007）。QML 侧在 `Meta.qml` 单例中缓存 `screenRoles` 映射，MainBar/AuxBar 通过 `Meta.screenRoles[modelData.name]` 查询 role，不硬编码屏幕名。
 
+### 1.1 wallpaper-layer
+
+| 属性 | 值 |
+|---|---|
+| 位置 | 每个 output 一个独立 background layer-shell window |
+| 数据源 | daemon `wallpaper` service（目录扫描 + 当前项状态）；QML 只负责渲染 |
+| 默认目录 | `$HOME/.config/quicksov/wallpapers` |
+| 配置覆盖 | `daemon.toml.[services.wallpaper].directory` |
+| 多屏策略 | v1 所有屏幕共享同一张当前壁纸，但每个屏幕各自创建独立 `PanelWindow` / surface |
+| Layer | `WlrLayer.Background`，`ExclusionMode.Ignore`，全屏锚定，不参与输入 |
+| 静态壁纸 | `Image.PreserveAspectCrop`，按屏幕尺寸解码 |
+| 切换动画 | 双缓冲 crossfade，默认 `fade 320ms` |
+| 失败回退 | 无可渲染图片或目录不可用时，回退到 `Theme.bgCanvas` 纯色背景 |
+| video 状态 | daemon 会识别 `video` 类条目并出现在 `entries`，但 v1 不渲染；目录仅有视频时状态为 `video_only` |
+
+**niri 约束**：
+- wallpaper 正确路径是 layer-shell `background` layer，而不是普通窗口
+- v1 不直接依赖 niri IPC；output 生命周期由 `Quickshell.screens` 驱动
+- 若希望 wallpaper 固定在 overview/backdrop 中而非随 workspace 缩放，可在 niri config 中手动添加：
+
+```kdl
+layer-rule {
+    match namespace="^quicksov-wallpaper"
+    place-within-backdrop true
+}
+```
+
 ## 2. 主屏 Top Bar 空间布局
 
 ### 2.1 三区域划分
@@ -306,6 +333,7 @@
         BlueZ D-Bus          → bt-service         ──┤
         PipeWire             → audio-service      ──┤
         Niri IPC             → niri-service       ──┼─→ IPC Router ─→ QML
+        wallpaper directory  → wallpaper-service  ──┤     (UDS+NDJSON)
         weather scheduler    → weather-service    ──┤     (UDS+NDJSON)
         Open-Meteo HTTP      → weather-worker     ──┤
         Freedesktop D-Bus    → notif-service      ──┤

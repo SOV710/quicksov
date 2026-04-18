@@ -339,6 +339,7 @@ enabled = [
   "notification",
   "niri",
   "weather",
+  "wallpaper",
 ]
 
 [services.weather]
@@ -349,6 +350,11 @@ longitude = -0.1278
 location_name = "London"
 poll_interval_sec = 600
 units = "metric"
+
+[services.wallpaper]
+directory = "$HOME/.config/quicksov/wallpapers"
+transition = "fade"
+transition_duration_ms = 320
 
 [services.network]
 wifi_backend = "wpa_supplicant"
@@ -398,7 +404,11 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
 │   ├── Notification.qml
 │   ├── Tray.qml
 │   ├── Niri.qml
+│   ├── Wallpaper.qml
 │   └── Weather.qml
+├── desktop/                        # 非 bar 的桌面 layer-shell surface
+│   ├── WallpaperLayer.qml
+│   └── PowerDock.qml
 ├── bars/
 │   ├── MainBar.qml                 # 主屏 top bar
 │   └── AuxBar.qml                  # 副屏 auto-hide left bar
@@ -441,6 +451,7 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
 │   ├── Theme.qml
 │   ├── ipc/
 │   ├── services/
+│   ├── desktop/
 │   ├── bars/
 │   ├── components/
 │   ├── widgets/
