@@ -103,6 +103,7 @@ pub struct ServicesConfig {
     #[serde(default)]
     pub enabled: Vec<String>,
     pub weather: Option<WeatherConfig>,
+    pub wallpaper: Option<WallpaperConfig>,
     pub network: Option<NetworkConfig>,
     pub audio: Option<AudioConfig>,
     pub niri: Option<NiriConfig>,
@@ -119,6 +120,15 @@ pub struct WeatherConfig {
     pub location_name: Option<String>,
     pub poll_interval_sec: Option<u64>,
     pub units: Option<String>,
+}
+
+/// Configuration for the `wallpaper` service.
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+pub struct WallpaperConfig {
+    pub directory: Option<String>,
+    pub transition: Option<String>,
+    pub transition_duration_ms: Option<u64>,
 }
 
 /// Configuration for the `net.link` / `net.wifi` services.

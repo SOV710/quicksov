@@ -7,6 +7,7 @@ import "./bars"
 import "./desktop"
 
 Scope {
+    WallpaperLayer {}
     MainBar {}
     AuxBar {}
     PowerDock {}

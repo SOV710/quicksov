@@ -94,5 +94,11 @@ fn expand_config_paths(config: &mut Config) -> Result<(), ConfigError> {
         }
     }
 
+    if let Some(wallpaper) = config.services.wallpaper.as_mut() {
+        if let Some(directory) = wallpaper.directory.as_mut() {
+            *directory = paths::expand_env_vars(directory)?;
+        }
+    }
+
     Ok(())
 }

@@ -17,6 +17,7 @@ pub mod network;
 pub mod niri;
 pub mod notification;
 pub mod theme;
+pub mod wallpaper;
 pub mod weather;
 
 /// Start all configured services and return a handle map keyed by topic name.
@@ -55,6 +56,9 @@ pub async fn start_services(cfg: &Config, started_at: Instant) -> HashMap<String
             }
             "weather" => {
                 map.insert("weather".into(), weather::spawn(cfg));
+            }
+            "wallpaper" => {
+                map.insert("wallpaper".into(), wallpaper::spawn(cfg));
             }
             "theme" => {
                 map.insert("theme".into(), theme::spawn(cfg));
