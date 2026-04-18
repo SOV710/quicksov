@@ -20,6 +20,7 @@ from _qsov_testlib import (
 
 
 REQUIRED = [
+    "availability",
     "present",
     "on_battery",
     "level",
@@ -27,6 +28,7 @@ REQUIRED = [
     "time_to_empty_sec",
     "time_to_full_sec",
     "power_profile",
+    "power_profile_available",
 ]
 
 
@@ -51,6 +53,14 @@ def run() -> int:
         if env and assert_dict_keys(h, env.get("payload"), REQUIRED, "battery snapshot"):
             snapshot = env["payload"]
             maybe_warn_unavailable(h, "battery", snapshot)
+            if snapshot.get("availability") in {
+                "ready",
+                "no_battery",
+                "backend_unavailable",
+            }:
+                h.ok("battery.availability enum is valid")
+            else:
+                h.error(f"battery.availability invalid: {snapshot!r}")
             if isinstance(snapshot.get("level"), int) and 0 <= snapshot["level"] <= 100:
                 h.ok("battery.level is in [0,100]")
             else:
@@ -67,6 +77,23 @@ def run() -> int:
                 h.ok("battery.state enum is valid")
             else:
                 h.error(f"battery.state invalid: {snapshot!r}")
+            if isinstance(snapshot.get("power_profile_available"), bool):
+                h.ok("battery.power_profile_available is boolean")
+            else:
+                h.error(f"battery.power_profile_available invalid: {snapshot!r}")
+
+            for field in [
+                "health_percent",
+                "energy_rate_w",
+                "energy_now_wh",
+                "energy_full_wh",
+                "energy_design_wh",
+            ]:
+                value = snapshot.get(field)
+                if value is None or isinstance(value, (int, float)):
+                    h.ok(f"battery.{field} is numeric-or-null")
+                else:
+                    h.error(f"battery.{field} invalid: {snapshot!r}")
         client.unsub("battery")
 
         bad_action = client.req("battery", "no_such_action", {})
