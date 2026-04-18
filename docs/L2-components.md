@@ -160,10 +160,21 @@
 | 属性 | 值 |
 |---|---|
 | 数据源 | daemon `battery` service via UPower D-Bus |
-| 显示逻辑 | `OnBattery=true` → icon + `87%`；`OnBattery=false` → charging icon；充满插电 → plug icon |
+| 显示逻辑 | `OnBattery=true` → icon + `87%`；充电中 → charging icon + `%`；充满插电 → plug icon |
 | Icon | Lucide `battery` / `battery-low` / `battery-charging` / `plug` |
 | 低电量 | < 20% icon 染 `color.danger` |
-| 交互 | click → popup：剩余时间预估、电源配置切换（`powerprofilesctl`） |
+| 几何 | click popup；宽 420px；最大高 460px；锚定 MainBar battery icon，下方 `gap_from_bar` |
+| popup 头部 | 左侧大号 battery icon；右侧主读数 `87%` + 状态词 `Charging/Discharging/Fully charged` |
+| popup 次级信息 | 第二行显示 `3h 12m remaining` / `54m until full` / `Time estimate unavailable` |
+| popup 指标卡 | `Power Source`、`Battery Health`、`Charge Rate`、`Capacity` 四张信息卡 |
+| power profile | 底部 3-way segmented selector：`Saver` / `Balanced` / `Performance` |
+| 空状态 | 区分 `No battery detected` 与 `Battery backend unavailable`；前者仍可显示 power profile，后者整体禁用 |
+| 交互 | click bar icon → 打开/关闭 popup；点击 popup 外关闭；Esc 关闭；click segmented selector → daemon `set_power_profile` |
+
+**实现约束**：
+- battery health 优先由 daemon 统一归约，不在 QML 端自行推导
+- Power Profile 仅在 daemon 报告 `power_profile_available=true` 时允许交互
+- 台式机 / 无电池设备仍允许展示 power profile 区，但必须弱化主状态区
 
 ### 3.7 network
 
