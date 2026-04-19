@@ -355,8 +355,27 @@ units = "metric"
 directory = "$HOME/.config/quicksov/wallpapers"
 transition = "fade"
 transition_duration_ms = 320
-video_enabled = true
 video_audio = false
+renderer = "quickshell-ffmpeg"
+decode_backend_order = ["vaapi", "cuda", "software"]
+present_mode = "mailbox"
+vsync = true
+
+[services.wallpaper.sources.hero]
+path = "hero.mp4"
+kind = "video"
+loop = true
+mute = true
+
+[services.wallpaper.views.HDMI-A-3]
+source = "hero"
+fit = "cover"
+crop = { x = 0.0, y = 0.0, width = 0.5, height = 1.0 }
+
+[services.wallpaper.views.eDP-1]
+source = "hero"
+fit = "cover"
+crop = { x = 0.5, y = 0.0, width = 0.5, height = 1.0 }
 
 [services.network]
 wifi_backend = "wpa_supplicant"
@@ -393,6 +412,7 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
 ├── daemon.toml
 ├── design-tokens.toml
 ├── shell.qml                       # qs 入口
+├── wallpaper-shell.qml             # 独立 wallpaper renderer 入口
 ├── Theme.qml                       # singleton, 从 daemon 拉 tokens
 ├── ipc/
 │   ├── Client.qml                  # IPC client, 管理连接
@@ -407,12 +427,13 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
 │   ├── Tray.qml
 │   ├── Niri.qml
 │   ├── Wallpaper.qml
+│   ├── WallpaperSessions.qml
 │   └── Weather.qml
 ├── desktop/                        # 非 bar 的桌面 layer-shell surface
 │   ├── WallpaperLayer.qml
 │   └── PowerDock.qml
 ├── Quicksov/
-│   └── WallpaperMpv/              # Qt6 native QML module, 由 build script 部署
+│   └── WallpaperFfmpeg/           # Qt6 native QML module, 由 build script 部署
 ├── bars/
 │   ├── MainBar.qml                 # 主屏 top bar
 │   └── AuxBar.qml                  # 副屏 auto-hide left bar
@@ -441,17 +462,19 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
     └── phosphor/
 ```
 
-开发时使用 `quickshell --config quicksov`，qs 从 `~/.config/quickshell/quicksov/` 读 `shell.qml`。
+开发时主 shell 使用 `quickshell --config quicksov`，qs 从 `~/.config/quickshell/quicksov/` 读 `shell.qml`。wallpaper 由 daemon 启动 `qsov-wallpaperd`，再由它启动 `qs -p ~/.config/quickshell/quicksov/wallpaper-shell.qml`。
 
 ## 9. 开发仓库目录
 
 ```
 ~/proj/quicksov/
-├── daemon/                         # Rust crate (qsovd)
-│   ├── Cargo.toml
-│   └── src/                        # 见 section 6
+├── Cargo.toml                      # Rust crate: qsovd + qsov-wallpaperd
+├── src/                            # daemon service 实现与 binary entrypoints
+│   └── bin/
+│       └── qsov-wallpaperd.rs      # 专用 wallpaper renderer supervisor
 ├── shell/                          # QML 源码, 对应运行时的 qs 部分
 │   ├── shell.qml
+│   ├── wallpaper-shell.qml
 │   ├── Theme.qml
 │   ├── ipc/
 │   ├── services/
@@ -461,7 +484,7 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
 │   ├── widgets/
 │   └── overlays/
 ├── native/
-│   └── wallpaper_mpv/              # Qt6 C++ / libmpv plugin
+│   └── wallpaper_ffmpeg/           # Qt6 C++ / FFmpeg plugin
 ├── config/                         # 配置模板
 │   ├── daemon.toml.example
 │   └── design-tokens.toml

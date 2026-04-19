@@ -3,11 +3,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import Quickshell
-import "./bars"
 import "./desktop"
 
 Scope {
-    MainBar {}
-    AuxBar {}
-    PowerDock {}
+    WallpaperLayer {}
 }
