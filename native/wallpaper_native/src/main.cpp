@@ -6,12 +6,16 @@
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
+#include <cstring>
 #include <map>
 #include <memory>
 #include <optional>
 #include <utility>
+#include <vector>
 
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <linux/memfd.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -38,6 +42,8 @@
 #include <QUrl>
 
 extern "C" {
+#include <gbm.h>
+#include <drm_fourcc.h>
 #include <wayland-client.h>
 }
 
@@ -51,6 +57,7 @@ namespace {
 constexpr const char *kLogPrefix = "[wallpaper-native]";
 constexpr const char *kNamespace = "quicksov-wallpaper";
 constexpr int kTransitionFrameMs = 16;
+constexpr uint32_t kDmabufDrmFormat = DRM_FORMAT_ARGB8888;
 
 QString defaultSocketPath() {
     const QByteArray env = qgetenv("QSOV_SOCKET");
@@ -123,6 +130,94 @@ struct SnapshotModel {
     QString presentBackend = QStringLiteral("auto");
     int transitionDurationMs = 0;
 };
+
+struct DmabufFormatModifier {
+    uint32_t format = 0;
+    uint64_t modifier = DRM_FORMAT_MOD_INVALID;
+
+    auto operator==(const DmabufFormatModifier &) const -> bool = default;
+};
+
+QString drmFormatString(uint32_t format) {
+    QByteArray text(4, '\0');
+    text[0] = static_cast<char>(format & 0xff);
+    text[1] = static_cast<char>((format >> 8) & 0xff);
+    text[2] = static_cast<char>((format >> 16) & 0xff);
+    text[3] = static_cast<char>((format >> 24) & 0xff);
+    return QString::fromLatin1(text);
+}
+
+QString dmabufModifierString(uint64_t modifier) {
+    if (modifier == DRM_FORMAT_MOD_INVALID) {
+        return QStringLiteral("invalid");
+    }
+    if (modifier == DRM_FORMAT_MOD_LINEAR) {
+        return QStringLiteral("linear");
+    }
+    return QStringLiteral("0x%1").arg(QString::number(modifier, 16));
+}
+
+uint32_t modifierHi(uint64_t modifier) {
+    return static_cast<uint32_t>(modifier >> 32);
+}
+
+uint32_t modifierLo(uint64_t modifier) {
+    return static_cast<uint32_t>(modifier & 0xffffffffu);
+}
+
+std::optional<dev_t> parseDeviceNumber(const wl_array *array) {
+    if (array == nullptr || array->data == nullptr || array->size != sizeof(dev_t)) {
+        return std::nullopt;
+    }
+
+    dev_t device = 0;
+    std::memcpy(&device, array->data, sizeof(dev_t));
+    return device;
+}
+
+QString firstExistingDrmNode(const QStringList &patterns) {
+    const QDir driDir(QStringLiteral("/dev/dri"));
+    if (!driDir.exists()) {
+        return QString();
+    }
+
+    for (const QString &name : driDir.entryList(patterns, QDir::System | QDir::Files, QDir::Name)) {
+        const QString path = driDir.absoluteFilePath(name);
+        if (QFileInfo::exists(path)) {
+            return path;
+        }
+    }
+
+    return QString();
+}
+
+QString drmNodePathForDevice(dev_t device) {
+    const QDir driDir(QStringLiteral("/dev/dri"));
+    if (!driDir.exists()) {
+        return QString();
+    }
+
+    const QStringList names = driDir.entryList(
+        QStringList{QStringLiteral("renderD*"), QStringLiteral("card*")},
+        QDir::System | QDir::Files,
+        QDir::Name
+    );
+    for (const QString &name : names) {
+        const QString path = driDir.absoluteFilePath(name);
+        struct stat st {};
+        if (::stat(path.toUtf8().constData(), &st) != 0) {
+            continue;
+        }
+        if (!S_ISCHR(st.st_mode)) {
+            continue;
+        }
+        if (st.st_rdev == device) {
+            return path;
+        }
+    }
+
+    return QString();
+}
 
 QRectF cropRectFor(const QSize &sourceSize, const std::optional<CropRect> &crop) {
     const QRectF full(0.0, 0.0, sourceSize.width(), sourceSize.height());
@@ -443,16 +538,43 @@ private:
         bool busy = false;
     };
 
+    struct DmaBuffer {
+        OutputSurface *owner = nullptr;
+        wl_buffer *buffer = nullptr;
+        zwp_linux_buffer_params_v1 *params = nullptr;
+        gbm_bo *bo = nullptr;
+        void *data = nullptr;
+        void *mapData = nullptr;
+        int width = 0;
+        int height = 0;
+        int stride = 0;
+        uint32_t format = kDmabufDrmFormat;
+        uint64_t modifier = DRM_FORMAT_MOD_INVALID;
+        bool busy = false;
+        bool pending = false;
+    };
+
     void setBinding(std::shared_ptr<SourceSession> source, std::optional<CropRect> crop, int transitionMs);
     void detachCurrentSourceHint();
-    void ensureBuffers();
+    void ensureShmBuffers();
+    bool ensureDmabufBuffers();
     void destroyBuffers();
-    ShmBuffer *nextFreeBuffer();
+    void destroyShmBuffers();
+    void destroyDmabufBuffers();
+    ShmBuffer *nextFreeShmBuffer();
+    DmaBuffer *nextFreeDmabufBuffer();
+    bool createDmabufBuffer(DmaBuffer &buffer);
+    void releaseDmabufBuffer(DmaBuffer &buffer);
+    void disableDmabuf(const QString &reason);
+    bool supportsDmabufModifier(uint32_t format, uint64_t modifier) const;
+    std::vector<uint64_t> supportedDmabufModifiers(uint32_t format) const;
     void render();
     void startTransition(int durationMs);
     void stopTransition();
     void capturePreviousImage();
     void flush();
+    void onDmabufBufferCreated();
+    void onDmabufBufferFailed(DmaBuffer *buffer);
 
     static void layerSurfaceConfigure(
         void *data,
@@ -514,6 +636,10 @@ public:
 
         m_outputs.clear();
 
+        if (m_defaultDmabufFeedback != nullptr) {
+            zwp_linux_dmabuf_feedback_v1_destroy(m_defaultDmabufFeedback);
+            m_defaultDmabufFeedback = nullptr;
+        }
         if (m_layerShell != nullptr) {
             zwlr_layer_shell_v1_destroy(m_layerShell);
             m_layerShell = nullptr;
@@ -521,6 +647,14 @@ public:
         if (m_linuxDmabuf != nullptr) {
             zwp_linux_dmabuf_v1_destroy(m_linuxDmabuf);
             m_linuxDmabuf = nullptr;
+        }
+        if (m_gbmDevice != nullptr) {
+            gbm_device_destroy(m_gbmDevice);
+            m_gbmDevice = nullptr;
+        }
+        if (m_gbmDeviceFd >= 0) {
+            ::close(m_gbmDeviceFd);
+            m_gbmDeviceFd = -1;
         }
         if (m_shm != nullptr) {
             wl_shm_destroy(m_shm);
@@ -650,6 +784,88 @@ public:
         return m_shm;
     }
 
+    zwp_linux_dmabuf_v1 *linuxDmabuf() const {
+        return m_linuxDmabuf;
+    }
+
+    [[nodiscard]] bool ensureGbmDevice(QString *reason) {
+        if (!m_dmabufAdvertised || m_linuxDmabuf == nullptr) {
+            if (reason != nullptr) {
+                *reason = QStringLiteral("dmabuf_not_advertised");
+            }
+            return false;
+        }
+
+        if (m_gbmDevice != nullptr) {
+            if (reason != nullptr) {
+                reason->clear();
+            }
+            return true;
+        }
+
+        if (m_gbmDeviceAttempted) {
+            if (reason != nullptr) {
+                *reason = m_gbmDeviceFailureReason;
+            }
+            return false;
+        }
+
+        m_gbmDeviceAttempted = true;
+
+        QString path;
+        if (m_dmabufMainDevice.has_value()) {
+            path = drmNodePathForDevice(*m_dmabufMainDevice);
+        }
+        if (path.isEmpty()) {
+            path = firstExistingDrmNode(QStringList{QStringLiteral("renderD*"), QStringLiteral("card*")});
+        }
+        if (path.isEmpty()) {
+            m_gbmDeviceFailureReason = QStringLiteral("drm_node_missing");
+            if (reason != nullptr) {
+                *reason = m_gbmDeviceFailureReason;
+            }
+            return false;
+        }
+
+        const int fd = ::open(path.toUtf8().constData(), O_RDWR | O_CLOEXEC);
+        if (fd < 0) {
+            m_gbmDeviceFailureReason = QStringLiteral("drm_node_open_failed");
+            qWarning().noquote() << kLogPrefix << "failed to open DRM node"
+                                 << path << std::strerror(errno);
+            if (reason != nullptr) {
+                *reason = m_gbmDeviceFailureReason;
+            }
+            return false;
+        }
+
+        gbm_device *device = gbm_create_device(fd);
+        if (device == nullptr) {
+            ::close(fd);
+            m_gbmDeviceFailureReason = QStringLiteral("gbm_device_create_failed");
+            if (reason != nullptr) {
+                *reason = m_gbmDeviceFailureReason;
+            }
+            return false;
+        }
+
+        m_gbmDevice = device;
+        m_gbmDeviceFd = fd;
+        m_gbmDevicePath = path;
+        m_gbmDeviceFailureReason.clear();
+        qInfo().noquote() << kLogPrefix << "gbm device initialized"
+                          << "path =" << m_gbmDevicePath
+                          << "backend =" << QString::fromUtf8(gbm_device_get_backend_name(m_gbmDevice));
+
+        if (reason != nullptr) {
+            reason->clear();
+        }
+        return true;
+    }
+
+    gbm_device *gbmDevice() const {
+        return m_gbmDevice;
+    }
+
     [[nodiscard]] PresentBackendSelection resolvePresentBackend(const QString &requested) const {
         const QString normalizedRequested = normalizePresentBackend(requested);
         if (normalizedRequested == QLatin1String("shm")) {
@@ -669,16 +885,14 @@ public:
             }
             return PresentBackendSelection{
                 .requested = normalizedRequested,
-                .resolved = QStringLiteral("shm"),
-                .fallbackReason = QStringLiteral("dmabuf_backend_unimplemented"),
+                .resolved = QStringLiteral("dmabuf"),
             };
         }
 
         if (m_dmabufAdvertised) {
             return PresentBackendSelection{
                 .requested = normalizedRequested,
-                .resolved = QStringLiteral("shm"),
-                .fallbackReason = QStringLiteral("dmabuf_available_but_unimplemented"),
+                .resolved = QStringLiteral("dmabuf"),
             };
         }
 
@@ -827,6 +1041,24 @@ private:
                 .modifier = &WaylandRenderer::dmabufModifier,
             };
             zwp_linux_dmabuf_v1_add_listener(self->m_linuxDmabuf, &dmabufListener, self);
+            if (self->m_dmabufVersion >= 4) {
+                self->m_defaultDmabufFeedback =
+                    zwp_linux_dmabuf_v1_get_default_feedback(self->m_linuxDmabuf);
+                static constexpr zwp_linux_dmabuf_feedback_v1_listener feedbackListener = {
+                    .done = &WaylandRenderer::defaultFeedbackDone,
+                    .format_table = &WaylandRenderer::defaultFeedbackFormatTable,
+                    .main_device = &WaylandRenderer::defaultFeedbackMainDevice,
+                    .tranche_done = &WaylandRenderer::defaultFeedbackTrancheDone,
+                    .tranche_target_device = &WaylandRenderer::defaultFeedbackTrancheTargetDevice,
+                    .tranche_formats = &WaylandRenderer::defaultFeedbackTrancheFormats,
+                    .tranche_flags = &WaylandRenderer::defaultFeedbackTrancheFlags,
+                };
+                zwp_linux_dmabuf_feedback_v1_add_listener(
+                    self->m_defaultDmabufFeedback,
+                    &feedbackListener,
+                    self
+                );
+            }
             return;
         }
 
@@ -881,6 +1113,48 @@ private:
         self->m_dmabufModifierCount += 1;
     }
 
+    static void defaultFeedbackDone(void *, zwp_linux_dmabuf_feedback_v1 *) {}
+
+    static void defaultFeedbackFormatTable(
+        void *,
+        zwp_linux_dmabuf_feedback_v1 *,
+        int32_t fd,
+        uint32_t
+    ) {
+        if (fd >= 0) {
+            ::close(fd);
+        }
+    }
+
+    static void defaultFeedbackMainDevice(
+        void *data,
+        zwp_linux_dmabuf_feedback_v1 *,
+        wl_array *device
+    ) {
+        auto *self = static_cast<WaylandRenderer *>(data);
+        self->m_dmabufMainDevice = parseDeviceNumber(device);
+    }
+
+    static void defaultFeedbackTrancheDone(void *, zwp_linux_dmabuf_feedback_v1 *) {}
+
+    static void defaultFeedbackTrancheTargetDevice(
+        void *,
+        zwp_linux_dmabuf_feedback_v1 *,
+        wl_array *
+    ) {}
+
+    static void defaultFeedbackTrancheFormats(
+        void *,
+        zwp_linux_dmabuf_feedback_v1 *,
+        wl_array *
+    ) {}
+
+    static void defaultFeedbackTrancheFlags(
+        void *,
+        zwp_linux_dmabuf_feedback_v1 *,
+        uint32_t
+    ) {}
+
     void onSourceUpdated(SourceSession *source) {
         for (auto &entry : m_outputs) {
             if (entry.second->boundSource() == source) {
@@ -894,6 +1168,7 @@ private:
     wl_compositor *m_compositor = nullptr;
     wl_shm *m_shm = nullptr;
     zwp_linux_dmabuf_v1 *m_linuxDmabuf = nullptr;
+    zwp_linux_dmabuf_feedback_v1 *m_defaultDmabufFeedback = nullptr;
     zwlr_layer_shell_v1 *m_layerShell = nullptr;
     QSocketNotifier *m_displayNotifier = nullptr;
     QTimer m_telemetryTimer;
@@ -908,6 +1183,12 @@ private:
     uint32_t m_dmabufVersion = 0;
     quint64 m_dmabufFormatCount = 0;
     quint64 m_dmabufModifierCount = 0;
+    std::optional<dev_t> m_dmabufMainDevice;
+    gbm_device *m_gbmDevice = nullptr;
+    int m_gbmDeviceFd = -1;
+    bool m_gbmDeviceAttempted = false;
+    QString m_gbmDevicePath;
+    QString m_gbmDeviceFailureReason;
 };
 
 OutputSurface::OutputSurface(WaylandRenderer *renderer, uint32_t registryName, wl_output *output)
