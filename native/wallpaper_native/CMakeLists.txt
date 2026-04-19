@@ -26,6 +26,15 @@ set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 set(LAYER_SHELL_HEADER "${GENERATED_DIR}/wlr-layer-shell-unstable-v1-client-protocol.h")
 set(LAYER_SHELL_SOURCE "${GENERATED_DIR}/wlr-layer-shell-unstable-v1-client-protocol.c")
 find_file(
+    LINUX_DMABUF_XML
+    NAMES linux-dmabuf-v1.xml
+    PATHS
+        /usr/share/wayland-protocols/stable/linux-dmabuf
+    REQUIRED
+)
+set(LINUX_DMABUF_HEADER "${GENERATED_DIR}/linux-dmabuf-v1-client-protocol.h")
+set(LINUX_DMABUF_SOURCE "${GENERATED_DIR}/linux-dmabuf-v1-client-protocol.c")
+find_file(
     XDG_SHELL_XML
     NAMES xdg-shell.xml
     PATHS
@@ -42,14 +51,19 @@ add_custom_command(
     OUTPUT
         "${LAYER_SHELL_HEADER}"
         "${LAYER_SHELL_SOURCE}"
+        "${LINUX_DMABUF_HEADER}"
+        "${LINUX_DMABUF_SOURCE}"
         "${XDG_SHELL_HEADER}"
         "${XDG_SHELL_SOURCE}"
     COMMAND wayland-scanner client-header "${LAYER_SHELL_XML}" "${LAYER_SHELL_HEADER}"
     COMMAND wayland-scanner private-code "${LAYER_SHELL_XML}" "${LAYER_SHELL_SOURCE}"
+    COMMAND wayland-scanner client-header "${LINUX_DMABUF_XML}" "${LINUX_DMABUF_HEADER}"
+    COMMAND wayland-scanner private-code "${LINUX_DMABUF_XML}" "${LINUX_DMABUF_SOURCE}"
     COMMAND wayland-scanner client-header "${XDG_SHELL_XML}" "${XDG_SHELL_HEADER}"
     COMMAND wayland-scanner private-code "${XDG_SHELL_XML}" "${XDG_SHELL_SOURCE}"
     DEPENDS
         "${LAYER_SHELL_XML}"
+        "${LINUX_DMABUF_XML}"
         "${XDG_SHELL_XML}"
     VERBATIM
 )
@@ -58,6 +72,7 @@ add_executable(qsov-wallpaper-native
     src/main.cpp
     "${CMAKE_CURRENT_SOURCE_DIR}/../wallpaper_ffmpeg/src/WallpaperVideo.cpp"
     "${LAYER_SHELL_SOURCE}"
+    "${LINUX_DMABUF_SOURCE}"
     "${XDG_SHELL_SOURCE}"
 )
 
