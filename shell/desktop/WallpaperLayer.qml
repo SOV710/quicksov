@@ -84,6 +84,10 @@ Scope {
 
                 function applyLiveContent(kind, source) {
                     var resolvedSource = kind === "" ? "" : source;
+                    console.log("[wallpaper-layer] screen="
+                                + (wallpaperWindow.screen && wallpaperWindow.screen.name
+                                   ? wallpaperWindow.screen.name : "unknown")
+                                + " apply kind=" + kind + " source=" + resolvedSource);
                     root.liveKind = kind;
                     root.liveSource = resolvedSource;
                     if (kind === "video") {
@@ -108,6 +112,13 @@ Scope {
                 function syncTarget() {
                     var nextKind = root.targetKind;
                     var nextSource = root.targetSource;
+                    console.log("[wallpaper-layer] screen="
+                                + (wallpaperWindow.screen && wallpaperWindow.screen.name
+                                   ? wallpaperWindow.screen.name : "unknown")
+                                + " target kind=" + nextKind + " source=" + nextSource);
+
+                    if (nextKind !== "" && nextSource === "")
+                        return;
 
                     if (nextKind === root.liveKind && nextSource === root.liveSource)
                         return;
@@ -140,10 +151,21 @@ Scope {
                 onTargetKindChanged: syncTarget()
                 onTargetSourceChanged: syncTarget()
                 onContentReadyChanged: {
+                    console.log("[wallpaper-layer] screen="
+                                + (wallpaperWindow.screen && wallpaperWindow.screen.name
+                                   ? wallpaperWindow.screen.name : "unknown")
+                                + " contentReady=" + contentReady
+                                + " contentError=" + contentError
+                                + " liveKind=" + liveKind);
                     if (contentReady || contentError)
                         root.finishTransition();
                 }
                 onContentErrorChanged: {
+                    console.log("[wallpaper-layer] screen="
+                                + (wallpaperWindow.screen && wallpaperWindow.screen.name
+                                   ? wallpaperWindow.screen.name : "unknown")
+                                + " contentError changed to " + contentError
+                                + " liveKind=" + liveKind);
                     if (contentError)
                         root.finishTransition();
                 }
