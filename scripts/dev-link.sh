@@ -26,6 +26,9 @@ link_item() {
 
 echo "Linking shell/ into $CONFIG_DIR ..."
 for item in "$SHELL_DIR"/*; do
+    if [[ "$(basename "$item")" == "Quicksov" ]]; then
+        continue
+    fi
     link_item "$item"
 done
 
@@ -46,5 +49,20 @@ if [[ -d "$REPO_ROOT/icons" ]]; then
     link_item "$REPO_ROOT/icons"
 fi
 
+PLUGIN_SRC="$REPO_ROOT/.build/qml/Quicksov"
+PLUGIN_DST="$CONFIG_DIR/Quicksov"
+if [[ -d "$PLUGIN_SRC" ]]; then
+    if [[ -L "$PLUGIN_DST" ]]; then
+        rm "$PLUGIN_DST"
+    elif [[ -e "$PLUGIN_DST" ]]; then
+        echo "warn: $PLUGIN_DST exists and is not a symlink — skipping plugin link" >&2
+    else
+        ln -s "$PLUGIN_SRC" "$PLUGIN_DST"
+        echo "  $PLUGIN_DST -> $PLUGIN_SRC"
+    fi
+else
+    echo "warn: native wallpaper plugin not built yet; run scripts/build-wallpaper-plugin.sh" >&2
+fi
+
 echo "Done. Start daemon: cargo run --manifest-path $REPO_ROOT/Cargo.toml"
-echo "Start shell: quickshell --config quicksov"
+echo "Start shell: $REPO_ROOT/scripts/run-shell.sh"
