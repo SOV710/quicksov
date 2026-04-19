@@ -809,7 +809,17 @@
     "wallpaper": {
       "state_snapshot": {
         "type": "object",
-        "required": ["directory", "availability", "availability_reason", "entries", "current", "transition", "render"],
+        "required": [
+          "directory",
+          "availability",
+          "availability_reason",
+          "entries",
+          "fallback_source",
+          "sources",
+          "views",
+          "transition",
+          "renderer"
+        ],
         "properties": {
           "directory": { "type": "string" },
           "availability": {
@@ -832,13 +842,44 @@
               }
             }
           },
-          "current": {
-            "type": ["object", "null"],
-            "required": ["path", "name", "kind"],
-            "properties": {
-              "path": { "type": "string" },
-              "name": { "type": "string" },
-              "kind": { "type": "string", "enum": ["image", "video"] }
+          "fallback_source": {
+            "type": ["string", "null"]
+          },
+          "sources": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["id", "path", "name", "kind", "loop", "mute"],
+              "properties": {
+                "id": { "type": "string" },
+                "path": { "type": "string" },
+                "name": { "type": "string" },
+                "kind": { "type": "string", "enum": ["image", "video"] },
+                "loop": { "type": "boolean" },
+                "mute": { "type": "boolean" }
+              }
+            }
+          },
+          "views": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["output", "source", "fit", "crop"],
+              "properties": {
+                "output": { "type": "string" },
+                "source": { "type": "string" },
+                "fit": { "type": "string", "enum": ["cover"] },
+                "crop": {
+                  "type": ["object", "null"],
+                  "required": ["x", "y", "width", "height"],
+                  "properties": {
+                    "x": { "type": "number" },
+                    "y": { "type": "number" },
+                    "width": { "type": "number" },
+                    "height": { "type": "number" }
+                  }
+                }
+              }
             }
           },
           "transition": {
@@ -849,12 +890,31 @@
               "duration_ms": { "type": "integer", "minimum": 0 }
             }
           },
-          "render": {
+          "renderer": {
             "type": "object",
-            "required": ["backend", "video_enabled", "video_audio"],
+            "required": [
+              "process",
+              "backend",
+              "status",
+              "pid",
+              "last_error",
+              "decode_backend_order",
+              "present_mode",
+              "vsync",
+              "video_audio"
+            ],
             "properties": {
-              "backend": { "type": "string", "enum": ["mpv"] },
-              "video_enabled": { "type": "boolean" },
+              "process": { "type": "string" },
+              "backend": { "type": "string" },
+              "status": { "type": "string", "enum": ["starting", "running", "error"] },
+              "pid": { "type": ["integer", "null"] },
+              "last_error": { "type": ["string", "null"] },
+              "decode_backend_order": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "present_mode": { "type": ["string", "null"] },
+              "vsync": { "type": "boolean" },
               "video_audio": { "type": "boolean" }
             }
           }
@@ -865,26 +925,70 @@
           "request": { "type": "object", "properties": {} },
           "response": { "type": "null" }
         },
-        "next": {
-          "request": { "type": "object", "properties": {} },
-          "response": { "type": "null" }
-        },
-        "prev": {
-          "request": { "type": "object", "properties": {} },
-          "response": { "type": "null" }
-        },
-        "set_path": {
+        "set_output_source": {
           "request": {
             "type": "object",
-            "required": ["path"],
+            "required": ["output", "source"],
             "properties": {
+              "output": { "type": "string" },
+              "source": { "type": "string" }
+            }
+          },
+          "response": { "type": "null" }
+        },
+        "set_output_path": {
+          "request": {
+            "type": "object",
+            "required": ["output", "path"],
+            "properties": {
+              "output": { "type": "string" },
               "path": { "type": "string" }
+            }
+          },
+          "response": { "type": "null" }
+        },
+        "next_output": {
+          "request": {
+            "type": "object",
+            "required": ["output"],
+            "properties": {
+              "output": { "type": "string" }
+            }
+          },
+          "response": { "type": "null" }
+        },
+        "prev_output": {
+          "request": {
+            "type": "object",
+            "required": ["output"],
+            "properties": {
+              "output": { "type": "string" }
+            }
+          },
+          "response": { "type": "null" }
+        },
+        "set_output_crop": {
+          "request": {
+            "type": "object",
+            "required": ["output"],
+            "properties": {
+              "output": { "type": "string" },
+              "crop": {
+                "type": ["object", "null"],
+                "required": ["x", "y", "width", "height"],
+                "properties": {
+                  "x": { "type": "number" },
+                  "y": { "type": "number" },
+                  "width": { "type": "number" },
+                  "height": { "type": "number" }
+                }
+              }
             }
           },
           "response": { "type": "null" }
         }
       },
-      "backend": "local directory scan, current selection limited to static image entries in v1"
+      "backend": "local directory scan plus qsov-wallpaperd supervision; output binding uses source/view model"
     },
 
     "theme": {

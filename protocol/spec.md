@@ -564,7 +564,17 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 ```json
 {
   "type": "object",
-  "required": ["directory","availability","availability_reason","entries","current","transition","render"],
+  "required": [
+    "directory",
+    "availability",
+    "availability_reason",
+    "entries",
+    "fallback_source",
+    "sources",
+    "views",
+    "transition",
+    "renderer"
+  ],
   "properties": {
     "directory": {
       "type": "string",
@@ -590,14 +600,47 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
         }
       }
     },
-    "current": {
-      "type": ["object","null"],
-      "description": "Current wallpaper entry. It can point to either an image or a video.",
-      "required": ["path","name","kind"],
-      "properties": {
-        "path": { "type": "string" },
-        "name": { "type": "string" },
-        "kind": { "type": "string", "enum": ["image","video"] }
+    "fallback_source": {
+      "type": ["string","null"],
+      "description": "Default source id used when an output has no explicit view"
+    },
+    "sources": {
+      "type": "object",
+      "description": "Resolved wallpaper source sessions keyed by source id",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["id","path","name","kind","loop","mute"],
+        "properties": {
+          "id": { "type": "string" },
+          "path": { "type": "string" },
+          "name": { "type": "string" },
+          "kind": { "type": "string", "enum": ["image","video"] },
+          "loop": { "type": "boolean" },
+          "mute": { "type": "boolean" }
+        }
+      }
+    },
+    "views": {
+      "type": "object",
+      "description": "Per-output wallpaper view mapping",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["output","source","fit","crop"],
+        "properties": {
+          "output": { "type": "string" },
+          "source": { "type": "string" },
+          "fit": { "type": "string", "enum": ["cover"] },
+          "crop": {
+            "type": ["object","null"],
+            "required": ["x","y","width","height"],
+            "properties": {
+              "x": { "type": "number" },
+              "y": { "type": "number" },
+              "width": { "type": "number" },
+              "height": { "type": "number" }
+            }
+          }
+        }
       }
     },
     "transition": {
@@ -608,12 +651,31 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
         "duration_ms": { "type": "integer", "minimum": 0 }
       }
     },
-    "render": {
+    "renderer": {
       "type": "object",
-      "required": ["backend","video_enabled","video_audio"],
+      "required": [
+        "process",
+        "backend",
+        "status",
+        "pid",
+        "last_error",
+        "decode_backend_order",
+        "present_mode",
+        "vsync",
+        "video_audio"
+      ],
       "properties": {
-        "backend": { "type": "string", "enum": ["mpv"] },
-        "video_enabled": { "type": "boolean" },
+        "process": { "type": "string" },
+        "backend": { "type": "string" },
+        "status": { "type": "string", "enum": ["starting","running","error"] },
+        "pid": { "type": ["integer","null"] },
+        "last_error": { "type": ["string","null"] },
+        "decode_backend_order": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "present_mode": { "type": ["string","null"] },
+        "vsync": { "type": "boolean" },
         "video_audio": { "type": "boolean" }
       }
     }
@@ -623,18 +685,21 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 
 **Actions**:
 - `refresh` — 重新扫描 wallpaper directory，payload `{}`
-- `next` — 切换到下一张 wallpaper entry，payload `{}`
-- `prev` — 切换到上一张 wallpaper entry，payload `{}`
-- `set_path` — 切换到指定 wallpaper entry，payload `{ path: string }`
+- `set_output_source` — 将某个 output 绑定到已有 source，payload `{ output: string, source: string }`
+- `set_output_path` — 将某个 output 绑定到指定 wallpaper entry，payload `{ output: string, path: string }`
+- `next_output` — 某个 output 切换到下一张 wallpaper entry，payload `{ output: string }`
+- `prev_output` — 某个 output 切换到上一张 wallpaper entry，payload `{ output: string }`
+- `set_output_crop` — 更新某个 output 的 normalized crop，payload `{ output: string, crop: { x, y, width, height } | null }`
 
-**v1 约束**:
+**v2 约束**:
 - daemon 会索引静态图片与视频文件，两者都会出现在 `entries`
-- `current` / `next` / `prev` / `set_path` 作用于全部可索引条目
-- `render.backend = "mpv"` 表示前端使用 libmpv 原生 QML plugin 渲染视频
-- `render.video_enabled = false` 时，video 条目仍可被选中，但前端应回退到纯色背景
-- `render.video_audio = false` 是默认值；开启后前端允许视频壁纸带声音输出
+- 渲染模型从单一 `current` 切换为 `source + view`
+- 一个 source 可被多个 output view 复用，用于同视频多屏不同裁切
+- 不同 output 也可绑定不同 source，用于多视频并行
+- `renderer.process` / `renderer.status` 反映专用 wallpaper renderer 进程的运行态
+- 当前实现使用独立的 wallpaper quickshell 进程承载渲染热路径；后续 native renderer 只需要保持此 state/action 面不变
 
-**后端**: daemon 本地目录扫描；默认目录 `$HOME/.config/quicksov/wallpapers`，可通过 `daemon.toml.[services.wallpaper].directory` 覆盖。视频渲染配置来自 `daemon.toml.[services.wallpaper].video_enabled` 与 `video_audio`。
+**后端**: daemon 本地目录扫描 + `qsov-wallpaperd` 监督。默认目录 `$HOME/.config/quicksov/wallpapers`，可通过 `daemon.toml.[services.wallpaper].directory` 覆盖。渲染器偏好与默认 source/view 绑定来自 `daemon.toml.[services.wallpaper]`。
 
 ---
 

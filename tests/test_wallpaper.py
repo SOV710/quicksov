@@ -22,16 +22,32 @@ REQUIRED = [
     "availability",
     "availability_reason",
     "entries",
-    "current",
+    "fallback_source",
+    "sources",
+    "views",
     "transition",
-    "render",
+    "renderer",
 ]
 ENTRY_REQUIRED = ["path", "name", "kind"]
+SOURCE_REQUIRED = ["id", "path", "name", "kind", "loop", "mute"]
+VIEW_REQUIRED = ["output", "source", "fit", "crop"]
 TRANSITION_REQUIRED = ["type", "duration_ms"]
-RENDER_REQUIRED = ["backend", "video_enabled", "video_audio"]
+RENDERER_REQUIRED = [
+    "process",
+    "backend",
+    "status",
+    "pid",
+    "last_error",
+    "decode_backend_order",
+    "present_mode",
+    "vsync",
+    "video_audio",
+]
 AVAILABILITY_VALUES = {"ready", "empty", "unavailable"}
 REASON_VALUES = {"none", "directory_missing", "permission_denied", "scan_failed"}
 KIND_VALUES = {"image", "video"}
+FIT_VALUES = {"cover"}
+RENDERER_STATUS_VALUES = {"starting", "running", "error"}
 
 
 def validate_entry(h: Harness, entry: Any, label: str) -> bool:
@@ -42,6 +58,45 @@ def validate_entry(h: Harness, entry: Any, label: str) -> bool:
         h.ok(f"{label}.kind enum is valid ({entry.get('kind')})")
     else:
         h.error(f"{label}.kind invalid: {entry!r}")
+    return True
+
+
+def validate_source(h: Harness, source: Any, label: str) -> bool:
+    if not assert_dict_keys(h, source, SOURCE_REQUIRED, label):
+        return False
+    assert isinstance(source, dict)
+    if source.get("kind") in KIND_VALUES:
+        h.ok(f"{label}.kind enum is valid ({source.get('kind')})")
+    else:
+        h.error(f"{label}.kind invalid: {source!r}")
+    for key in ("loop", "mute"):
+        if isinstance(source.get(key), bool):
+            h.ok(f"{label}.{key} is boolean ({source.get(key)})")
+        else:
+            h.error(f"{label}.{key} invalid: {source!r}")
+    return True
+
+
+def validate_view(h: Harness, view: Any, label: str) -> bool:
+    if not assert_dict_keys(h, view, VIEW_REQUIRED, label):
+        return False
+    assert isinstance(view, dict)
+    fit = view.get("fit")
+    if fit in FIT_VALUES:
+        h.ok(f"{label}.fit enum is valid ({fit})")
+    else:
+        h.error(f"{label}.fit invalid: {view!r}")
+
+    crop = view.get("crop")
+    if crop is None:
+        h.ok(f"{label}.crop is null")
+    elif assert_dict_keys(h, crop, ["x", "y", "width", "height"], f"{label}.crop"):
+        assert isinstance(crop, dict)
+        coords = [crop.get("x"), crop.get("y"), crop.get("width"), crop.get("height")]
+        if all(isinstance(v, (int, float)) for v in coords):
+            h.ok(f"{label}.crop has numeric normalized coordinates")
+        else:
+            h.error(f"{label}.crop invalid: {crop!r}")
     return True
 
 
@@ -76,11 +131,31 @@ def validate_snapshot(h: Harness, payload: Any) -> dict[str, Any] | None:
     else:
         h.error(f"wallpaper.entries invalid: {payload!r}")
 
-    current = payload.get("current")
-    if current is None:
-        h.warn("wallpaper.current is null")
+    fallback_source = payload.get("fallback_source")
+    if fallback_source is None:
+        h.warn("wallpaper.fallback_source is null")
+    elif isinstance(fallback_source, str):
+        h.ok(f"wallpaper.fallback_source is a string ({fallback_source})")
     else:
-        validate_entry(h, current, "wallpaper.current")
+        h.error(f"wallpaper.fallback_source invalid: {payload!r}")
+
+    sources = payload.get("sources")
+    if isinstance(sources, dict):
+        h.ok(f"wallpaper.sources is an object (len={len(sources)})")
+        if sources:
+            first_key = sorted(sources.keys())[0]
+            validate_source(h, sources[first_key], f"wallpaper.sources[{first_key!r}]")
+    else:
+        h.error(f"wallpaper.sources invalid: {payload!r}")
+
+    views = payload.get("views")
+    if isinstance(views, dict):
+        h.ok(f"wallpaper.views is an object (len={len(views)})")
+        if views:
+            first_key = sorted(views.keys())[0]
+            validate_view(h, views[first_key], f"wallpaper.views[{first_key!r}]")
+    else:
+        h.error(f"wallpaper.views invalid: {payload!r}")
 
     transition = payload.get("transition")
     if assert_dict_keys(h, transition, TRANSITION_REQUIRED, "wallpaper.transition"):
@@ -95,25 +170,36 @@ def validate_snapshot(h: Harness, payload: Any) -> dict[str, Any] | None:
         else:
             h.error(f"wallpaper.transition.duration_ms invalid: {transition!r}")
 
-    render = payload.get("render")
-    if assert_dict_keys(h, render, RENDER_REQUIRED, "wallpaper.render"):
-        assert isinstance(render, dict)
-        if render.get("backend") == "mpv":
-            h.ok("wallpaper.render.backend is mpv")
+    renderer = payload.get("renderer")
+    if assert_dict_keys(h, renderer, RENDERER_REQUIRED, "wallpaper.renderer"):
+        assert isinstance(renderer, dict)
+        if renderer.get("status") in RENDERER_STATUS_VALUES:
+            h.ok(f"wallpaper.renderer.status enum is valid ({renderer.get('status')})")
         else:
-            h.error(f"wallpaper.render.backend invalid: {render!r}")
-        for key in ("video_enabled", "video_audio"):
-            if isinstance(render.get(key), bool):
-                h.ok(f"wallpaper.render.{key} is boolean ({render.get(key)})")
+            h.error(f"wallpaper.renderer.status invalid: {renderer!r}")
+        if isinstance(renderer.get("decode_backend_order"), list):
+            h.ok("wallpaper.renderer.decode_backend_order is a list")
+        else:
+            h.error(f"wallpaper.renderer.decode_backend_order invalid: {renderer!r}")
+        for key in ("vsync", "video_audio"):
+            if isinstance(renderer.get(key), bool):
+                h.ok(f"wallpaper.renderer.{key} is boolean ({renderer.get(key)})")
             else:
-                h.error(f"wallpaper.render.{key} invalid: {render!r}")
+                h.error(f"wallpaper.renderer.{key} invalid: {renderer!r}")
+        pid = renderer.get("pid")
+        if pid is None or isinstance(pid, int):
+            h.ok(f"wallpaper.renderer.pid shape is valid ({pid!r})")
+        else:
+            h.error(f"wallpaper.renderer.pid invalid: {renderer!r}")
+        last_error = renderer.get("last_error")
+        if last_error is None or isinstance(last_error, str):
+            h.ok(f"wallpaper.renderer.last_error shape is valid ({last_error!r})")
+        else:
+            h.error(f"wallpaper.renderer.last_error invalid: {renderer!r}")
 
-    if availability == "ready" and current is None:
-        h.error("wallpaper.current is null while availability=ready")
-    elif availability in {"empty", "unavailable"} and current is not None:
-        h.warn(f"wallpaper.current is set while availability={availability}")
-
-    if availability != "ready":
+    if availability == "ready" and not isinstance(sources, dict):
+        h.error("wallpaper.sources missing while availability=ready")
+    elif availability != "ready":
         h.warn(f"wallpaper availability={availability}; reason={reason}")
 
     return payload
@@ -139,9 +225,9 @@ def run() -> int:
         if expect_envelope(h, bad_action, kind=ERR, topic="wallpaper", code="E_ACTION_UNKNOWN"):
             h.ok("wallpaper unknown action returns E_ACTION_UNKNOWN")
 
-        bad_payload = client.req("wallpaper", "set_path", {})
+        bad_payload = client.req("wallpaper", "set_output_path", {})
         if expect_envelope(h, bad_payload, kind=ERR, topic="wallpaper", code="E_ACTION_PAYLOAD"):
-            h.ok("wallpaper set_path {} returns E_ACTION_PAYLOAD")
+            h.ok("wallpaper set_output_path {} returns E_ACTION_PAYLOAD")
 
         refresh = client.req("wallpaper", "refresh", {})
         expect_rep_or_warn_service_err(h, refresh, "wallpaper", "wallpaper refresh {}")
@@ -150,22 +236,67 @@ def run() -> int:
             if not isinstance(snapshot, dict) or snapshot.get("availability") != "ready":
                 h.warn("skipping wallpaper mutate tests: service is not in ready state")
             else:
-                current = snapshot.get("current") or {}
-                current_path = current.get("path") if isinstance(current, dict) else None
-                reply = client.req("wallpaper", "next", {})
-                expect_rep_or_warn_service_err(h, reply, "wallpaper", "wallpaper next {}")
-                reply = client.req("wallpaper", "prev", {})
-                expect_rep_or_warn_service_err(h, reply, "wallpaper", "wallpaper prev {}")
-                if isinstance(current_path, str) and current_path:
-                    reply = client.req("wallpaper", "set_path", {"path": current_path})
+                output = "TEST-OUTPUT"
+                sources = snapshot.get("sources") or {}
+                entries = snapshot.get("entries") or []
+                if isinstance(sources, dict) and sources:
+                    first_source_id = sorted(sources.keys())[0]
+                    reply = client.req(
+                        "wallpaper",
+                        "set_output_source",
+                        {"output": output, "source": first_source_id},
+                    )
                     expect_rep_or_warn_service_err(
                         h,
                         reply,
                         "wallpaper",
-                        f"wallpaper set_path {{path:{current_path!r}}}",
+                        f"wallpaper set_output_source {{output:{output!r}, source:{first_source_id!r}}}",
                     )
                 else:
-                    h.warn("skipping wallpaper set_path mutate test: current path missing")
+                    h.warn("skipping set_output_source mutate test: no sources available")
+
+                if isinstance(entries, list) and entries:
+                    first_path = entries[0].get("path")
+                    if isinstance(first_path, str) and first_path:
+                        reply = client.req(
+                            "wallpaper",
+                            "set_output_path",
+                            {"output": output, "path": first_path},
+                        )
+                        expect_rep_or_warn_service_err(
+                            h,
+                            reply,
+                            "wallpaper",
+                            f"wallpaper set_output_path {{output:{output!r}, path:{first_path!r}}}",
+                        )
+                    else:
+                        h.warn("skipping set_output_path mutate test: first entry path missing")
+                else:
+                    h.warn("skipping set_output_path mutate test: no entries available")
+
+                for action in ("next_output", "prev_output"):
+                    reply = client.req("wallpaper", action, {"output": output})
+                    expect_rep_or_warn_service_err(
+                        h,
+                        reply,
+                        "wallpaper",
+                        f"wallpaper {action} {{output:{output!r}}}",
+                    )
+
+                reply = client.req(
+                    "wallpaper",
+                    "set_output_crop",
+                    {
+                        "output": output,
+                        "crop": {"x": 0.0, "y": 0.0, "width": 0.5, "height": 1.0},
+                    },
+                )
+                expect_rep_or_warn_service_err(
+                    h,
+                    reply,
+                    "wallpaper",
+                    f"wallpaper set_output_crop {{output:{output!r}, crop:<half-left>}}",
+                )
         else:
             h.warn("valid wallpaper mutation tests skipped; rerun with --mutate")
     finally:
