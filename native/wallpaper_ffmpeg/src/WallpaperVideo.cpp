@@ -118,6 +118,19 @@ void WallpaperVideo::setMuted(bool muted) {
     emit mutedChanged();
 }
 
+bool WallpaperVideo::loopEnabled() const {
+    return m_loopEnabled;
+}
+
+void WallpaperVideo::setLoopEnabled(bool loopEnabled) {
+    if (m_loopEnabled == loopEnabled) {
+        return;
+    }
+
+    m_loopEnabled = loopEnabled;
+    emit loopEnabledChanged();
+}
+
 qreal WallpaperVideo::volume() const {
     return m_volume;
 }
@@ -407,10 +420,21 @@ void WallpaperVideo::decoderMain(QString localSource, quint64 generation) {
     while (!shouldStop(generation)) {
         rc = av_read_frame(formatContext, packet.get());
         if (rc == AVERROR_EOF) {
-            av_seek_frame(formatContext, streamIndex, 0, AVSEEK_FLAG_BACKWARD);
-            avcodec_flush_buffers(codecContext.get());
-            lastPts.reset();
-            continue;
+            if (m_loopEnabled) {
+                av_seek_frame(formatContext, streamIndex, 0, AVSEEK_FLAG_BACKWARD);
+                avcodec_flush_buffers(codecContext.get());
+                lastPts.reset();
+                continue;
+            }
+
+            QMetaObject::invokeMethod(this, [this, generation]() {
+                if (shouldStop(generation)) {
+                    return;
+                }
+                setStatus(QStringLiteral("ended"));
+                setReady(true);
+            }, Qt::QueuedConnection);
+            break;
         }
         if (rc < 0) {
             QMetaObject::invokeMethod(this, [this, rc, generation]() {

@@ -26,6 +26,7 @@ class WallpaperVideo : public QObject {
 
     Q_PROPERTY(QUrl source READ source WRITE setSource NOTIFY sourceChanged FINAL)
     Q_PROPERTY(bool muted READ muted WRITE setMuted NOTIFY mutedChanged FINAL)
+    Q_PROPERTY(bool loopEnabled READ loopEnabled WRITE setLoopEnabled NOTIFY loopEnabledChanged FINAL)
     Q_PROPERTY(qreal volume READ volume WRITE setVolume NOTIFY volumeChanged FINAL)
     Q_PROPERTY(QString debugName READ debugName WRITE setDebugName NOTIFY debugNameChanged FINAL)
     Q_PROPERTY(bool ready READ isReady NOTIFY readyChanged FINAL)
@@ -52,6 +53,9 @@ public:
     [[nodiscard]] bool muted() const;
     void setMuted(bool muted);
 
+    [[nodiscard]] bool loopEnabled() const;
+    void setLoopEnabled(bool loopEnabled);
+
     [[nodiscard]] qreal volume() const;
     void setVolume(qreal volume);
 
@@ -75,6 +79,7 @@ public:
 signals:
     void sourceChanged();
     void mutedChanged();
+    void loopEnabledChanged();
     void volumeChanged();
     void debugNameChanged();
     void readyChanged();
@@ -108,6 +113,7 @@ private:
     QHash<quintptr, QSize> m_renderTargetHints;
     QUrl m_source;
     bool m_muted = true;
+    bool m_loopEnabled = true;
     qreal m_volume = 100.0;
     QString m_debugName;
     bool m_ready = false;
