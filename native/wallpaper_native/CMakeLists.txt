@@ -18,6 +18,8 @@ pkg_check_modules(AVFORMAT IMPORTED_TARGET libavformat REQUIRED)
 pkg_check_modules(AVCODEC IMPORTED_TARGET libavcodec REQUIRED)
 pkg_check_modules(AVUTIL IMPORTED_TARGET libavutil REQUIRED)
 pkg_check_modules(SWSCALE IMPORTED_TARGET libswscale REQUIRED)
+pkg_check_modules(GBM IMPORTED_TARGET gbm REQUIRED)
+pkg_check_modules(LIBDRM IMPORTED_TARGET libdrm REQUIRED)
 
 qt_standard_project_setup(REQUIRES 6.8)
 
@@ -94,6 +96,8 @@ target_link_libraries(qsov-wallpaper-native
         PkgConfig::AVCODEC
         PkgConfig::AVUTIL
         PkgConfig::SWSCALE
+        PkgConfig::GBM
+        PkgConfig::LIBDRM
 )
 
 set_target_properties(qsov-wallpaper-native PROPERTIES
