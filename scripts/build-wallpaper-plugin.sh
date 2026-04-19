@@ -4,8 +4,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SRC_DIR="$REPO_ROOT/native/wallpaper_mpv"
-BUILD_DIR="$REPO_ROOT/.build/native/wallpaper_mpv"
+SRC_DIR="$REPO_ROOT/native/wallpaper_ffmpeg"
+BUILD_DIR="$REPO_ROOT/.build/native/wallpaper_ffmpeg"
 QML_OUT_DIR="$REPO_ROOT/.build/qml"
 SHELL_LINK="$REPO_ROOT/shell/Quicksov"
 
@@ -18,4 +18,4 @@ cmake --build "$BUILD_DIR"
 
 ln -sfn ../.build/qml/Quicksov "$SHELL_LINK"
 
-echo "Built native wallpaper plugin into $QML_OUT_DIR"
+echo "Built FFmpeg wallpaper plugin into $QML_OUT_DIR"
