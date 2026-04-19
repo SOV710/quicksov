@@ -33,6 +33,8 @@
 | Layer | `zwlr_layer_shell_v1.background`，exclusive zone `-1`，全屏锚定，空 input region |
 | 静态壁纸 | Qt `QImageReader` 解码，CPU `PreserveAspectCrop` 合成到 wl_shm buffer |
 | 视频壁纸 | 原生 renderer 复用 FFmpeg `WallpaperVideo` decoder；按 source 共享解码，多 output 只做各自裁切/合成 |
+| decode backend | renderer 消费 `renderer.decode_backend_order`，按顺序尝试 `vaapi/cuda/vulkan/...`，失败自动回退 `software` |
+| present backend | daemon 暴露 `renderer.present_backend = auto|shm|dmabuf`；renderer 当前会 probe `linux-dmabuf` 能力，但未实现 dmabuf 分配/提交前仍会 fallback 到 `shm` |
 | 切换动画 | 旧画面 snapshot overlay + fade，默认 `fade 320ms` |
 | 失败回退 | 无可渲染图片或目录不可用时，提交纯黑/空背景，不阻塞其它桌面组件 |
 | 输出裁切 | `views.<output>.crop = { x, y, width, height }`，normalized 0..1，便于双屏拼接同一视频 |
@@ -42,6 +44,7 @@
 - wallpaper 正确路径是 layer-shell `background` layer，而不是普通窗口
 - output 生命周期由 renderer 的 `wl_registry` / `wl_output` 驱动
 - wallpaper 状态由 daemon 统一归约，renderer 只消费 `wallpaper` topic
+- renderer 每 5s 打印一次 source/output telemetry，用于观察实际 `hwdec`、present backend 选择、decode fps、commit/present fps、buffer starvation
 - 若希望 wallpaper 固定在 overview/backdrop 中而非随 workspace 缩放，可在 niri config 中手动添加：
 
 ```kdl
