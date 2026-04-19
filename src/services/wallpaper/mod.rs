@@ -29,7 +29,7 @@ use crate::util::is_empty_object;
 
 const DEFAULT_TRANSITION: &str = "fade";
 const DEFAULT_TRANSITION_DURATION_MS: u64 = 320;
-const DEFAULT_RENDERER_BACKEND: &str = "quickshell-ffmpeg";
+const DEFAULT_RENDERER_BACKEND: &str = "native-wayland-ffmpeg";
 const DEFAULT_VSYNC: bool = true;
 const DEFAULT_VIDEO_AUDIO: bool = false;
 const DEFAULT_SOURCE_LOOP: bool = true;
@@ -90,13 +90,14 @@ impl WallpaperCfg {
         };
 
         let renderer_backend = match wallpaper.and_then(|entry| entry.renderer.as_deref()) {
-            Some("quickshell-ffmpeg") | Some("quickshell-mpv") | None => {
-                DEFAULT_RENDERER_BACKEND.to_string()
-            }
+            Some("native-wayland-ffmpeg")
+            | Some("quickshell-ffmpeg")
+            | Some("quickshell-mpv")
+            | None => DEFAULT_RENDERER_BACKEND.to_string(),
             Some(other) => {
                 warn!(
                     renderer = %other,
-                    "unsupported wallpaper renderer configured; falling back to quickshell-ffmpeg"
+                    "unsupported wallpaper renderer configured; falling back to native-wayland-ffmpeg"
                 );
                 DEFAULT_RENDERER_BACKEND.to_string()
             }
@@ -830,15 +831,10 @@ async fn run(
 
 async fn supervise_renderer(cfg: WallpaperCfg, state_tx: watch::Sender<RendererRuntime>) {
     let binary = renderer_binary_path();
-    let shell_path = wallpaper_shell_path();
 
     loop {
         let mut command = Command::new(&binary);
         command.env("QSOV_SOCKET", &cfg.socket_path);
-        command.env("QSOV_WALLPAPER_SHELL", &shell_path);
-        if let Some(import_path) = wallpaper_qml_import_path() {
-            command.env("QML_IMPORT_PATH", import_path);
-        }
 
         match command.spawn() {
             Ok(mut child) => {
@@ -1042,53 +1038,6 @@ fn renderer_binary_path() -> PathBuf {
         }
     }
     PathBuf::from(DEFAULT_RENDERER_PROCESS)
-}
-
-fn wallpaper_shell_path() -> PathBuf {
-    if let Ok(path) = std::env::var("QSOV_WALLPAPER_SHELL") {
-        return PathBuf::from(path);
-    }
-
-    let config_root = if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
-        PathBuf::from(xdg_config)
-    } else if let Some(home) = dirs::home_dir() {
-        home.join(".config")
-    } else {
-        PathBuf::from("$HOME/.config")
-    };
-
-    config_root
-        .join("quickshell")
-        .join("quicksov")
-        .join("wallpaper-shell.qml")
-}
-
-fn wallpaper_qml_import_path() -> Option<String> {
-    let mut paths = Vec::new();
-
-    if let Ok(existing) = std::env::var("QML_IMPORT_PATH") {
-        if !existing.is_empty() {
-            paths.push(existing);
-        }
-    }
-
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(target_dir) = exe.parent().and_then(Path::parent) {
-            let build_qml = target_dir
-                .parent()
-                .map(|repo| repo.join(".build").join("qml"));
-            if let Some(build_qml) = build_qml {
-                if build_qml.exists() {
-                    paths.insert(0, build_qml.to_string_lossy().into_owned());
-                }
-            }
-        }
-    }
-
-    let config_qml = wallpaper_shell_path().parent().map(Path::to_path_buf)?;
-    paths.insert(0, config_qml.to_string_lossy().into_owned());
-
-    Some(paths.join(":"))
 }
 
 #[derive(Debug)]
