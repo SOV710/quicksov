@@ -19,6 +19,7 @@ extern "C" {
 #include <libavutil/error.h>
 #include <libavutil/frame.h>
 #include <libavutil/hwcontext.h>
+#include <libavutil/pixdesc.h>
 #include <libavutil/imgutils.h>
 #include <libswscale/swscale.h>
 }
@@ -29,6 +30,14 @@ QString ffmpegErrorString(int code) {
     char buffer[AV_ERROR_MAX_STRING_SIZE] = {};
     av_strerror(code, buffer, sizeof(buffer));
     return QString::fromUtf8(buffer);
+}
+
+QString pixelFormatName(AVPixelFormat format) {
+    const char *name = av_get_pix_fmt_name(format);
+    if (name == nullptr) {
+        return QStringLiteral("unknown(%1)").arg(static_cast<int>(format));
+    }
+    return QString::fromUtf8(name);
 }
 
 QSize clampSize(const QSize &size) {
@@ -270,6 +279,16 @@ WallpaperVideo::FrameSnapshot WallpaperVideo::frameSnapshot() const {
     };
 }
 
+WallpaperVideo::HardwareFrameSnapshot WallpaperVideo::hardwareFrameSnapshot() const {
+    QMutexLocker locker(&m_frameMutex);
+    return HardwareFrameSnapshot{
+        .frame = m_hardwareFrame,
+        .size = m_videoSizeValue,
+        .serial = m_frameSerial,
+        .hasFrame = (m_hardwareFrame != nullptr),
+    };
+}
+
 WallpaperVideo::StatsSnapshot WallpaperVideo::statsSnapshot() const {
     return StatsSnapshot{
         .status = m_status,
@@ -279,6 +298,11 @@ WallpaperVideo::StatsSnapshot WallpaperVideo::statsSnapshot() const {
         .decodedFrames = m_decodedFrames,
         .ready = m_ready,
     };
+}
+
+bool WallpaperVideo::hasRenderableFrame() const {
+    QMutexLocker locker(&m_frameMutex);
+    return m_hasFrame || static_cast<bool>(m_hardwareFrame);
 }
 
 void WallpaperVideo::ensureInitialized() {
@@ -542,6 +566,9 @@ void WallpaperVideo::decoderMain(QString localSource, QStringList hwdecOrder, qu
     }
 
     const QSize videoSize(codecContext->width, codecContext->height);
+    qInfo().noquote() << logPrefix() << "decoder opened"
+                      << "hwdec =" << chosenHwdec
+                      << "hw_pix_fmt =" << pixelFormatName(hwState.hwPixelFormat);
     QMetaObject::invokeMethod(this, [this, videoSize, chosenHwdec, generation]() {
         if (shouldStop(generation)) {
             return;
@@ -594,6 +621,7 @@ void WallpaperVideo::decoderMain(QString localSource, QStringList hwdecOrder, qu
     AVPixelFormat swsPixelFormat = AV_PIX_FMT_NONE;
     QSize swsSourceSize;
     std::optional<int64_t> lastPts;
+    bool loggedHardwareFrame = false;
 
     const double fps = rationalToDouble(stream->avg_frame_rate);
     const double fallbackFrameSeconds = fps > 0.0 ? 1.0 / fps : 1.0 / 30.0;
@@ -673,6 +701,34 @@ void WallpaperVideo::decoderMain(QString localSource, QStringList hwdecOrder, qu
             AVFrame *convertFrame = frame.get();
             if (hwState.hwPixelFormat != AV_PIX_FMT_NONE &&
                 frame->format == static_cast<int>(hwState.hwPixelFormat)) {
+                if (!loggedHardwareFrame) {
+                    QString swFormatName = QStringLiteral("none");
+                    if (frame->hw_frames_ctx != nullptr) {
+                        const auto *hwFrames =
+                            reinterpret_cast<const AVHWFramesContext *>(frame->hw_frames_ctx->data);
+                        if (hwFrames != nullptr) {
+                            swFormatName = pixelFormatName(hwFrames->sw_format);
+                        }
+                    }
+                    qInfo().noquote() << logPrefix() << "first hardware frame"
+                                      << "format =" << pixelFormatName(static_cast<AVPixelFormat>(frame->format))
+                                      << "sw_format =" << swFormatName
+                                      << "size =" << frame->width << "x" << frame->height;
+                    loggedHardwareFrame = true;
+                }
+                AVFrame *hardwareFrameRef = av_frame_clone(frame.get());
+                if (hardwareFrameRef != nullptr) {
+                    const AvFramePtr hardwareFrame(
+                        hardwareFrameRef,
+                        [](AVFrame *value) {
+                            av_frame_free(&value);
+                        }
+                    );
+                    QMetaObject::invokeMethod(this, [this, hardwareFrame, videoSize, generation]() {
+                        acceptHardwareFrame(hardwareFrame, videoSize, generation);
+                    }, Qt::QueuedConnection);
+                }
+
                 av_frame_unref(transferFrame.get());
                 rc = av_hwframe_transfer_data(transferFrame.get(), frame.get(), 0);
                 if (rc < 0) {
@@ -818,6 +874,35 @@ void WallpaperVideo::acceptFrame(const QImage &image, const QSize &videoSize, qu
     emit frameAvailable();
 }
 
+void WallpaperVideo::acceptHardwareFrame(const AvFramePtr &frame, const QSize &videoSize, quint64 generation) {
+    if (shouldStop(generation) || !frame) {
+        return;
+    }
+
+    bool videoSizeChangedFlag = false;
+    {
+        QMutexLocker locker(&m_frameMutex);
+        m_hardwareFrame = frame;
+        m_frameSerial += 1;
+    }
+
+    if (m_videoSizeValue != videoSize) {
+        m_videoSizeValue = videoSize;
+        videoSizeChangedFlag = true;
+    }
+
+    if (!m_ready) {
+        setReady(true);
+    }
+    if (m_status != QLatin1String("ready")) {
+        setStatus(QStringLiteral("ready"));
+    }
+
+    if (videoSizeChangedFlag) {
+        emit videoSizeChanged();
+    }
+}
+
 QSize WallpaperVideo::targetFrameSize(const QSize &videoSize) const {
     if (!videoSize.isValid()) {
         return QSize(1920, 1080);
@@ -876,6 +961,7 @@ void WallpaperVideo::clearFrame() {
     {
         QMutexLocker locker(&m_frameMutex);
         m_frameImage = QImage();
+        m_hardwareFrame.reset();
         frameSizeChangedFlag = m_frameSizeValue.isValid();
         m_frameSizeValue = QSize();
         m_hasFrame = false;

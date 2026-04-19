@@ -42,10 +42,26 @@
 #include <QUrl>
 
 extern "C" {
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
 #include <gbm.h>
+#include <GLES2/gl2.h>
 #include <drm_fourcc.h>
+#include <libavutil/frame.h>
+#include <libavutil/hwcontext.h>
+#include <libavutil/hwcontext_drm.h>
+#include <libavutil/pixdesc.h>
 #include <wayland-client.h>
 }
+
+#define PL_LIBAV_IMPLEMENTATION 0
+#include <libplacebo/colorspace.h>
+#include <libplacebo/common.h>
+#include <libplacebo/gpu.h>
+#include <libplacebo/log.h>
+#include <libplacebo/opengl.h>
+#include <libplacebo/renderer.h>
+#include <libplacebo/utils/libav.h>
 
 #define namespace namespace_
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
@@ -155,6 +171,80 @@ QString dmabufModifierString(uint64_t modifier) {
         return QStringLiteral("linear");
     }
     return QStringLiteral("0x%1").arg(QString::number(modifier, 16));
+}
+
+QString avPixelFormatString(int format) {
+    const char *name = av_get_pix_fmt_name(static_cast<AVPixelFormat>(format));
+    if (name == nullptr) {
+        return QStringLiteral("unknown(%1)").arg(format);
+    }
+    return QString::fromUtf8(name);
+}
+
+QString describeAvFrame(const AVFrame *frame) {
+    if (frame == nullptr) {
+        return QStringLiteral("frame=null");
+    }
+
+    QStringList parts;
+    parts << QStringLiteral("fmt=%1").arg(avPixelFormatString(frame->format))
+          << QStringLiteral("size=%1x%2").arg(frame->width).arg(frame->height);
+
+    if (frame->hw_frames_ctx != nullptr) {
+        const auto *hwFrames = reinterpret_cast<const AVHWFramesContext *>(frame->hw_frames_ctx->data);
+        if (hwFrames != nullptr) {
+            parts << QStringLiteral("hw_format=%1").arg(avPixelFormatString(hwFrames->format))
+                  << QStringLiteral("sw_format=%1").arg(avPixelFormatString(hwFrames->sw_format));
+        }
+    }
+
+    if (frame->format == AV_PIX_FMT_DRM_PRIME && frame->data[0] != nullptr) {
+        const auto *drm = reinterpret_cast<const AVDRMFrameDescriptor *>(frame->data[0]);
+        parts << QStringLiteral("drm_objects=%1").arg(drm->nb_objects)
+              << QStringLiteral("drm_layers=%1").arg(drm->nb_layers);
+
+        if (drm->nb_objects > 0) {
+            const auto &object = drm->objects[0];
+            parts << QStringLiteral("drm_modifier=%1").arg(dmabufModifierString(object.format_modifier));
+        }
+        if (drm->nb_layers > 0) {
+            const auto &layer = drm->layers[0];
+            parts << QStringLiteral("drm_layer0_format=%1").arg(drmFormatString(layer.format))
+                  << QStringLiteral("drm_layer0_planes=%1").arg(layer.nb_planes);
+        }
+    }
+
+    return parts.join(QLatin1Char(' '));
+}
+
+QString describeDerivedDrmFrame(const AVFrame *frame) {
+    if (frame == nullptr || frame->hw_frames_ctx == nullptr) {
+        return QStringLiteral("derive=unavailable");
+    }
+
+    AVFrame *derived = av_frame_alloc();
+    if (derived == nullptr) {
+        return QStringLiteral("derive=alloc_failed");
+    }
+
+    derived->width = frame->width;
+    derived->height = frame->height;
+    derived->format = AV_PIX_FMT_DRM_PRIME;
+    derived->hw_frames_ctx = av_buffer_ref(frame->hw_frames_ctx);
+    if (derived->hw_frames_ctx == nullptr) {
+        av_frame_free(&derived);
+        return QStringLiteral("derive=hw_frames_ref_failed");
+    }
+
+    const int rc = av_hwframe_map(derived, frame, AV_HWFRAME_MAP_READ | AV_HWFRAME_MAP_DIRECT);
+    if (rc < 0) {
+        av_frame_free(&derived);
+        return QStringLiteral("derive=map_failed(%1)").arg(rc);
+    }
+
+    const QString description = describeAvFrame(derived);
+    av_frame_free(&derived);
+    return QStringLiteral("derive_ok(%1)").arg(description);
 }
 
 uint32_t modifierHi(uint64_t modifier) {
@@ -357,6 +447,423 @@ SnapshotModel parseSnapshot(const QJsonObject &payload) {
     return model;
 }
 
+class GpuCompositor final {
+public:
+    ~GpuCompositor() {
+        destroy();
+    }
+
+    bool initialize(gbm_device *gbmDevice, QString *error) {
+        if (m_renderer != nullptr) {
+            return true;
+        }
+
+        EGLDisplay display = EGL_NO_DISPLAY;
+        const char *backendName = "default";
+#ifdef EGL_PLATFORM_GBM_KHR
+        if (gbmDevice != nullptr) {
+            display = eglGetPlatformDisplay(EGL_PLATFORM_GBM_KHR, gbmDevice, nullptr);
+            backendName = "gbm";
+        }
+#endif
+        if (display == EGL_NO_DISPLAY && gbmDevice != nullptr) {
+            display = eglGetDisplay(reinterpret_cast<EGLNativeDisplayType>(gbmDevice));
+            backendName = "gbm-legacy";
+        }
+#ifdef EGL_PLATFORM_SURFACELESS_MESA
+        if (display == EGL_NO_DISPLAY) {
+            display = eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, nullptr);
+            backendName = "surfaceless";
+        }
+#endif
+        if (display == EGL_NO_DISPLAY) {
+            display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+            backendName = "default";
+        }
+        if (display == EGL_NO_DISPLAY) {
+            if (error != nullptr) {
+                *error = QStringLiteral("eglGetDisplay failed");
+            }
+            return false;
+        }
+
+        EGLint major = 0;
+        EGLint minor = 0;
+        if (!eglInitialize(display, &major, &minor)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("eglInitialize failed");
+            }
+            return false;
+        }
+
+        if (!eglBindAPI(EGL_OPENGL_ES_API)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("eglBindAPI(EGL_OPENGL_ES_API) failed");
+            }
+            eglTerminate(display);
+            return false;
+        }
+
+        const EGLint configAttrs[] = {
+            EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
+            EGL_RED_SIZE, 8,
+            EGL_GREEN_SIZE, 8,
+            EGL_BLUE_SIZE, 8,
+            EGL_ALPHA_SIZE, 8,
+            EGL_NONE,
+        };
+        EGLConfig config = nullptr;
+        EGLint numConfigs = 0;
+        if (!eglChooseConfig(display, configAttrs, &config, 1, &numConfigs) || numConfigs <= 0) {
+            if (error != nullptr) {
+                *error = QStringLiteral("eglChooseConfig failed");
+            }
+            eglTerminate(display);
+            return false;
+        }
+
+        const EGLint surfaceAttrs[] = {
+            EGL_WIDTH, 1,
+            EGL_HEIGHT, 1,
+            EGL_NONE,
+        };
+        EGLSurface surface = eglCreatePbufferSurface(display, config, surfaceAttrs);
+
+        const EGLint contextAttrs[] = {
+            EGL_CONTEXT_CLIENT_VERSION, 2,
+            EGL_NONE,
+        };
+        EGLContext context = eglCreateContext(display, config, EGL_NO_CONTEXT, contextAttrs);
+        if (context == EGL_NO_CONTEXT) {
+            if (error != nullptr) {
+                *error = QStringLiteral("eglCreateContext failed");
+            }
+            if (surface != EGL_NO_SURFACE) {
+                eglDestroySurface(display, surface);
+            }
+            eglTerminate(display);
+            return false;
+        }
+
+        const EGLSurface drawSurface = (surface != EGL_NO_SURFACE) ? surface : EGL_NO_SURFACE;
+        if (!eglMakeCurrent(display, drawSurface, drawSurface, context)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("eglMakeCurrent failed");
+            }
+            eglDestroyContext(display, context);
+            if (surface != EGL_NO_SURFACE) {
+                eglDestroySurface(display, surface);
+            }
+            eglTerminate(display);
+            return false;
+        }
+
+        struct pl_log_params logParams = pl_log_default_params;
+        logParams.log_cb = &GpuCompositor::logCallback;
+        logParams.log_level = PL_LOG_WARN;
+        m_log = pl_log_create(PL_API_VER, &logParams);
+
+        struct pl_opengl_params openglParams = pl_opengl_default_params;
+        openglParams.allow_software = false;
+        openglParams.get_proc_addr = reinterpret_cast<pl_voidfunc_t (*)(const char *)>(eglGetProcAddress);
+        openglParams.egl_display = display;
+        openglParams.egl_context = context;
+        m_opengl = pl_opengl_create(m_log, &openglParams);
+        if (m_opengl == nullptr) {
+            if (error != nullptr) {
+                *error = QStringLiteral("pl_opengl_create failed");
+            }
+            cleanupEgl(display, surface, context);
+            pl_log_destroy(&m_log);
+            return false;
+        }
+
+        m_renderer = pl_renderer_create(m_log, m_opengl->gpu);
+        if (m_renderer == nullptr) {
+            if (error != nullptr) {
+                *error = QStringLiteral("pl_renderer_create failed");
+            }
+            pl_opengl_destroy(&m_opengl);
+            cleanupEgl(display, surface, context);
+            pl_log_destroy(&m_log);
+            return false;
+        }
+
+        if ((m_opengl->gpu->import_caps.tex & PL_HANDLE_DMA_BUF) == 0 ||
+            !pl_test_pixfmt(m_opengl->gpu, AV_PIX_FMT_DRM_PRIME)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("libplacebo GPU does not support DRM_PRIME import");
+            }
+            pl_renderer_destroy(&m_renderer);
+            pl_opengl_destroy(&m_opengl);
+            cleanupEgl(display, surface, context);
+            pl_log_destroy(&m_log);
+            return false;
+        }
+
+        m_display = display;
+        m_surface = surface;
+        m_context = context;
+        qInfo().noquote() << kLogPrefix << "gpu compositor initialized"
+                          << "backend =" << backendName
+                          << "egl =" << QStringLiteral("%1.%2").arg(major).arg(minor)
+                          << "dmabuf_import =" << static_cast<bool>(m_opengl->gpu->import_caps.tex & PL_HANDLE_DMA_BUF);
+        return true;
+    }
+
+    void destroy() {
+        if (m_display == EGL_NO_DISPLAY) {
+            return;
+        }
+
+        makeCurrent();
+        for (auto &entry : m_targets) {
+            if (entry.second.texture != nullptr) {
+                pl_tex_destroy(m_opengl->gpu, &entry.second.texture);
+            }
+            if (entry.second.fd >= 0) {
+                ::close(entry.second.fd);
+            }
+        }
+        m_targets.clear();
+
+        if (m_renderer != nullptr) {
+            pl_renderer_destroy(&m_renderer);
+        }
+        if (m_opengl != nullptr) {
+            pl_opengl_destroy(&m_opengl);
+        }
+        pl_log_destroy(&m_log);
+
+        cleanupEgl(m_display, m_surface, m_context);
+        m_display = EGL_NO_DISPLAY;
+        m_surface = EGL_NO_SURFACE;
+        m_context = EGL_NO_CONTEXT;
+    }
+
+    [[nodiscard]] bool available() const {
+        return m_renderer != nullptr && m_opengl != nullptr;
+    }
+
+    void releaseTarget(quintptr key) {
+        auto it = m_targets.find(key);
+        if (it == m_targets.end()) {
+            return;
+        }
+
+        makeCurrent();
+        if (it->second.texture != nullptr) {
+            pl_tex_destroy(m_opengl->gpu, &it->second.texture);
+        }
+        if (it->second.fd >= 0) {
+            ::close(it->second.fd);
+        }
+        m_targets.erase(it);
+    }
+
+    bool renderToDmabuf(
+        const WallpaperVideo::HardwareFrameSnapshot &source,
+        const QSize &targetSize,
+        const std::optional<CropRect> &crop,
+        quintptr targetKey,
+        int targetFd,
+        int width,
+        int height,
+        int stride,
+        uint32_t drmFormat,
+        uint64_t modifier,
+        QString *error
+    ) {
+        if (!available() || !source.hasFrame || !source.frame || targetFd < 0) {
+            return false;
+        }
+
+        if (!makeCurrent()) {
+            if (error != nullptr) {
+                *error = QStringLiteral("eglMakeCurrent failed");
+            }
+            return false;
+        }
+
+        TargetTexture *target = ensureTarget(targetKey, targetFd, width, height, stride, drmFormat, modifier, error);
+        if (target == nullptr || target->texture == nullptr) {
+            return false;
+        }
+
+        struct pl_frame image = {};
+        pl_tex imageTex[4] = {};
+        if (!pl_map_avframe(m_opengl->gpu, &image, imageTex, source.frame.get())) {
+            if (error != nullptr) {
+                *error = QStringLiteral("pl_map_avframe failed (%1 %2)")
+                             .arg(describeAvFrame(source.frame.get()), describeDerivedDrmFrame(source.frame.get()));
+            }
+            return false;
+        }
+
+        const QRectF sourceRect = coverSourceRect(cropRectFor(source.size, crop), targetSize);
+        image.crop = pl_rect2df{
+            static_cast<float>(sourceRect.left()),
+            static_cast<float>(sourceRect.top()),
+            static_cast<float>(sourceRect.right()),
+            static_cast<float>(sourceRect.bottom()),
+        };
+
+        struct pl_frame targetFrame = {};
+        targetFrame.num_planes = 1;
+        targetFrame.planes[0].texture = target->texture;
+        targetFrame.planes[0].components = 4;
+        targetFrame.planes[0].component_mapping[0] = 0;
+        targetFrame.planes[0].component_mapping[1] = 1;
+        targetFrame.planes[0].component_mapping[2] = 2;
+        targetFrame.planes[0].component_mapping[3] = 3;
+        targetFrame.repr = pl_color_repr_rgb;
+        targetFrame.color = pl_color_space_unknown;
+        targetFrame.crop = pl_rect2df{0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height)};
+
+        const float clearColor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+        pl_frame_clear_rgba(m_opengl->gpu, &targetFrame, clearColor);
+        const bool ok = pl_render_image(m_renderer, &image, &targetFrame, &pl_render_default_params);
+        pl_unmap_avframe(m_opengl->gpu, &image);
+        glFlush();
+
+        if (!ok) {
+            if (error != nullptr) {
+                *error = QStringLiteral("pl_render_image failed");
+            }
+            return false;
+        }
+
+        return true;
+    }
+
+private:
+    struct TargetTexture {
+        pl_tex texture = nullptr;
+        int fd = -1;
+        int width = 0;
+        int height = 0;
+        int stride = 0;
+        uint32_t drmFormat = 0;
+        uint64_t modifier = DRM_FORMAT_MOD_INVALID;
+    };
+
+    static void logCallback(void *, enum pl_log_level level, const char *msg) {
+        const QString text = QString::fromUtf8(msg);
+        switch (level) {
+        case PL_LOG_FATAL:
+        case PL_LOG_ERR:
+            qWarning().noquote() << kLogPrefix << "[libplacebo]" << text;
+            break;
+        case PL_LOG_WARN:
+            qWarning().noquote() << kLogPrefix << "[libplacebo]" << text;
+            break;
+        default:
+            qDebug().noquote() << kLogPrefix << "[libplacebo]" << text;
+            break;
+        }
+    }
+
+    static void cleanupEgl(EGLDisplay display, EGLSurface surface, EGLContext context) {
+        if (display == EGL_NO_DISPLAY) {
+            return;
+        }
+        eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        if (context != EGL_NO_CONTEXT) {
+            eglDestroyContext(display, context);
+        }
+        if (surface != EGL_NO_SURFACE) {
+            eglDestroySurface(display, surface);
+        }
+        eglTerminate(display);
+    }
+
+    bool makeCurrent() const {
+        return m_display != EGL_NO_DISPLAY &&
+               eglMakeCurrent(m_display, m_surface, m_surface, m_context);
+    }
+
+    TargetTexture *ensureTarget(
+        quintptr key,
+        int targetFd,
+        int width,
+        int height,
+        int stride,
+        uint32_t drmFormat,
+        uint64_t modifier,
+        QString *error
+    ) {
+        auto it = m_targets.find(key);
+        if (it != m_targets.end() &&
+            it->second.width == width &&
+            it->second.height == height &&
+            it->second.stride == stride &&
+            it->second.drmFormat == drmFormat &&
+            it->second.modifier == modifier) {
+            return &it->second;
+        }
+
+        if (it != m_targets.end()) {
+            releaseTarget(key);
+        }
+
+        const int dupFd = ::dup(targetFd);
+        if (dupFd < 0) {
+            if (error != nullptr) {
+                *error = QStringLiteral("dup(targetFd) failed");
+            }
+            return nullptr;
+        }
+
+        const pl_fmt format = pl_find_fourcc(m_opengl->gpu, drmFormat);
+        if (format == nullptr) {
+            ::close(dupFd);
+            if (error != nullptr) {
+                *error = QStringLiteral("pl_find_fourcc failed");
+            }
+            return nullptr;
+        }
+
+        TargetTexture target{
+            .fd = dupFd,
+            .width = width,
+            .height = height,
+            .stride = stride,
+            .drmFormat = drmFormat,
+            .modifier = modifier,
+        };
+        struct pl_tex_params params = {};
+        params.w = width;
+        params.h = height;
+        params.format = format;
+        params.renderable = true;
+        params.blit_dst = static_cast<bool>(format->caps & PL_FMT_CAP_BLITTABLE);
+        params.import_handle = PL_HANDLE_DMA_BUF;
+        params.shared_mem.handle.fd = dupFd;
+        params.shared_mem.drm_format_mod = modifier;
+        params.shared_mem.stride_w = static_cast<size_t>(stride);
+        target.texture = pl_tex_create(m_opengl->gpu, &params);
+        if (target.texture == nullptr) {
+            ::close(dupFd);
+            if (error != nullptr) {
+                *error = QStringLiteral("pl_tex_create target import failed");
+            }
+            return nullptr;
+        }
+
+        auto [inserted, ok] = m_targets.emplace(key, std::move(target));
+        Q_UNUSED(ok)
+        return &inserted->second;
+    }
+
+    EGLDisplay m_display = EGL_NO_DISPLAY;
+    EGLSurface m_surface = EGL_NO_SURFACE;
+    EGLContext m_context = EGL_NO_CONTEXT;
+    pl_log m_log = nullptr;
+    pl_opengl m_opengl = nullptr;
+    pl_renderer m_renderer = nullptr;
+    std::map<quintptr, TargetTexture> m_targets;
+};
+
 class SourceSession final : public QObject {
     Q_OBJECT
 
@@ -410,7 +917,7 @@ public:
 
     [[nodiscard]] bool ready() const {
         if (m_video != nullptr) {
-            return m_video->isReady() && m_video->frameSnapshot().hasFrame;
+            return m_video->isReady() && m_video->hasRenderableFrame();
         }
         return !m_image.isNull();
     }
@@ -456,6 +963,13 @@ public:
         }
     }
 
+    [[nodiscard]] WallpaperVideo::HardwareFrameSnapshot hardwareFrameSnapshot() const {
+        if (m_video == nullptr) {
+            return {};
+        }
+        return m_video->hardwareFrameSnapshot();
+    }
+
     bool paint(QPainter &painter, const QSize &targetSize, const std::optional<CropRect> &crop, qreal opacity) const {
         if (m_video != nullptr) {
             const auto frame = m_video->frameSnapshot();
@@ -485,6 +999,7 @@ private:
 };
 
 class WaylandRenderer;
+class GpuCompositor;
 
 class OutputSurface final : public QObject {
     Q_OBJECT
@@ -543,6 +1058,7 @@ private:
         wl_buffer *buffer = nullptr;
         zwp_linux_buffer_params_v1 *params = nullptr;
         gbm_bo *bo = nullptr;
+        int gpuImportFd = -1;
         void *data = nullptr;
         void *mapData = nullptr;
         int width = 0;
@@ -645,6 +1161,8 @@ private:
     int m_lastPresentedIndex = -1;
     QString m_lastPresentedBackend = QStringLiteral("shm");
     QImage m_previousImage;
+    QString m_lastGpuError;
+    bool m_loggedGpuFastPath = false;
     QElapsedTimer m_transitionClock;
     QTimer m_transitionTimer;
     int m_transitionDurationMs = 0;
@@ -698,6 +1216,7 @@ public:
             ::close(m_gbmDeviceFd);
             m_gbmDeviceFd = -1;
         }
+        m_gpuCompositor.reset();
         if (m_shm != nullptr) {
             wl_shm_destroy(m_shm);
             m_shm = nullptr;
@@ -828,6 +1347,56 @@ public:
 
     zwp_linux_dmabuf_v1 *linuxDmabuf() const {
         return m_linuxDmabuf;
+    }
+
+    GpuCompositor *gpuCompositor() const {
+        return m_gpuCompositor.get();
+    }
+
+    [[nodiscard]] bool ensureGpuCompositor(QString *reason) {
+        if (m_gpuCompositor != nullptr) {
+            if (reason != nullptr) {
+                reason->clear();
+            }
+            return true;
+        }
+
+        if (m_gpuCompositorAttempted) {
+            if (reason != nullptr) {
+                *reason = m_gpuCompositorFailureReason;
+            }
+            return false;
+        }
+
+        QString gbmReason;
+        if (!ensureGbmDevice(&gbmReason) || m_gbmDevice == nullptr) {
+            m_gpuCompositorAttempted = true;
+            m_gpuCompositorFailureReason =
+                QStringLiteral("gbm_device_unavailable:%1").arg(gbmReason);
+            if (reason != nullptr) {
+                *reason = m_gpuCompositorFailureReason;
+            }
+            return false;
+        }
+
+        auto compositor = std::make_unique<GpuCompositor>();
+        QString gpuError;
+        if (!compositor->initialize(m_gbmDevice, &gpuError)) {
+            m_gpuCompositorAttempted = true;
+            m_gpuCompositorFailureReason = gpuError;
+            qWarning().noquote() << kLogPrefix << "gpu compositor unavailable:" << gpuError;
+            if (reason != nullptr) {
+                *reason = m_gpuCompositorFailureReason;
+            }
+            return false;
+        }
+
+        m_gpuCompositor = std::move(compositor);
+        m_gpuCompositorFailureReason.clear();
+        if (reason != nullptr) {
+            reason->clear();
+        }
+        return true;
     }
 
     [[nodiscard]] bool ensureGbmDevice(QString *reason) {
@@ -1231,6 +1800,9 @@ private:
     bool m_gbmDeviceAttempted = false;
     QString m_gbmDevicePath;
     QString m_gbmDeviceFailureReason;
+    std::unique_ptr<GpuCompositor> m_gpuCompositor;
+    bool m_gpuCompositorAttempted = false;
+    QString m_gpuCompositorFailureReason;
 };
 
 OutputSurface::OutputSurface(WaylandRenderer *renderer, uint32_t registryName, wl_output *output)
@@ -1729,6 +2301,17 @@ bool OutputSurface::createDmabufBuffer(DmaBuffer &buffer) {
         return false;
     }
 
+    int gpuImportFd = gbm_bo_get_fd_for_plane(bo, 0);
+    if (gpuImportFd < 0) {
+        gpuImportFd = gbm_bo_get_fd(bo);
+    }
+    if (gpuImportFd < 0) {
+        ::close(fd);
+        gbm_bo_destroy(bo);
+        m_presentBackendFallbackReason = QStringLiteral("gbm_bo_export_failed");
+        return false;
+    }
+
     zwp_linux_buffer_params_v1 *params =
         zwp_linux_dmabuf_v1_create_params(m_renderer->linuxDmabuf());
     if (params == nullptr) {
@@ -1764,6 +2347,7 @@ bool OutputSurface::createDmabufBuffer(DmaBuffer &buffer) {
     buffer.owner = this;
     buffer.params = params;
     buffer.bo = bo;
+    buffer.gpuImportFd = gpuImportFd;
     buffer.data = nullptr;
     buffer.mapData = nullptr;
     buffer.width = m_pixelSize.width();
@@ -1834,6 +2418,13 @@ void OutputSurface::releaseDmabufBuffer(DmaBuffer &buffer) {
     if (buffer.bo != nullptr) {
         gbm_bo_destroy(buffer.bo);
         buffer.bo = nullptr;
+    }
+    if (buffer.gpuImportFd >= 0) {
+        if (m_renderer->gpuCompositor() != nullptr) {
+            m_renderer->gpuCompositor()->releaseTarget(reinterpret_cast<quintptr>(&buffer));
+        }
+        ::close(buffer.gpuImportFd);
+        buffer.gpuImportFd = -1;
     }
     buffer.data = nullptr;
     buffer.width = 0;
@@ -1914,6 +2505,7 @@ void OutputSurface::render() {
     QString usedBackend = QStringLiteral("shm");
     DmaBuffer *usedDmabuf = nullptr;
     ShmBuffer *usedShm = nullptr;
+    bool renderedWithGpu = false;
 
     if (ensureDmabufBuffers()) {
         if (DmaBuffer *buffer = nextFreeDmabufBuffer(); buffer != nullptr) {
@@ -1942,7 +2534,56 @@ void OutputSurface::render() {
         }
     }
 
-    if (usedDmabuf != nullptr) {
+    const bool transitionActive = m_transitionDurationMs > 0 && m_transitionClock.isValid();
+    GpuCompositor *gpuCompositor = nullptr;
+    if (usedDmabuf != nullptr &&
+        m_source != nullptr &&
+        !transitionActive &&
+        m_previousImage.isNull()) {
+        QString gpuInitError;
+        if (m_renderer->ensureGpuCompositor(&gpuInitError)) {
+            gpuCompositor = m_renderer->gpuCompositor();
+        } else if (!gpuInitError.isEmpty() && gpuInitError != m_lastGpuError) {
+            m_lastGpuError = gpuInitError;
+            qDebug().noquote() << kLogPrefix << "gpu fast-path unavailable" << m_outputName << gpuInitError;
+        }
+    }
+
+    if (usedDmabuf != nullptr &&
+        gpuCompositor != nullptr &&
+        m_source != nullptr &&
+        !transitionActive &&
+        m_previousImage.isNull()) {
+        const auto hardwareFrame = m_source->hardwareFrameSnapshot();
+        QString gpuError;
+        renderedWithGpu = gpuCompositor->renderToDmabuf(
+            hardwareFrame,
+            m_pixelSize,
+            m_crop,
+            reinterpret_cast<quintptr>(usedDmabuf),
+            usedDmabuf->gpuImportFd,
+            usedDmabuf->width,
+            usedDmabuf->height,
+            usedDmabuf->stride,
+            usedDmabuf->format,
+            usedDmabuf->modifier,
+            &gpuError
+        );
+        if (!renderedWithGpu && !gpuError.isEmpty()) {
+            if (gpuError != m_lastGpuError) {
+                m_lastGpuError = gpuError;
+                qDebug().noquote() << kLogPrefix << "gpu fast-path skipped" << m_outputName << gpuError;
+            }
+        } else if (renderedWithGpu && !m_lastGpuError.isEmpty()) {
+            m_lastGpuError.clear();
+        }
+        if (renderedWithGpu && !m_loggedGpuFastPath) {
+            m_loggedGpuFastPath = true;
+            qInfo().noquote() << kLogPrefix << "gpu fast-path active" << m_outputName;
+        }
+    }
+
+    if (usedDmabuf != nullptr && !renderedWithGpu) {
         uint32_t mappedStride = 0;
         void *mapData = nullptr;
         void *mapped = gbm_bo_map(
@@ -1987,52 +2628,54 @@ void OutputSurface::render() {
         }
     }
 
-    if (wlBuffer == nullptr || data == nullptr) {
+    if (wlBuffer == nullptr || (!renderedWithGpu && data == nullptr)) {
         m_bufferStarvedFrames += 1;
         return;
     }
 
-    QImage target(
-        static_cast<uchar *>(data),
-        width,
-        height,
-        stride,
-        QImage::Format_ARGB32_Premultiplied
-    );
-    target.fill(Qt::black);
-
-    QPainter painter(&target);
-    painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
-
-    qreal transitionProgress = 1.0;
-    if (m_transitionDurationMs > 0 && m_transitionClock.isValid()) {
-        transitionProgress = std::clamp(
-            static_cast<qreal>(m_transitionClock.elapsed()) / m_transitionDurationMs,
-            0.0,
-            1.0
+    if (!renderedWithGpu) {
+        QImage target(
+            static_cast<uchar *>(data),
+            width,
+            height,
+            stride,
+            QImage::Format_ARGB32_Premultiplied
         );
-        if (transitionProgress >= 1.0) {
-            stopTransition();
+        target.fill(Qt::black);
+
+        QPainter painter(&target);
+        painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+
+        qreal transitionProgress = 1.0;
+        if (m_transitionDurationMs > 0 && m_transitionClock.isValid()) {
+            transitionProgress = std::clamp(
+                static_cast<qreal>(m_transitionClock.elapsed()) / m_transitionDurationMs,
+                0.0,
+                1.0
+            );
+            if (transitionProgress >= 1.0) {
+                stopTransition();
+            }
         }
-    }
 
-    if (!m_previousImage.isNull() && transitionProgress < 1.0) {
-        paintImageCover(painter, m_previousImage, m_pixelSize, std::nullopt, 1.0 - transitionProgress);
-    }
+        if (!m_previousImage.isNull() && transitionProgress < 1.0) {
+            paintImageCover(painter, m_previousImage, m_pixelSize, std::nullopt, 1.0 - transitionProgress);
+        }
 
-    if (m_source != nullptr) {
-        const qreal opacity = (!m_previousImage.isNull() && transitionProgress < 1.0)
-            ? transitionProgress
-            : 1.0;
-        m_source->paint(painter, m_pixelSize, m_crop, opacity);
-    }
+        if (m_source != nullptr) {
+            const qreal opacity = (!m_previousImage.isNull() && transitionProgress < 1.0)
+                ? transitionProgress
+                : 1.0;
+            m_source->paint(painter, m_pixelSize, m_crop, opacity);
+        }
 
-    painter.end();
+        painter.end();
 
-    if (usedDmabuf != nullptr && usedDmabuf->mapData != nullptr) {
-        gbm_bo_unmap(usedDmabuf->bo, usedDmabuf->mapData);
-        usedDmabuf->mapData = nullptr;
-        usedDmabuf->data = nullptr;
+        if (usedDmabuf != nullptr && usedDmabuf->mapData != nullptr) {
+            gbm_bo_unmap(usedDmabuf->bo, usedDmabuf->mapData);
+            usedDmabuf->mapData = nullptr;
+            usedDmabuf->data = nullptr;
+        }
     }
 
     wl_surface_set_buffer_scale(m_surface, m_scale);

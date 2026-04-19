@@ -5,6 +5,7 @@
 #pragma once
 
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <thread>
@@ -20,6 +21,7 @@
 #include <QtQmlIntegration/qqmlintegration.h>
 
 class QOpenGLContext;
+struct AVFrame;
 
 class WallpaperVideo : public QObject {
     Q_OBJECT
@@ -38,8 +40,17 @@ class WallpaperVideo : public QObject {
     Q_PROPERTY(QSize frameSize READ frameSize NOTIFY frameSizeChanged FINAL)
 
 public:
+    using AvFramePtr = std::shared_ptr<AVFrame>;
+
     struct FrameSnapshot {
         QImage image;
+        QSize size;
+        quint64 serial = 0;
+        bool hasFrame = false;
+    };
+
+    struct HardwareFrameSnapshot {
+        AvFramePtr frame;
         QSize size;
         quint64 serial = 0;
         bool hasFrame = false;
@@ -81,7 +92,9 @@ public:
     [[nodiscard]] QStringList preferredHwdecOrder() const;
 
     [[nodiscard]] FrameSnapshot frameSnapshot() const;
+    [[nodiscard]] HardwareFrameSnapshot hardwareFrameSnapshot() const;
     [[nodiscard]] StatsSnapshot statsSnapshot() const;
+    [[nodiscard]] bool hasRenderableFrame() const;
 
     Q_INVOKABLE void ensureInitialized();
     Q_INVOKABLE void updateRenderTargetHint(QObject *item, const QSize &size);
@@ -108,6 +121,7 @@ private:
     void stopDecoder();
     void decoderMain(QString localSource, QStringList hwdecOrder, quint64 generation);
     void acceptFrame(const QImage &image, const QSize &videoSize, quint64 generation);
+    void acceptHardwareFrame(const AvFramePtr &frame, const QSize &videoSize, quint64 generation);
     [[nodiscard]] QSize targetFrameSize(const QSize &videoSize) const;
     [[nodiscard]] bool shouldStop(quint64 generation) const;
     bool waitForStop(std::chrono::nanoseconds delay, quint64 generation);
@@ -135,6 +149,7 @@ private:
     QString m_hwdecCurrent;
     QStringList m_preferredHwdecOrder;
     QImage m_frameImage;
+    AvFramePtr m_hardwareFrame;
     QSize m_videoSizeValue;
     QSize m_frameSizeValue;
     quint64 m_frameSerial = 0;

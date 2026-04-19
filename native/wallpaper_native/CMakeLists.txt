@@ -20,6 +20,9 @@ pkg_check_modules(AVUTIL IMPORTED_TARGET libavutil REQUIRED)
 pkg_check_modules(SWSCALE IMPORTED_TARGET libswscale REQUIRED)
 pkg_check_modules(GBM IMPORTED_TARGET gbm REQUIRED)
 pkg_check_modules(LIBDRM IMPORTED_TARGET libdrm REQUIRED)
+pkg_check_modules(EGL IMPORTED_TARGET egl REQUIRED)
+pkg_check_modules(GLESV2 IMPORTED_TARGET glesv2 REQUIRED)
+pkg_check_modules(LIBPLACEBO IMPORTED_TARGET libplacebo REQUIRED)
 
 qt_standard_project_setup(REQUIRES 6.8)
 
@@ -72,6 +75,7 @@ add_custom_command(
 
 add_executable(qsov-wallpaper-native
     src/main.cpp
+    src/libplacebo_libav_impl.c
     "${CMAKE_CURRENT_SOURCE_DIR}/../wallpaper_ffmpeg/src/WallpaperVideo.cpp"
     "${LAYER_SHELL_SOURCE}"
     "${LINUX_DMABUF_SOURCE}"
@@ -98,6 +102,9 @@ target_link_libraries(qsov-wallpaper-native
         PkgConfig::SWSCALE
         PkgConfig::GBM
         PkgConfig::LIBDRM
+        PkgConfig::EGL
+        PkgConfig::GLESV2
+        PkgConfig::LIBPLACEBO
 )
 
 set_target_properties(qsov-wallpaper-native PROPERTIES
