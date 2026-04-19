@@ -4,13 +4,12 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::os::unix::process::CommandExt;
+use std::path::PathBuf;
 
 use nix::sys::signal::Signal;
 use thiserror::Error;
-use tokio::process::Command;
-use tracing::{info, warn};
+use tracing::info;
 
 #[derive(Debug, Error)]
 enum MainError {
@@ -20,6 +19,8 @@ enum MainError {
     Pdeathsig(#[from] nix::Error),
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("native wallpaper renderer binary not found")]
+    NativeBinaryMissing,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -27,70 +28,16 @@ async fn main() -> Result<(), MainError> {
     init_tracing()?;
     nix::sys::prctl::set_pdeathsig(Signal::SIGTERM)?;
 
-    let shell_path = wallpaper_shell_path();
-    let import_path = wallpaper_qml_import_path(&shell_path);
+    let binary = native_renderer_path()?;
 
-    info!(path = %shell_path.display(), "wallpaper renderer supervisor started");
+    info!(path = %binary.display(), "execing native wallpaper renderer");
 
-    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
-
-    loop {
-        let mut command = Command::new("qs");
-        command.arg("-p").arg(&shell_path);
-        command.env("QSG_RHI_BACKEND", "opengl");
-        command.env("LC_NUMERIC", "C");
-        if let Some(value) = &import_path {
-            command.env("QML_IMPORT_PATH", value);
-        }
-        if let Ok(socket) = std::env::var("QSOV_SOCKET") {
-            command.env("QSOV_SOCKET", socket);
-        }
-
-        let mut child = match command.spawn() {
-            Ok(child) => child,
-            Err(err) => {
-                warn!(error = %err, "failed to spawn wallpaper quickshell process");
-                tokio::time::sleep(Duration::from_secs(2)).await;
-                continue;
-            }
-        };
-
-        let pid = child.id().unwrap_or_default();
-        info!(pid, "spawned wallpaper quickshell process");
-
-        let should_exit = tokio::select! {
-            _ = sigterm.recv() => {
-                info!("received SIGTERM, shutting down wallpaper quickshell process");
-                if let Err(err) = child.start_kill() {
-                    warn!(error = %err, "failed to terminate wallpaper quickshell child");
-                }
-                true
-            }
-            result = child.wait() => {
-                match result {
-                    Ok(status) if status.success() => {
-                        warn!("wallpaper quickshell child exited cleanly; restarting");
-                    }
-                    Ok(status) => {
-                        warn!(status = %status, "wallpaper quickshell child exited with failure");
-                    }
-                    Err(err) => {
-                        warn!(error = %err, "failed while waiting for wallpaper quickshell child");
-                    }
-                }
-                false
-            }
-        };
-
-        if should_exit {
-            break;
-        }
-
-        tokio::time::sleep(Duration::from_secs(1)).await;
+    let mut command = std::process::Command::new(&binary);
+    if let Ok(socket) = std::env::var("QSOV_SOCKET") {
+        command.env("QSOV_SOCKET", socket);
     }
 
-    info!("wallpaper renderer supervisor stopped");
-    Ok(())
+    Err(command.exec().into())
 }
 
 fn init_tracing() -> Result<(), MainError> {
@@ -104,54 +51,36 @@ fn init_tracing() -> Result<(), MainError> {
     Ok(())
 }
 
-fn wallpaper_shell_path() -> PathBuf {
-    if let Ok(path) = std::env::var("QSOV_WALLPAPER_SHELL") {
-        return PathBuf::from(path);
+fn native_renderer_path() -> Result<PathBuf, MainError> {
+    if let Ok(path) = std::env::var("QSOV_WALLPAPER_NATIVE") {
+        return Ok(PathBuf::from(path));
     }
 
-    let config_root = if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
-        PathBuf::from(xdg_config)
-    } else if let Some(home) = dirs::home_dir() {
-        home.join(".config")
-    } else {
-        PathBuf::from("$HOME/.config")
-    };
-
-    config_root
-        .join("quickshell")
-        .join("quicksov")
-        .join("wallpaper-shell.qml")
-}
-
-fn wallpaper_qml_import_path(shell_path: &Path) -> Option<String> {
-    let mut paths = Vec::<String>::new();
-
-    if let Ok(existing) = std::env::var("QML_IMPORT_PATH") {
-        if !existing.is_empty() {
-            paths.push(existing);
-        }
-    }
-
-    if let Some(shell_dir) = shell_path.parent() {
-        paths.insert(0, shell_dir.to_string_lossy().into_owned());
-    }
-
+    let mut candidates = Vec::<PathBuf>::new();
     if let Ok(exe) = std::env::current_exe() {
-        if let Some(target_dir) = exe.parent().and_then(Path::parent) {
-            let maybe_build_qml = target_dir
-                .parent()
-                .map(|repo| repo.join(".build").join("qml"));
-            if let Some(build_qml) = maybe_build_qml {
-                if build_qml.exists() {
-                    paths.insert(0, build_qml.to_string_lossy().into_owned());
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("qsov-wallpaper-native"));
+            if let Some(target_dir) = dir.parent() {
+                if let Some(repo_root) = target_dir.parent() {
+                    candidates.push(
+                        repo_root
+                            .join(".build")
+                            .join("native")
+                            .join("wallpaper_native")
+                            .join("qsov-wallpaper-native"),
+                    );
                 }
             }
         }
     }
 
-    if paths.is_empty() {
-        None
-    } else {
-        Some(paths.join(":"))
+    candidates.push(PathBuf::from("qsov-wallpaper-native"));
+
+    for candidate in candidates {
+        if candidate.exists() {
+            return Ok(candidate);
+        }
     }
+
+    Err(MainError::NativeBinaryMissing)
 }
