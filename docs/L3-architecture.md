@@ -412,7 +412,7 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
 ├── daemon.toml
 ├── design-tokens.toml
 ├── shell.qml                       # qs 入口
-├── wallpaper-shell.qml             # 独立 wallpaper renderer 入口
+├── wallpaper-shell.qml             # legacy QML wallpaper entry, native path 不再使用
 ├── Theme.qml                       # singleton, 从 daemon 拉 tokens
 ├── ipc/
 │   ├── Client.qml                  # IPC client, 管理连接
@@ -432,8 +432,7 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
 ├── desktop/                        # 非 bar 的桌面 layer-shell surface
 │   ├── WallpaperLayer.qml
 │   └── PowerDock.qml
-├── Quicksov/
-│   └── WallpaperFfmpeg/           # Qt6 native QML module, 由 build script 部署
+├── Quicksov/                       # legacy QML native module install target
 ├── bars/
 │   ├── MainBar.qml                 # 主屏 top bar
 │   └── AuxBar.qml                  # 副屏 auto-hide left bar
@@ -462,7 +461,7 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
     └── phosphor/
 ```
 
-开发时主 shell 使用 `quickshell --config quicksov`，qs 从 `~/.config/quickshell/quicksov/` 读 `shell.qml`。wallpaper 由 daemon 启动 `qsov-wallpaperd`，再由它启动 `qs -p ~/.config/quickshell/quicksov/wallpaper-shell.qml`。
+开发时主 shell 使用 `quickshell --config quicksov`，qs 从 `~/.config/quickshell/quicksov/` 读 `shell.qml`。wallpaper 由 daemon 启动 `qsov-wallpaperd`，该 binary 会 `exec` 到 `.build/native/wallpaper_native/qsov-wallpaper-native` 或同目录 `qsov-wallpaper-native`，不再启动 Quickshell/QML wallpaper shell。
 
 ## 9. 开发仓库目录
 
@@ -471,7 +470,7 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
 ├── Cargo.toml                      # Rust crate: qsovd + qsov-wallpaperd
 ├── src/                            # daemon service 实现与 binary entrypoints
 │   └── bin/
-│       └── qsov-wallpaperd.rs      # 专用 wallpaper renderer supervisor
+│       └── qsov-wallpaperd.rs      # native wallpaper renderer launcher
 ├── shell/                          # QML 源码, 对应运行时的 qs 部分
 │   ├── shell.qml
 │   ├── wallpaper-shell.qml
@@ -484,7 +483,8 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
 │   ├── widgets/
 │   └── overlays/
 ├── native/
-│   └── wallpaper_ffmpeg/           # Qt6 C++ / FFmpeg plugin
+│   ├── wallpaper_ffmpeg/           # reusable Qt6 C++ / FFmpeg decoder
+│   └── wallpaper_native/           # Wayland layer-shell native renderer
 ├── config/                         # 配置模板
 │   ├── daemon.toml.example
 │   └── design-tokens.toml

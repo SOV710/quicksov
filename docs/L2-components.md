@@ -25,22 +25,22 @@
 
 | 属性 | 值 |
 |---|---|
-| 位置 | 独立 wallpaper shell 进程中，每个 output 一个独立 background layer-shell window |
-| 数据源 | daemon `wallpaper` service（目录扫描 + `source/view` 状态）；独立 wallpaper shell 只负责渲染 |
+| 位置 | `qsov-wallpaperd` 原生 renderer 进程中，每个 output 一个独立 background layer-shell surface |
+| 数据源 | daemon `wallpaper` service（目录扫描 + `source/view` 状态）；renderer 只消费协议快照并呈现 |
 | 默认目录 | `$HOME/.config/quicksov/wallpapers` |
 | 配置覆盖 | `daemon.toml.[services.wallpaper].directory` |
 | 多屏策略 | 每个 output 通过 `views.<output>` 绑定一个 source；多个 output 可复用同一 source，也可各自使用不同 source |
-| Layer | `WlrLayer.Background`，`ExclusionMode.Ignore`，全屏锚定，不参与输入 |
-| 静态壁纸 | `Image.PreserveAspectCrop`，按屏幕尺寸解码 |
-| 视频壁纸 | 独立 wallpaper shell 内使用 FFmpeg 原生 QML plugin；当前实现为每个 output 一个独立 controller，解码后上传为 `QImage` texture |
+| Layer | `zwlr_layer_shell_v1.background`，exclusive zone `-1`，全屏锚定，空 input region |
+| 静态壁纸 | Qt `QImageReader` 解码，CPU `PreserveAspectCrop` 合成到 wl_shm buffer |
+| 视频壁纸 | 原生 renderer 复用 FFmpeg `WallpaperVideo` decoder；按 source 共享解码，多 output 只做各自裁切/合成 |
 | 切换动画 | 旧画面 snapshot overlay + fade，默认 `fade 320ms` |
-| 失败回退 | 无可渲染图片或目录不可用时，回退到 `Theme.bgCanvas` 纯色背景 |
+| 失败回退 | 无可渲染图片或目录不可用时，提交纯黑/空背景，不阻塞其它桌面组件 |
 | 输出裁切 | `views.<output>.crop = { x, y, width, height }`，normalized 0..1，便于双屏拼接同一视频 |
 | audio 配置 | `daemon.toml.[services.wallpaper].video_audio` 控制视频是否放音，默认 false |
 
 **niri 约束**：
 - wallpaper 正确路径是 layer-shell `background` layer，而不是普通窗口
-- output 生命周期由 wallpaper shell 内的 `Quickshell.screens` 驱动
+- output 生命周期由 renderer 的 `wl_registry` / `wl_output` 驱动
 - wallpaper 状态由 daemon 统一归约，renderer 只消费 `wallpaper` topic
 - 若希望 wallpaper 固定在 overview/backdrop 中而非随 workspace 缩放，可在 niri config 中手动添加：
 
