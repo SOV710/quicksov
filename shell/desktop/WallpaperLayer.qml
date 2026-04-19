@@ -42,6 +42,13 @@ Scope {
                 anchors.fill: parent
                 clip: true
 
+                WallpaperVideo {
+                    id: videoController
+                    debugName: wallpaperWindow.screen && wallpaperWindow.screen.name
+                               ? wallpaperWindow.screen.name
+                               : "unknown"
+                }
+
                 property string liveKind: ""
                 property string liveSource: ""
                 property string overlaySource: ""
@@ -91,11 +98,11 @@ Scope {
                     root.liveKind = kind;
                     root.liveSource = resolvedSource;
                     if (kind === "video") {
-                        WallpaperVideo.muted = !Wallpaper.videoAudio;
-                        WallpaperVideo.ensureInitialized();
-                        WallpaperVideo.source = resolvedSource;
+                        videoController.muted = !Wallpaper.videoAudio;
+                        videoController.ensureInitialized();
+                        videoController.source = resolvedSource;
                     } else {
-                        WallpaperVideo.source = "";
+                        videoController.source = "";
                     }
                 }
 
@@ -240,12 +247,12 @@ Scope {
 
                     Item {
                         property bool contentReady: videoItem.ready
-                        property bool contentError: WallpaperVideo.status === "error"
+                        property bool contentError: videoController.status === "error"
 
                         WallpaperVideoItem {
                             id: videoItem
                             anchors.fill: parent
-                            controller: WallpaperVideo
+                            controller: videoController
                         }
                     }
                 }
@@ -253,7 +260,7 @@ Scope {
                 Connections {
                     target: Wallpaper
                     function onVideoAudioChanged() {
-                        WallpaperVideo.muted = !Wallpaper.videoAudio;
+                        videoController.muted = !Wallpaper.videoAudio;
                     }
                 }
 

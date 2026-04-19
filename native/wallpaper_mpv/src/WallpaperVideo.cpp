@@ -8,9 +8,7 @@
 #include <cmath>
 
 #include <QGuiApplication>
-#include <QJSEngine>
 #include <QDebug>
-#include <QQmlEngine>
 #include <QOpenGLFunctions>
 #include <QQuickWindow>
 #include <QtGui/qguiapplication_platform.h>
@@ -31,18 +29,6 @@ QSize clampSize(const QSize &size) {
 
 } // namespace
 
-WallpaperVideo *WallpaperVideo::create(QQmlEngine *engine, QJSEngine *scriptEngine) {
-    Q_UNUSED(engine)
-    Q_UNUSED(scriptEngine)
-
-    static WallpaperVideo *instance = []() {
-        auto *object = new WallpaperVideo(qApp);
-        QQmlEngine::setObjectOwnership(object, QQmlEngine::CppOwnership);
-        return object;
-    }();
-    return instance;
-}
-
 WallpaperVideo::WallpaperVideo(QObject *parent)
     : QObject(parent) {
     m_initRetryTimer.setInterval(250);
@@ -50,7 +36,7 @@ WallpaperVideo::WallpaperVideo(QObject *parent)
     connect(&m_initRetryTimer, &QTimer::timeout, this, &WallpaperVideo::ensureGraphicsReady);
 
     ensureMpvCore();
-    qInfo().noquote() << "[wallpaper-video] singleton created";
+    qInfo().noquote() << logPrefix() << "controller created";
 }
 
 WallpaperVideo::~WallpaperVideo() {
@@ -78,7 +64,7 @@ void WallpaperVideo::setSource(const QUrl &source) {
     setReady(false);
     m_forceRender = true;
     emit sourceChanged();
-    qInfo().noquote() << "[wallpaper-video] source set:"
+    qInfo().noquote() << logPrefix() << "source set:"
                       << (m_source.isEmpty() ? QStringLiteral("<empty>") : m_source.toString());
 
     if (m_source.isEmpty()) {
@@ -109,7 +95,7 @@ void WallpaperVideo::setMuted(bool muted) {
 
     m_muted = muted;
     emit mutedChanged();
-    qInfo().noquote() << "[wallpaper-video] muted =" << m_muted;
+    qInfo().noquote() << logPrefix() << "muted =" << m_muted;
     applyAudioState();
 }
 
@@ -125,8 +111,22 @@ void WallpaperVideo::setVolume(qreal volume) {
 
     m_volume = clamped;
     emit volumeChanged();
-    qInfo().noquote() << "[wallpaper-video] volume =" << m_volume;
+    qInfo().noquote() << logPrefix() << "volume =" << m_volume;
     applyAudioState();
+}
+
+QString WallpaperVideo::debugName() const {
+    return m_debugName;
+}
+
+void WallpaperVideo::setDebugName(const QString &debugName) {
+    if (m_debugName == debugName) {
+        return;
+    }
+
+    m_debugName = debugName;
+    qInfo().noquote() << logPrefix() << "debug name assigned";
+    emit debugNameChanged();
 }
 
 bool WallpaperVideo::isReady() const {
@@ -139,6 +139,10 @@ QString WallpaperVideo::status() const {
 
 QString WallpaperVideo::errorString() const {
     return m_errorString;
+}
+
+QString WallpaperVideo::hwdecCurrent() const {
+    return m_hwdecCurrent;
 }
 
 QSize WallpaperVideo::videoSize() const {
@@ -204,7 +208,7 @@ void WallpaperVideo::updateShareContextHint(QOpenGLContext *context) {
     }
 
     m_shareContextHint = context;
-    qInfo().noquote() << "[wallpaper-video] received scene-graph share context hint";
+    qInfo().noquote() << logPrefix() << "received scene-graph share context hint" << context;
     ensureInitialized();
 }
 
@@ -226,7 +230,7 @@ void WallpaperVideo::ensureGraphicsReady() {
     }
     if (shareContext == nullptr) {
         if (!m_loggedWaitingForShareContext) {
-            qInfo().noquote() << "[wallpaper-video] waiting for share context";
+            qInfo().noquote() << logPrefix() << "waiting for share context";
             m_loggedWaitingForShareContext = true;
         }
         if (!m_initRetryTimer.isActive()) {
@@ -235,7 +239,7 @@ void WallpaperVideo::ensureGraphicsReady() {
         return;
     }
     if (m_loggedWaitingForShareContext) {
-        qInfo().noquote() << "[wallpaper-video] share context became available";
+        qInfo().noquote() << logPrefix() << "share context became available" << shareContext;
         m_loggedWaitingForShareContext = false;
     }
 
@@ -252,7 +256,7 @@ void WallpaperVideo::ensureGraphicsReady() {
             return;
         }
         m_offscreenSurface = surface;
-        qInfo().noquote() << "[wallpaper-video] offscreen surface created";
+        qInfo().noquote() << logPrefix() << "offscreen surface created";
     }
 
     if (m_offscreenContext == nullptr) {
@@ -266,7 +270,7 @@ void WallpaperVideo::ensureGraphicsReady() {
             return;
         }
         m_offscreenContext = context;
-        qInfo().noquote() << "[wallpaper-video] offscreen OpenGL context created";
+        qInfo().noquote() << logPrefix() << "offscreen OpenGL context created";
     }
 
     if (m_mpv.renderContext() == nullptr) {
@@ -289,7 +293,7 @@ void WallpaperVideo::ensureGraphicsReady() {
         m_mpv.setRenderUpdateCallback(&WallpaperVideo::onRenderUpdate, this);
         m_offscreenContext->doneCurrent();
         renderContextCreated = true;
-        qInfo().noquote() << "[wallpaper-video] mpv render context created";
+        qInfo().noquote() << logPrefix() << "mpv render context created";
     }
 
     if (renderContextCreated && !m_source.isEmpty()) {
@@ -312,7 +316,7 @@ void WallpaperVideo::drainEvents() {
         case MPV_EVENT_LOG_MESSAGE: {
             const auto *message = static_cast<mpv_event_log_message *>(event->data);
             if (message != nullptr) {
-                qInfo().noquote() << "[wallpaper-video][mpv]"
+                qInfo().noquote() << logPrefix() << "[mpv]"
                                   << QString::fromUtf8(message->level)
                                   << QString::fromUtf8(message->prefix) + ":"
                                   << QString::fromUtf8(message->text).trimmed();
@@ -325,7 +329,7 @@ void WallpaperVideo::drainEvents() {
                 setStatus(QStringLiteral("loading"));
                 setErrorString(QString());
             }
-            qInfo().noquote() << "[wallpaper-video] mpv file loaded";
+            qInfo().noquote() << logPrefix() << "mpv file loaded";
             applyAudioState();
             scheduleRender();
             break;
@@ -334,7 +338,7 @@ void WallpaperVideo::drainEvents() {
             if (endFile != nullptr && endFile->reason == MPV_END_FILE_REASON_ERROR) {
                 setStatus(QStringLiteral("error"));
                 setErrorString(mpvEventErrorString(endFile->error));
-                qWarning().noquote() << "[wallpaper-video] end-file error:"
+                qWarning().noquote() << logPrefix() << "end-file error:"
                                      << mpvEventErrorString(endFile->error);
                 if (!m_hasFrame) {
                     setReady(false);
@@ -344,18 +348,30 @@ void WallpaperVideo::drainEvents() {
         }
         case MPV_EVENT_PROPERTY_CHANGE: {
             const auto *property = static_cast<mpv_event_property *>(event->data);
-            if (property == nullptr || property->format != MPV_FORMAT_INT64 || property->data == nullptr) {
+            if (property == nullptr) {
                 break;
             }
 
-            const auto value = *static_cast<int64_t *>(property->data);
             const QString name = QString::fromUtf8(property->name);
-            if (name == QLatin1String("dwidth")) {
+            if (name == QLatin1String("dwidth")
+                && property->format == MPV_FORMAT_INT64 && property->data != nullptr) {
+                const auto value = *static_cast<int64_t *>(property->data);
                 m_observedDwidth = value;
                 updateVideoSize();
-            } else if (name == QLatin1String("dheight")) {
+            } else if (name == QLatin1String("dheight")
+                       && property->format == MPV_FORMAT_INT64 && property->data != nullptr) {
+                const auto value = *static_cast<int64_t *>(property->data);
                 m_observedDheight = value;
                 updateVideoSize();
+            } else if (name == QLatin1String("hwdec-current")) {
+                QString value;
+                if (property->format == MPV_FORMAT_STRING && property->data != nullptr) {
+                    const char *raw = *static_cast<char **>(property->data);
+                    if (raw != nullptr) {
+                        value = QString::fromUtf8(raw);
+                    }
+                }
+                setHwdecCurrent(value);
             }
             break;
         }
@@ -437,7 +453,7 @@ void WallpaperVideo::renderFrame() {
         setStatus(QStringLiteral("ready"));
     }
     if (!m_loggedFirstFrame) {
-        qInfo().noquote() << "[wallpaper-video] first frame rendered"
+        qInfo().noquote() << logPrefix() << "first frame rendered"
                           << "frameSize=" << target
                           << "videoSize=" << m_videoSizeValue;
         m_loggedFirstFrame = true;
@@ -474,8 +490,9 @@ bool WallpaperVideo::ensureMpvCore() {
     m_mpv.setWakeupCallback(&WallpaperVideo::onWakeup, this);
     mpv_observe_property(m_mpv.handle(), 1, "dwidth", MPV_FORMAT_INT64);
     mpv_observe_property(m_mpv.handle(), 2, "dheight", MPV_FORMAT_INT64);
+    mpv_observe_property(m_mpv.handle(), 3, "hwdec-current", MPV_FORMAT_STRING);
     applyAudioState();
-    qInfo().noquote() << "[wallpaper-video] mpv core initialized";
+    qInfo().noquote() << logPrefix() << "mpv core initialized";
     return true;
 }
 
@@ -501,7 +518,7 @@ void WallpaperVideo::loadCurrentSource() {
         setErrorString(error);
         return;
     }
-    qInfo().noquote() << "[wallpaper-video] loadfile issued:" << localSource;
+    qInfo().noquote() << logPrefix() << "loadfile issued:" << localSource;
 
     applyAudioState();
 }
@@ -533,7 +550,7 @@ void WallpaperVideo::updateVideoSize() {
 
     m_videoSizeValue = nextSize;
     m_forceRender = true;
-    qInfo().noquote() << "[wallpaper-video] video size changed to" << m_videoSizeValue;
+    qInfo().noquote() << logPrefix() << "video size changed to" << m_videoSizeValue;
     emit videoSizeChanged();
     scheduleRender();
 }
@@ -584,7 +601,7 @@ void WallpaperVideo::setReady(bool ready) {
     }
 
     m_ready = ready;
-    qInfo().noquote() << "[wallpaper-video] ready =" << m_ready;
+    qInfo().noquote() << logPrefix() << "ready =" << m_ready;
     emit readyChanged();
 }
 
@@ -594,7 +611,7 @@ void WallpaperVideo::setStatus(const QString &status) {
     }
 
     m_status = status;
-    qInfo().noquote() << "[wallpaper-video] status =" << m_status;
+    qInfo().noquote() << logPrefix() << "status =" << m_status;
     emit statusChanged();
 }
 
@@ -605,9 +622,20 @@ void WallpaperVideo::setErrorString(const QString &errorString) {
 
     m_errorString = errorString;
     if (!m_errorString.isEmpty()) {
-        qWarning().noquote() << "[wallpaper-video] error =" << m_errorString;
+        qWarning().noquote() << logPrefix() << "error =" << m_errorString;
     }
     emit errorStringChanged();
+}
+
+void WallpaperVideo::setHwdecCurrent(const QString &hwdecCurrent) {
+    if (m_hwdecCurrent == hwdecCurrent) {
+        return;
+    }
+
+    m_hwdecCurrent = hwdecCurrent;
+    qInfo().noquote() << logPrefix() << "hwdec-current ="
+                      << (m_hwdecCurrent.isEmpty() ? QStringLiteral("<none>") : m_hwdecCurrent);
+    emit hwdecCurrentChanged();
 }
 
 void WallpaperVideo::clearVideoSize() {
@@ -617,4 +645,11 @@ void WallpaperVideo::clearVideoSize() {
         m_videoSizeValue = QSize();
         emit videoSizeChanged();
     }
+}
+
+QString WallpaperVideo::logPrefix() const {
+    if (m_debugName.isEmpty()) {
+        return QStringLiteral("[wallpaper-video]");
+    }
+    return QStringLiteral("[wallpaper-video %1]").arg(m_debugName);
 }

@@ -25,14 +25,15 @@ class QQmlEngine;
 class WallpaperVideo : public QObject {
     Q_OBJECT
     QML_NAMED_ELEMENT(WallpaperVideo)
-    QML_SINGLETON
 
     Q_PROPERTY(QUrl source READ source WRITE setSource NOTIFY sourceChanged FINAL)
     Q_PROPERTY(bool muted READ muted WRITE setMuted NOTIFY mutedChanged FINAL)
     Q_PROPERTY(qreal volume READ volume WRITE setVolume NOTIFY volumeChanged FINAL)
+    Q_PROPERTY(QString debugName READ debugName WRITE setDebugName NOTIFY debugNameChanged FINAL)
     Q_PROPERTY(bool ready READ isReady NOTIFY readyChanged FINAL)
     Q_PROPERTY(QString status READ status NOTIFY statusChanged FINAL)
     Q_PROPERTY(QString errorString READ errorString NOTIFY errorStringChanged FINAL)
+    Q_PROPERTY(QString hwdecCurrent READ hwdecCurrent NOTIFY hwdecCurrentChanged FINAL)
     Q_PROPERTY(QSize videoSize READ videoSize NOTIFY videoSizeChanged FINAL)
     Q_PROPERTY(QSize frameSize READ frameSize NOTIFY frameSizeChanged FINAL)
 
@@ -43,8 +44,6 @@ public:
         quint64 serial = 0;
         bool hasFrame = false;
     };
-
-    static WallpaperVideo *create(QQmlEngine *engine, QJSEngine *scriptEngine);
 
     explicit WallpaperVideo(QObject *parent = nullptr);
     ~WallpaperVideo() override;
@@ -58,9 +57,13 @@ public:
     [[nodiscard]] qreal volume() const;
     void setVolume(qreal volume);
 
+    [[nodiscard]] QString debugName() const;
+    void setDebugName(const QString &debugName);
+
     [[nodiscard]] bool isReady() const;
     [[nodiscard]] QString status() const;
     [[nodiscard]] QString errorString() const;
+    [[nodiscard]] QString hwdecCurrent() const;
     [[nodiscard]] QSize videoSize() const;
     [[nodiscard]] QSize frameSize() const;
 
@@ -75,9 +78,11 @@ signals:
     void sourceChanged();
     void mutedChanged();
     void volumeChanged();
+    void debugNameChanged();
     void readyChanged();
     void statusChanged();
     void errorStringChanged();
+    void hwdecCurrentChanged();
     void videoSizeChanged();
     void frameSizeChanged();
     void frameAvailable();
@@ -100,7 +105,9 @@ private:
     void setReady(bool ready);
     void setStatus(const QString &status);
     void setErrorString(const QString &errorString);
+    void setHwdecCurrent(const QString &hwdecCurrent);
     void clearVideoSize();
+    [[nodiscard]] QString logPrefix() const;
 
     mutable QMutex m_frameMutex;
     MpvCore m_mpv;
@@ -112,9 +119,11 @@ private:
     QUrl m_source;
     bool m_muted = true;
     qreal m_volume = 100.0;
+    QString m_debugName;
     bool m_ready = false;
     QString m_status = QStringLiteral("idle");
     QString m_errorString;
+    QString m_hwdecCurrent;
     QSize m_videoSizeValue;
     QSize m_frameSizeValue;
     bool m_renderScheduled = false;

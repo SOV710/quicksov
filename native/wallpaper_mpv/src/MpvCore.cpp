@@ -64,6 +64,7 @@ bool MpvCore::initialize(QString *error) {
         {"terminal", "no"},
         {"config", "no"},
         {"vo", "libmpv"},
+        {"hwdec", "auto-safe"},
         {"loop-file", "inf"},
         {"keep-open", "yes"},
         {"idle", "yes"},
