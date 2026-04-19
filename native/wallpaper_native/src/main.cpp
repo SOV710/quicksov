@@ -25,6 +25,7 @@
 #include <QHash>
 #include <QImage>
 #include <QImageReader>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
@@ -32,6 +33,7 @@
 #include <QPainter>
 #include <QPointer>
 #include <QSocketNotifier>
+#include <QStringList>
 #include <QTimer>
 #include <QUrl>
 
@@ -42,6 +44,7 @@ extern "C" {
 #define namespace namespace_
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 #undef namespace
+#include "linux-dmabuf-v1-client-protocol.h"
 
 namespace {
 
@@ -65,6 +68,14 @@ QString defaultSocketPath() {
 
 double clamp01(double value) {
     return std::clamp(value, 0.0, 1.0);
+}
+
+QString normalizePresentBackend(QString backend) {
+    backend = backend.trimmed().toLower();
+    if (backend == QLatin1String("shm") || backend == QLatin1String("dmabuf")) {
+        return backend;
+    }
+    return QStringLiteral("auto");
 }
 
 QRectF clampRectToBounds(const QRectF &rect, const QRectF &bounds) {
@@ -108,6 +119,8 @@ struct SnapshotModel {
     QHash<QString, SourceSpec> sources;
     QHash<QString, ViewSpec> views;
     QString fallbackSource;
+    QStringList decodeBackendOrder;
+    QString presentBackend = QStringLiteral("auto");
     int transitionDurationMs = 0;
 };
 
@@ -204,6 +217,18 @@ SnapshotModel parseSnapshot(const QJsonObject &payload) {
     model.fallbackSource =
         payload.value(QStringLiteral("fallback_source")).toString();
 
+    const QJsonObject renderer = payload.value(QStringLiteral("renderer")).toObject();
+    const QJsonArray decodeBackendOrder =
+        renderer.value(QStringLiteral("decode_backend_order")).toArray();
+    model.presentBackend =
+        normalizePresentBackend(renderer.value(QStringLiteral("present_backend")).toString());
+    for (const QJsonValue &entry : decodeBackendOrder) {
+        const QString backend = entry.toString().trimmed().toLower();
+        if (!backend.isEmpty() && !model.decodeBackendOrder.contains(backend)) {
+            model.decodeBackendOrder.push_back(backend);
+        }
+    }
+
     const QJsonObject sources = payload.value(QStringLiteral("sources")).toObject();
     for (auto it = sources.begin(); it != sources.end(); ++it) {
         const QJsonObject source = it.value().toObject();
@@ -241,18 +266,32 @@ class SourceSession final : public QObject {
     Q_OBJECT
 
 public:
-    explicit SourceSession(const SourceSpec &spec, QObject *parent = nullptr)
+    struct StatsSnapshot {
+        QString id;
+        QString kind;
+        QString status;
+        QString hwdecCurrent;
+        QSize videoSize;
+        QSize frameSize;
+        quint64 decodedFrames = 0;
+        bool ready = false;
+    };
+
+    explicit SourceSession(const SourceSpec &spec, const QStringList &decodeBackendOrder, QObject *parent = nullptr)
         : QObject(parent)
-        , m_spec(spec) {
+        , m_spec(spec)
+        , m_decodeBackendOrder(decodeBackendOrder) {
         if (m_spec.kind == QStringLiteral("video")) {
             auto *video = new WallpaperVideo(this);
             video->setDebugName(QStringLiteral("source:%1").arg(m_spec.id));
             video->setMuted(m_spec.mute);
             video->setLoopEnabled(m_spec.loopEnabled);
+            video->setPreferredHwdecOrder(m_decodeBackendOrder);
             connect(video, &WallpaperVideo::frameAvailable, this, &SourceSession::updated);
             connect(video, &WallpaperVideo::readyChanged, this, &SourceSession::updated);
             connect(video, &WallpaperVideo::statusChanged, this, &SourceSession::updated);
             connect(video, &WallpaperVideo::errorStringChanged, this, &SourceSession::updated);
+            connect(video, &WallpaperVideo::hwdecCurrentChanged, this, &SourceSession::updated);
             video->setSource(QUrl::fromLocalFile(m_spec.path));
             m_video = video;
         } else {
@@ -279,6 +318,35 @@ public:
             return m_video->isReady() && m_video->frameSnapshot().hasFrame;
         }
         return !m_image.isNull();
+    }
+
+    [[nodiscard]] bool matches(const SourceSpec &spec, const QStringList &decodeBackendOrder) const {
+        return m_spec.path == spec.path &&
+               m_spec.kind == spec.kind &&
+               m_spec.loopEnabled == spec.loopEnabled &&
+               m_spec.mute == spec.mute &&
+               m_decodeBackendOrder == decodeBackendOrder;
+    }
+
+    [[nodiscard]] StatsSnapshot statsSnapshot() const {
+        StatsSnapshot stats{
+            .id = m_spec.id,
+            .kind = m_spec.kind,
+            .status = m_image.isNull() ? QStringLiteral("empty") : QStringLiteral("ready"),
+            .ready = !m_image.isNull(),
+        };
+
+        if (m_video != nullptr) {
+            const auto videoStats = m_video->statsSnapshot();
+            stats.status = videoStats.status;
+            stats.hwdecCurrent = videoStats.hwdecCurrent;
+            stats.videoSize = videoStats.videoSize;
+            stats.frameSize = videoStats.frameSize;
+            stats.decodedFrames = videoStats.decodedFrames;
+            stats.ready = ready();
+        }
+
+        return stats;
     }
 
     void updateRenderHint(QObject *owner, const QSize &size) {
@@ -316,6 +384,7 @@ signals:
 
 private:
     SourceSpec m_spec;
+    QStringList m_decodeBackendOrder;
     QImage m_image;
     QPointer<WallpaperVideo> m_video;
 };
@@ -326,12 +395,27 @@ class OutputSurface final : public QObject {
     Q_OBJECT
 
 public:
+    struct StatsSnapshot {
+        QString outputName;
+        QString sourceId;
+        QString requestedPresentBackend;
+        QString resolvedPresentBackend;
+        QString presentBackendFallbackReason;
+        QSize logicalSize;
+        QSize pixelSize;
+        quint64 committedFrames = 0;
+        quint64 presentedFrames = 0;
+        quint64 bufferStarvedFrames = 0;
+        bool configured = false;
+    };
+
     OutputSurface(WaylandRenderer *renderer, uint32_t registryName, wl_output *output);
     ~OutputSurface() override;
 
     [[nodiscard]] uint32_t registryName() const;
     [[nodiscard]] QString outputName() const;
     [[nodiscard]] SourceSession *boundSource() const;
+    [[nodiscard]] StatsSnapshot statsSnapshot() const;
 
     void setScale(int scale);
     void setName(const QString &name);
@@ -388,6 +472,9 @@ private:
     zwlr_layer_surface_v1 *m_layerSurface = nullptr;
     wl_callback *m_frameCallback = nullptr;
     QString m_outputName;
+    QString m_requestedPresentBackend = QStringLiteral("auto");
+    QString m_resolvedPresentBackend = QStringLiteral("shm");
+    QString m_presentBackendFallbackReason;
     int m_scale = 1;
     QSize m_logicalSize;
     QSize m_pixelSize;
@@ -401,12 +488,21 @@ private:
     QElapsedTimer m_transitionClock;
     QTimer m_transitionTimer;
     int m_transitionDurationMs = 0;
+    quint64 m_committedFrames = 0;
+    quint64 m_presentedFrames = 0;
+    quint64 m_bufferStarvedFrames = 0;
 };
 
 class WaylandRenderer final : public QObject {
     Q_OBJECT
 
 public:
+    struct PresentBackendSelection {
+        QString requested;
+        QString resolved;
+        QString fallbackReason;
+    };
+
     explicit WaylandRenderer(QObject *parent = nullptr)
         : QObject(parent) {}
 
@@ -421,6 +517,10 @@ public:
         if (m_layerShell != nullptr) {
             zwlr_layer_shell_v1_destroy(m_layerShell);
             m_layerShell = nullptr;
+        }
+        if (m_linuxDmabuf != nullptr) {
+            zwp_linux_dmabuf_v1_destroy(m_linuxDmabuf);
+            m_linuxDmabuf = nullptr;
         }
         if (m_shm != nullptr) {
             wl_shm_destroy(m_shm);
@@ -496,8 +596,16 @@ public:
             wl_display_flush(m_display);
         });
 
+        m_telemetryTimer.setInterval(5000);
+        connect(&m_telemetryTimer, &QTimer::timeout, this, &WaylandRenderer::logTelemetry);
+        m_telemetryTimer.start();
+
         qInfo().noquote() << kLogPrefix << "wayland renderer initialized"
-                          << "outputs =" << static_cast<int>(m_outputs.size());
+                          << "outputs =" << static_cast<int>(m_outputs.size())
+                          << "dmabuf_advertised =" << m_dmabufAdvertised
+                          << "dmabuf_version =" << m_dmabufVersion
+                          << "dmabuf_formats =" << m_dmabufFormatCount
+                          << "dmabuf_modifiers =" << m_dmabufModifierCount;
         return true;
     }
 
@@ -507,16 +615,12 @@ public:
         for (const auto &[id, spec] : snapshot.sources.asKeyValueRange()) {
             auto it = m_sources.find(id);
             if (it != m_sources.end()) {
-                const SourceSpec &existing = it->second->spec();
-                if (existing.path == spec.path &&
-                    existing.kind == spec.kind &&
-                    existing.loopEnabled == spec.loopEnabled &&
-                    existing.mute == spec.mute) {
+                if (it->second->matches(spec, snapshot.decodeBackendOrder)) {
                     continue;
                 }
             }
 
-            auto session = std::make_shared<SourceSession>(spec);
+            auto session = std::make_shared<SourceSession>(spec, snapshot.decodeBackendOrder);
             connect(session.get(), &SourceSession::updated, this, [this, raw = session.get()]() {
                 onSourceUpdated(raw);
             });
@@ -546,6 +650,61 @@ public:
         return m_shm;
     }
 
+    [[nodiscard]] PresentBackendSelection resolvePresentBackend(const QString &requested) const {
+        const QString normalizedRequested = normalizePresentBackend(requested);
+        if (normalizedRequested == QLatin1String("shm")) {
+            return PresentBackendSelection{
+                .requested = normalizedRequested,
+                .resolved = QStringLiteral("shm"),
+            };
+        }
+
+        if (normalizedRequested == QLatin1String("dmabuf")) {
+            if (!m_dmabufAdvertised) {
+                return PresentBackendSelection{
+                    .requested = normalizedRequested,
+                    .resolved = QStringLiteral("shm"),
+                    .fallbackReason = QStringLiteral("dmabuf_not_advertised"),
+                };
+            }
+            return PresentBackendSelection{
+                .requested = normalizedRequested,
+                .resolved = QStringLiteral("shm"),
+                .fallbackReason = QStringLiteral("dmabuf_backend_unimplemented"),
+            };
+        }
+
+        if (m_dmabufAdvertised) {
+            return PresentBackendSelection{
+                .requested = normalizedRequested,
+                .resolved = QStringLiteral("shm"),
+                .fallbackReason = QStringLiteral("dmabuf_available_but_unimplemented"),
+            };
+        }
+
+        return PresentBackendSelection{
+            .requested = normalizedRequested,
+            .resolved = QStringLiteral("shm"),
+            .fallbackReason = QStringLiteral("dmabuf_not_advertised"),
+        };
+    }
+
+    [[nodiscard]] bool dmabufAdvertised() const {
+        return m_dmabufAdvertised;
+    }
+
+    [[nodiscard]] uint32_t dmabufVersion() const {
+        return m_dmabufVersion;
+    }
+
+    [[nodiscard]] quint64 dmabufFormatCount() const {
+        return m_dmabufFormatCount;
+    }
+
+    [[nodiscard]] quint64 dmabufModifierCount() const {
+        return m_dmabufModifierCount;
+    }
+
     zwlr_layer_shell_v1 *layerShell() const {
         return m_layerShell;
     }
@@ -566,6 +725,73 @@ signals:
     void fatalError(const QString &message);
 
 private:
+    void logTelemetry() {
+        qInfo().noquote() << kLogPrefix
+                          << "telemetry"
+                          << "sources =" << static_cast<int>(m_sources.size())
+                          << "outputs =" << static_cast<int>(m_outputs.size())
+                          << "requested_present_backend =" << m_snapshot.presentBackend
+                          << "dmabuf_advertised =" << m_dmabufAdvertised
+                          << "dmabuf_version =" << m_dmabufVersion
+                          << "dmabuf_formats =" << m_dmabufFormatCount
+                          << "dmabuf_modifiers =" << m_dmabufModifierCount;
+
+        constexpr double intervalSeconds = 5.0;
+
+        for (const auto &[id, source] : m_sources) {
+            const auto stats = source->statsSnapshot();
+            const quint64 previous = m_prevDecodedFrames.value(id, 0);
+            const quint64 delta = stats.decodedFrames - previous;
+            m_prevDecodedFrames.insert(id, stats.decodedFrames);
+
+            qInfo().noquote() << kLogPrefix
+                              << "source"
+                              << id
+                              << "kind =" << stats.kind
+                              << "ready =" << stats.ready
+                              << "status =" << stats.status
+                              << "hwdec =" << (stats.hwdecCurrent.isEmpty() ? QStringLiteral("n/a") : stats.hwdecCurrent)
+                              << "decoded_total =" << stats.decodedFrames
+                              << "decoded_fps =" << QString::number(static_cast<double>(delta) / intervalSeconds, 'f', 1)
+                              << "video =" << QStringLiteral("%1x%2").arg(stats.videoSize.width()).arg(stats.videoSize.height())
+                              << "frame =" << QStringLiteral("%1x%2").arg(stats.frameSize.width()).arg(stats.frameSize.height());
+        }
+
+        for (const auto &[registryName, output] : m_outputs) {
+            const auto stats = output->statsSnapshot();
+            const QString key = stats.outputName.isEmpty()
+                ? QString::number(registryName)
+                : stats.outputName;
+            const quint64 previousCommitted = m_prevCommittedFrames.value(key, 0);
+            const quint64 previousPresented = m_prevPresentedFrames.value(key, 0);
+            const quint64 previousStarved = m_prevBufferStarvedFrames.value(key, 0);
+            const quint64 committedDelta = stats.committedFrames - previousCommitted;
+            const quint64 presentedDelta = stats.presentedFrames - previousPresented;
+            const quint64 starvedDelta = stats.bufferStarvedFrames - previousStarved;
+
+            m_prevCommittedFrames.insert(key, stats.committedFrames);
+            m_prevPresentedFrames.insert(key, stats.presentedFrames);
+            m_prevBufferStarvedFrames.insert(key, stats.bufferStarvedFrames);
+
+            qInfo().noquote() << kLogPrefix
+                              << "output"
+                              << (stats.outputName.isEmpty() ? QStringLiteral("<unnamed>") : stats.outputName)
+                              << "source =" << (stats.sourceId.isEmpty() ? QStringLiteral("<none>") : stats.sourceId)
+                              << "present_backend_requested =" << stats.requestedPresentBackend
+                              << "present_backend_resolved =" << stats.resolvedPresentBackend
+                              << "present_backend_fallback =" << (stats.presentBackendFallbackReason.isEmpty() ? QStringLiteral("none") : stats.presentBackendFallbackReason)
+                              << "configured =" << stats.configured
+                              << "logical =" << QStringLiteral("%1x%2").arg(stats.logicalSize.width()).arg(stats.logicalSize.height())
+                              << "pixel =" << QStringLiteral("%1x%2").arg(stats.pixelSize.width()).arg(stats.pixelSize.height())
+                              << "commit_total =" << stats.committedFrames
+                              << "commit_fps =" << QString::number(static_cast<double>(committedDelta) / intervalSeconds, 'f', 1)
+                              << "present_total =" << stats.presentedFrames
+                              << "present_fps =" << QString::number(static_cast<double>(presentedDelta) / intervalSeconds, 'f', 1)
+                              << "buffer_starved_total =" << stats.bufferStarvedFrames
+                              << "buffer_starved_5s =" << starvedDelta;
+        }
+    }
+
     static void registryGlobal(
         void *data,
         wl_registry *registry,
@@ -587,6 +813,20 @@ private:
             self->m_shm = static_cast<wl_shm *>(
                 wl_registry_bind(registry, name, &wl_shm_interface, 1)
             );
+            return;
+        }
+
+        if (iface == "zwp_linux_dmabuf_v1") {
+            self->m_linuxDmabuf = static_cast<zwp_linux_dmabuf_v1 *>(
+                wl_registry_bind(registry, name, &zwp_linux_dmabuf_v1_interface, std::min(version, 4U))
+            );
+            self->m_dmabufAdvertised = true;
+            self->m_dmabufVersion = std::min(version, 4U);
+            static constexpr zwp_linux_dmabuf_v1_listener dmabufListener = {
+                .format = &WaylandRenderer::dmabufFormat,
+                .modifier = &WaylandRenderer::dmabufModifier,
+            };
+            zwp_linux_dmabuf_v1_add_listener(self->m_linuxDmabuf, &dmabufListener, self);
             return;
         }
 
@@ -625,6 +865,22 @@ private:
         self->m_outputs.erase(name);
     }
 
+    static void dmabufFormat(void *data, zwp_linux_dmabuf_v1 *, uint32_t) {
+        auto *self = static_cast<WaylandRenderer *>(data);
+        self->m_dmabufFormatCount += 1;
+    }
+
+    static void dmabufModifier(
+        void *data,
+        zwp_linux_dmabuf_v1 *,
+        uint32_t,
+        uint32_t,
+        uint32_t
+    ) {
+        auto *self = static_cast<WaylandRenderer *>(data);
+        self->m_dmabufModifierCount += 1;
+    }
+
     void onSourceUpdated(SourceSession *source) {
         for (auto &entry : m_outputs) {
             if (entry.second->boundSource() == source) {
@@ -637,11 +893,21 @@ private:
     wl_registry *m_registry = nullptr;
     wl_compositor *m_compositor = nullptr;
     wl_shm *m_shm = nullptr;
+    zwp_linux_dmabuf_v1 *m_linuxDmabuf = nullptr;
     zwlr_layer_shell_v1 *m_layerShell = nullptr;
     QSocketNotifier *m_displayNotifier = nullptr;
+    QTimer m_telemetryTimer;
     SnapshotModel m_snapshot;
     std::map<uint32_t, std::unique_ptr<OutputSurface>> m_outputs;
     std::map<QString, std::shared_ptr<SourceSession>> m_sources;
+    QHash<QString, quint64> m_prevDecodedFrames;
+    QHash<QString, quint64> m_prevCommittedFrames;
+    QHash<QString, quint64> m_prevPresentedFrames;
+    QHash<QString, quint64> m_prevBufferStarvedFrames;
+    bool m_dmabufAdvertised = false;
+    uint32_t m_dmabufVersion = 0;
+    quint64 m_dmabufFormatCount = 0;
+    quint64 m_dmabufModifierCount = 0;
 };
 
 OutputSurface::OutputSurface(WaylandRenderer *renderer, uint32_t registryName, wl_output *output)
@@ -679,6 +945,22 @@ QString OutputSurface::outputName() const {
 
 SourceSession *OutputSurface::boundSource() const {
     return m_source.get();
+}
+
+OutputSurface::StatsSnapshot OutputSurface::statsSnapshot() const {
+    return StatsSnapshot{
+        .outputName = m_outputName,
+        .sourceId = (m_source != nullptr) ? m_source->spec().id : QString(),
+        .requestedPresentBackend = m_requestedPresentBackend,
+        .resolvedPresentBackend = m_resolvedPresentBackend,
+        .presentBackendFallbackReason = m_presentBackendFallbackReason,
+        .logicalSize = m_logicalSize,
+        .pixelSize = m_pixelSize,
+        .committedFrames = m_committedFrames,
+        .presentedFrames = m_presentedFrames,
+        .bufferStarvedFrames = m_bufferStarvedFrames,
+        .configured = m_configured,
+    };
 }
 
 void OutputSurface::setScale(int scale) {
@@ -777,6 +1059,11 @@ void OutputSurface::applySnapshot(
     const SnapshotModel &snapshot,
     const std::map<QString, std::shared_ptr<SourceSession>> &sources
 ) {
+    const auto presentBackend = m_renderer->resolvePresentBackend(snapshot.presentBackend);
+    m_requestedPresentBackend = presentBackend.requested;
+    m_resolvedPresentBackend = presentBackend.resolved;
+    m_presentBackendFallbackReason = presentBackend.fallbackReason;
+
     std::shared_ptr<SourceSession> nextSource;
     std::optional<CropRect> nextCrop;
 
@@ -808,6 +1095,7 @@ void OutputSurface::scheduleRender() {
 }
 
 void OutputSurface::onFrameCallbackDone() {
+    m_presentedFrames += 1;
     if (m_frameCallback != nullptr) {
         wl_callback_destroy(m_frameCallback);
         m_frameCallback = nullptr;
@@ -980,6 +1268,7 @@ OutputSurface::ShmBuffer *OutputSurface::nextFreeBuffer() {
             return &buffer;
         }
     }
+    m_bufferStarvedFrames += 1;
     return nullptr;
 }
 
@@ -1041,6 +1330,7 @@ void OutputSurface::render() {
     wl_surface_commit(m_surface);
     flush();
 
+    m_committedFrames += 1;
     m_lastPresentedIndex = static_cast<int>(buffer - m_buffers.data());
     m_dirty = false;
 }
