@@ -33,7 +33,7 @@
 | Layer | `zwlr_layer_shell_v1.background`，exclusive zone `-1`，全屏锚定，空 input region |
 | 静态壁纸 | Qt `QImageReader` 解码，CPU `PreserveAspectCrop` 合成到 renderer present buffer |
 | 视频壁纸 | 原生 renderer 复用 FFmpeg `WallpaperVideo` decoder；按 source 共享解码，多 output 只做各自裁切/合成，再提交到各自 present buffer |
-| decode backend | renderer 消费 `renderer.decode_backend_order`，按顺序尝试 `vaapi/cuda/vulkan/...`，失败自动回退 `software` |
+| decode backend | renderer 消费 `renderer.decode_backend_order`，按顺序尝试 `vaapi/cuda/vulkan/...`，失败自动回退 `software`；其中 `cuda` 现在会把选中的 NVIDIA DRM render node 映射到精确 CUDA ordinal，映射失败则跳过 `cuda` 而不是误用默认 GPU |
 | GPU 策略 | `render_device_policy` 默认 `same-as-compositor`；`decode_device_policy` 默认 `same-as-render`；`allow_cross_gpu = false` 时禁止解码/渲染主动跨 GPU 漂移 |
 | present backend | daemon 暴露 `renderer.present_backend = auto|shm|dmabuf`；native renderer 现已支持 GBM + `linux-dmabuf` 提交，`auto` 会优先走 `dmabuf`，失败时自动回退 `shm` |
 | 切换动画 | 旧画面 snapshot overlay + fade，默认 `fade 320ms` |

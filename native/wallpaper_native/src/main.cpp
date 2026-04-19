@@ -286,7 +286,7 @@ QVector<GpuDeviceInfo> discoverGpuDevices() {
     QVector<GpuDeviceInfo> devices;
     const QDir drmDir(QStringLiteral("/sys/class/drm"));
     const QStringList entries =
-        drmDir.entryList(QStringList{QStringLiteral("renderD*")}, QDir::System | QDir::NoDotAndDotDot, QDir::Name);
+        drmDir.entryList(QStringList{QStringLiteral("renderD*")}, QDir::AllEntries | QDir::NoDotAndDotDot, QDir::Name);
 
     for (const QString &entry : entries) {
         const QString nodePath = QStringLiteral("/dev/dri/%1").arg(entry);
@@ -317,31 +317,50 @@ QVector<GpuDeviceInfo> discoverGpuDevices() {
     return devices;
 }
 
+QString describeGpuDevices(const QVector<GpuDeviceInfo> &devices) {
+    QStringList parts;
+    parts.reserve(devices.size());
+    for (const auto &device : devices) {
+        parts.push_back(QStringLiteral("%1:%2:%3")
+            .arg(
+                device.nodePath,
+                gpuVendorString(device.vendor),
+                device.discrete ? QStringLiteral("discrete") : QStringLiteral("integrated")
+            ));
+    }
+    return parts.isEmpty() ? QStringLiteral("<none>") : parts.join(QLatin1Char(','));
+}
+
 QString scoreLabel(const GpuDeviceInfo &device) {
     return QStringLiteral("%1 %2 %3")
         .arg(device.nodePath, gpuVendorString(device.vendor), device.discrete ? QStringLiteral("discrete") : QStringLiteral("integrated"));
 }
 
-int scoreGpuForPolicy(
-    const GpuDeviceInfo &device,
-    const QString &policy,
-    const QString &preferredPath
-) {
-    int score = gpuVendorRank(device.vendor);
-    if (!preferredPath.isEmpty() && device.nodePath == preferredPath) {
-        score += 10'000;
+bool gpuMatchesPolicy(const GpuDeviceInfo &device, const QString &policy) {
+    if (policy == QLatin1String("nvidia")) {
+        return device.vendor == GpuVendor::Nvidia;
     }
-
+    if (policy == QLatin1String("amdgpu")) {
+        return device.vendor == GpuVendor::Amd;
+    }
+    if (policy == QLatin1String("intel")) {
+        return device.vendor == GpuVendor::Intel;
+    }
     if (policy == QLatin1String("prefer-discrete")) {
-        score += device.discrete ? 5'000 : 0;
-    } else if (policy == QLatin1String("prefer-integrated")) {
-        score += device.discrete ? 0 : 5'000;
-    } else if (policy == QLatin1String("nvidia")) {
-        score += device.vendor == GpuVendor::Nvidia ? 5'000 : 0;
-    } else if (policy == QLatin1String("amdgpu")) {
-        score += device.vendor == GpuVendor::Amd ? 5'000 : 0;
-    } else if (policy == QLatin1String("intel")) {
-        score += device.vendor == GpuVendor::Intel ? 5'000 : 0;
+        return device.discrete;
+    }
+    if (policy == QLatin1String("prefer-integrated")) {
+        return !device.discrete;
+    }
+    return true;
+}
+
+int scoreGpuForPolicy(const GpuDeviceInfo &device, const QString &policy, const QString &preferredPath) {
+    int score = gpuVendorRank(device.vendor);
+    if (policy == QLatin1String("auto") && !preferredPath.isEmpty() && device.nodePath == preferredPath) {
+        score += 10'000;
+    } else if (!preferredPath.isEmpty() && device.nodePath == preferredPath) {
+        score += 10;
     }
 
     return score;
@@ -356,18 +375,37 @@ QString selectGpuDevicePath(
         return QString();
     }
 
+    if (policy == QLatin1String("auto") && !preferredPath.isEmpty()) {
+        return preferredPath;
+    }
+
+    QVector<GpuDeviceInfo> candidates;
+    candidates.reserve(devices.size());
+    for (const auto &device : devices) {
+        if (gpuMatchesPolicy(device, policy)) {
+            candidates.push_back(device);
+        }
+    }
+
+    if (candidates.isEmpty()) {
+        if (!preferredPath.isEmpty()) {
+            return preferredPath;
+        }
+        candidates = devices;
+    }
+
     int bestIndex = -1;
     int bestScore = std::numeric_limits<int>::min();
-    for (int i = 0; i < devices.size(); ++i) {
-        const int score = scoreGpuForPolicy(devices[i], policy, preferredPath);
+    for (int i = 0; i < candidates.size(); ++i) {
+        const int score = scoreGpuForPolicy(candidates[i], policy, preferredPath);
         if (bestIndex < 0 || score > bestScore ||
-            (score == bestScore && devices[i].nodePath < devices[bestIndex].nodePath)) {
+            (score == bestScore && candidates[i].nodePath < candidates[bestIndex].nodePath)) {
             bestIndex = i;
             bestScore = score;
         }
     }
 
-    return bestIndex >= 0 ? devices[bestIndex].nodePath : QString();
+    return bestIndex >= 0 ? candidates[bestIndex].nodePath : QString();
 }
 
 std::optional<GpuDeviceInfo> gpuInfoForPath(const QVector<GpuDeviceInfo> &devices, const QString &path) {
@@ -1598,6 +1636,7 @@ public:
 
     void applySnapshot(const SnapshotModel &snapshot) {
         m_snapshot = snapshot;
+        m_hasSnapshot = true;
         const QVector<GpuDeviceInfo> devices = gpuDevices();
         const QString compositorPath = compositorDevicePath();
         const QString renderDevicePath = resolveRenderDevicePath(devices);
@@ -1637,6 +1676,7 @@ public:
                               << "compositor =" << describeGpuPath(devices, compositorPath)
                               << "render =" << describeGpuPath(devices, renderDevicePath)
                               << "decode =" << describeGpuPath(devices, decodeDevicePath)
+                              << "candidates =" << describeGpuDevices(devices)
                               << "decode_backends =" << decodeBackendOrder.join(QLatin1Char(','));
         }
 
@@ -1733,6 +1773,13 @@ public:
     }
 
     [[nodiscard]] bool ensureGbmDevice(QString *reason) {
+        if (!m_hasSnapshot) {
+            if (reason != nullptr) {
+                *reason = QStringLiteral("snapshot_not_ready");
+            }
+            return false;
+        }
+
         if (!m_dmabufAdvertised || m_linuxDmabuf == nullptr) {
             if (reason != nullptr) {
                 *reason = QStringLiteral("dmabuf_not_advertised");
@@ -2269,6 +2316,7 @@ private:
     uint32_t m_dmabufVersion = 0;
     quint64 m_dmabufFormatCount = 0;
     quint64 m_dmabufModifierCount = 0;
+    bool m_hasSnapshot = false;
     std::optional<dev_t> m_dmabufMainDevice;
     gbm_device *m_gbmDevice = nullptr;
     int m_gbmDeviceFd = -1;

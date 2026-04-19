@@ -105,6 +105,7 @@ target_link_libraries(qsov-wallpaper-native
         PkgConfig::EGL
         PkgConfig::GLESV2
         PkgConfig::LIBPLACEBO
+        ${CMAKE_DL_LIBS}
 )
 
 set_target_properties(qsov-wallpaper-native PROPERTIES

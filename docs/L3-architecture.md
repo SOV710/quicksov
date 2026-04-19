@@ -365,6 +365,9 @@ present_backend = "auto"
 present_mode = "mailbox"
 vsync = true
 
+# `cuda` hwdec 会将选中的 NVIDIA DRM render node 通过 PCI bus id
+# 映射到精确 CUDA device ordinal；若映射失败则跳过 cuda，避免误绑到默认 GPU。
+
 [services.wallpaper.sources.hero]
 path = "hero.mp4"
 kind = "video"

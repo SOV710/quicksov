@@ -58,4 +58,5 @@ target_link_libraries(quicksov_wallpaper_ffmpeg
         PkgConfig::AVCODEC
         PkgConfig::AVUTIL
         PkgConfig::SWSCALE
+        ${CMAKE_DL_LIBS}
 )
