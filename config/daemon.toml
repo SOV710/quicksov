@@ -47,15 +47,37 @@ log_level = "info"
 # shutdown = true
 
 # ---------------------------------------------------------------------------
-# Wallpaper — static wallpaper directory and transition config
-# The wallpaper service indexes both static images and video files, but the
-# current v1 renderer only displays static images.
+# Wallpaper — source/view wallpaper renderer config
+# The daemon indexes images/videos, supervises qsov-wallpaperd, and exposes
+# per-output view bindings. If no sources/views are configured, every output
+# falls back to the first indexed entry in the wallpaper directory.
 # ---------------------------------------------------------------------------
 
 # [services.wallpaper]
 # directory = "$HOME/.config/quicksov/wallpapers"
 # transition = "fade"
 # transition_duration_ms = 320
+# renderer = "quickshell-ffmpeg"
+# decode_backend_order = ["vaapi", "cuda", "software"]
+# present_mode = "mailbox"
+# vsync = true
+# video_audio = false
+#
+# [services.wallpaper.sources.hero]
+# path = "hero.mp4"
+# kind = "video"
+# loop = true
+# mute = true
+#
+# [services.wallpaper.views.HDMI-A-3]
+# source = "hero"
+# fit = "cover"
+# crop = { x = 0.0, y = 0.0, width = 0.5, height = 1.0 }
+#
+# [services.wallpaper.views.eDP-1]
+# source = "hero"
+# fit = "cover"
+# crop = { x = 0.5, y = 0.0, width = 0.5, height = 1.0 }
 
 # ---------------------------------------------------------------------------
 # Network — wpa_supplicant control socket path

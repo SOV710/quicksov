@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use std::collections::HashMap;
+
 use serde::Deserialize;
 
 /// Top-level daemon configuration, sourced from `daemon.toml`.
@@ -129,8 +131,42 @@ pub struct WallpaperConfig {
     pub directory: Option<String>,
     pub transition: Option<String>,
     pub transition_duration_ms: Option<u64>,
-    pub video_enabled: Option<bool>,
+    pub renderer: Option<String>,
+    pub decode_backend_order: Option<Vec<String>>,
+    pub present_mode: Option<String>,
+    pub vsync: Option<bool>,
     pub video_audio: Option<bool>,
+    #[serde(default)]
+    pub sources: HashMap<String, WallpaperSourceConfig>,
+    #[serde(default)]
+    pub views: HashMap<String, WallpaperViewConfig>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+pub struct WallpaperSourceConfig {
+    pub path: String,
+    pub kind: Option<String>,
+    #[serde(rename = "loop")]
+    pub loop_enabled: Option<bool>,
+    pub mute: Option<bool>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+pub struct WallpaperViewConfig {
+    pub source: String,
+    pub fit: Option<String>,
+    pub crop: Option<WallpaperCropConfig>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+pub struct WallpaperCropConfig {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
 }
 
 /// Configuration for the `net.link` / `net.wifi` services.

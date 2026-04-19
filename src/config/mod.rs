@@ -98,6 +98,9 @@ fn expand_config_paths(config: &mut Config) -> Result<(), ConfigError> {
         if let Some(directory) = wallpaper.directory.as_mut() {
             *directory = paths::expand_env_vars(directory)?;
         }
+        for source in wallpaper.sources.values_mut() {
+            source.path = paths::expand_env_vars(&source.path)?;
+        }
     }
 
     Ok(())
