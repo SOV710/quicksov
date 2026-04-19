@@ -5,7 +5,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
-import Quicksov.WallpaperMpv 1.0
+import Quicksov.WallpaperFfmpeg 1.0
 import ".."
 import "../services"
 
@@ -32,7 +32,6 @@ Scope {
             color: Theme.bgCanvas
             visible: true
 
-            // Keep the background fully click-through.
             mask: Region {
                 item: Item {}
             }
@@ -42,30 +41,20 @@ Scope {
                 anchors.fill: parent
                 clip: true
 
-                WallpaperVideo {
-                    id: videoController
-                    debugName: wallpaperWindow.screen && wallpaperWindow.screen.name
-                               ? wallpaperWindow.screen.name
-                               : "unknown"
-                }
-
-                property string liveKind: ""
-                property string liveSource: ""
-                property string overlaySource: ""
-                property real overlayOpacity: 0
-                property bool transitionPending: false
-                property int switchToken: 0
-
-                readonly property string targetKind: Wallpaper.hasRenderableImage
-                                                     ? "image"
-                                                     : (Wallpaper.hasRenderableVideo ? "video" : "")
-                readonly property string targetSource: root.targetKind !== ""
-                                                       && Wallpaper.hasCurrentEntry
-                                                       ? root.fileUrl(Wallpaper.currentPath)
-                                                       : ""
-                readonly property bool contentReady: liveSource === ""
-                                                     || (liveLoader.item && liveLoader.item.contentReady === true)
-                readonly property bool contentError: liveLoader.item && liveLoader.item.contentError === true
+                readonly property string screenName: wallpaperWindow.screen && wallpaperWindow.screen.name
+                                                     ? wallpaperWindow.screen.name
+                                                     : ""
+                readonly property var targetSourceData: Wallpaper.sourceForOutput(screenName)
+                readonly property string targetSourceId: targetSourceData && typeof targetSourceData.id === "string"
+                                                         ? targetSourceData.id
+                                                         : ""
+                readonly property string targetKind: targetSourceData && typeof targetSourceData.kind === "string"
+                                                     ? targetSourceData.kind
+                                                     : ""
+                readonly property string targetPath: targetSourceData && typeof targetSourceData.path === "string"
+                                                     ? targetSourceData.path
+                                                     : ""
+                readonly property var targetCrop: Wallpaper.cropForOutput(screenName)
                 readonly property real dpr: wallpaperWindow.screen && wallpaperWindow.screen.devicePixelRatio
                                             ? wallpaperWindow.screen.devicePixelRatio
                                             : 1
@@ -73,6 +62,15 @@ Scope {
                     Math.max(1, Math.round((wallpaperWindow.screen ? wallpaperWindow.screen.width : 1920) * dpr)),
                     Math.max(1, Math.round((wallpaperWindow.screen ? wallpaperWindow.screen.height : 1080) * dpr))
                 )
+                readonly property bool contentReady: liveLoader.item && liveLoader.item.contentReady === true
+                readonly property bool contentError: liveLoader.item && liveLoader.item.contentError === true
+
+                property var liveSourceData: null
+                property var liveCrop: null
+                property string overlaySource: ""
+                property real overlayOpacity: 0
+                property bool transitionPending: false
+                property int switchToken: 0
 
                 function fileUrl(path) {
                     if (!path)
@@ -82,112 +80,117 @@ Scope {
                     }).join("/");
                 }
 
-                function clearOverlay() {
-                    overlayFade.stop();
-                    root.overlaySource = "";
-                    root.overlayOpacity = 0;
-                    root.transitionPending = false;
+                function cropRect(crop) {
+                    if (!crop)
+                        return Qt.rect(0, 0, 0, 0);
+                    return Qt.rect(crop.x || 0, crop.y || 0, crop.width || 0, crop.height || 0);
                 }
 
-                function applyLiveContent(kind, source) {
-                    var resolvedSource = kind === "" ? "" : source;
-                    console.log("[wallpaper-layer] screen="
-                                + (wallpaperWindow.screen && wallpaperWindow.screen.name
-                                   ? wallpaperWindow.screen.name : "unknown")
-                                + " apply kind=" + kind + " source=" + resolvedSource);
-                    root.liveKind = kind;
-                    root.liveSource = resolvedSource;
-                    if (kind === "video") {
-                        videoController.muted = !Wallpaper.videoAudio;
-                        videoController.ensureInitialized();
-                        videoController.source = resolvedSource;
-                    } else {
-                        videoController.source = "";
-                    }
+                function sameCrop(left, right) {
+                    if (!left && !right)
+                        return true;
+                    if (!left || !right)
+                        return false;
+                    return left.x === right.x
+                        && left.y === right.y
+                        && left.width === right.width
+                        && left.height === right.height;
+                }
+
+                function clearOverlay() {
+                    overlayFade.stop();
+                    overlaySource = "";
+                    overlayOpacity = 0;
+                    transitionPending = false;
+                }
+
+                function applyLiveContent(sourceData, crop) {
+                    liveSourceData = sourceData || null;
+                    liveCrop = crop || null;
+                    if (sourceData && sourceData.kind === "video")
+                        WallpaperSessions.controllerForOutput(screenName);
                 }
 
                 function finishTransition() {
-                    if (!root.transitionPending)
+                    if (!transitionPending)
                         return;
-                    if (Wallpaper.transitionDurationMs <= 0 || root.overlaySource === "") {
-                        root.clearOverlay();
+                    if (Wallpaper.transitionDurationMs <= 0 || overlaySource === "") {
+                        clearOverlay();
                         return;
                     }
                     overlayFade.restart();
                 }
 
                 function syncTarget() {
-                    var nextKind = root.targetKind;
-                    var nextSource = root.targetSource;
-                    console.log("[wallpaper-layer] screen="
-                                + (wallpaperWindow.screen && wallpaperWindow.screen.name
-                                   ? wallpaperWindow.screen.name : "unknown")
-                                + " target kind=" + nextKind + " source=" + nextSource);
+                    var nextSource = targetSourceData;
+                    var sameSource = !!liveSourceData
+                        && !!nextSource
+                        && liveSourceData.id === nextSource.id
+                        && liveSourceData.path === nextSource.path
+                        && liveSourceData.kind === nextSource.kind
+                        && sameCrop(liveCrop, targetCrop);
 
-                    if (nextKind !== "" && nextSource === "")
+                    if (!liveSourceData && !nextSource)
+                        return;
+                    if (sameSource)
                         return;
 
-                    if (nextKind === root.liveKind && nextSource === root.liveSource)
-                        return;
+                    switchToken += 1;
+                    var token = switchToken;
 
-                    root.switchToken += 1;
-                    var token = root.switchToken;
-
-                    if (root.liveSource === "" || Wallpaper.transitionDurationMs <= 0) {
-                        root.clearOverlay();
-                        root.applyLiveContent(nextKind, nextSource);
+                    if (!liveSourceData || Wallpaper.transitionDurationMs <= 0) {
+                        clearOverlay();
+                        applyLiveContent(nextSource, targetCrop);
                         return;
                     }
 
                     root.grabToImage(function(result) {
-                        if (token !== root.switchToken)
+                        if (token !== switchToken)
                             return;
 
-                        root.overlaySource = result && result.url ? result.url : "";
-                        root.overlayOpacity = root.overlaySource !== "" ? 1 : 0;
-                        root.transitionPending = root.overlaySource !== "";
-                        root.applyLiveContent(nextKind, nextSource);
+                        overlaySource = result && result.url ? result.url : "";
+                        overlayOpacity = overlaySource !== "" ? 1 : 0;
+                        transitionPending = overlaySource !== "";
+                        applyLiveContent(nextSource, targetCrop);
 
-                        if (!root.transitionPending || root.contentReady || root.contentError)
-                            root.finishTransition();
+                        if (!transitionPending || contentReady || contentError)
+                            finishTransition();
                         else
                             overlayFailSafe.restart();
                     });
                 }
 
+                onTargetSourceIdChanged: syncTarget()
                 onTargetKindChanged: syncTarget()
-                onTargetSourceChanged: syncTarget()
+                onTargetPathChanged: syncTarget()
+                onTargetCropChanged: syncTarget()
                 onContentReadyChanged: {
-                    console.log("[wallpaper-layer] screen="
-                                + (wallpaperWindow.screen && wallpaperWindow.screen.name
-                                   ? wallpaperWindow.screen.name : "unknown")
-                                + " contentReady=" + contentReady
-                                + " contentError=" + contentError
-                                + " liveKind=" + liveKind);
                     if (contentReady || contentError)
-                        root.finishTransition();
+                        finishTransition();
                 }
                 onContentErrorChanged: {
-                    console.log("[wallpaper-layer] screen="
-                                + (wallpaperWindow.screen && wallpaperWindow.screen.name
-                                   ? wallpaperWindow.screen.name : "unknown")
-                                + " contentError changed to " + contentError
-                                + " liveKind=" + liveKind);
                     if (contentError)
-                        root.finishTransition();
+                        finishTransition();
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    color: Theme.bgCanvas
+                    visible: !liveLoader.active
                 }
 
                 Loader {
                     id: liveLoader
                     anchors.fill: parent
-                    active: root.liveKind !== ""
-                    sourceComponent: root.liveKind === "image"
+                    active: !!root.liveSourceData
+                    sourceComponent: root.liveSourceData && root.liveSourceData.kind === "image"
                                      ? imageWallpaperComponent
-                                     : (root.liveKind === "video" ? videoWallpaperComponent : null)
+                                     : (root.liveSourceData && root.liveSourceData.kind === "video"
+                                        ? videoWallpaperComponent
+                                        : null)
                 }
 
                 Image {
-                    id: overlaySourceImage
                     anchors.fill: parent
                     fillMode: Image.PreserveAspectCrop
                     asynchronous: true
@@ -209,9 +212,7 @@ Scope {
                     duration: Math.max(0, Wallpaper.transitionDurationMs)
                     easing.type: Easing.OutCubic
 
-                    onFinished: {
-                        root.clearOverlay();
-                    }
+                    onFinished: root.clearOverlay()
                 }
 
                 Timer {
@@ -225,13 +226,13 @@ Scope {
                     id: imageWallpaperComponent
 
                     Item {
-                        property bool contentReady: image.status === Image.Ready || root.liveSource === ""
+                        property bool contentReady: image.status === Image.Ready || !root.liveSourceData
                         property bool contentError: image.status === Image.Error
 
                         Image {
                             id: image
                             anchors.fill: parent
-                            source: root.liveSource
+                            source: root.liveSourceData ? root.fileUrl(root.liveSourceData.path) : ""
                             fillMode: Image.PreserveAspectCrop
                             asynchronous: true
                             cache: true
@@ -246,25 +247,22 @@ Scope {
                     id: videoWallpaperComponent
 
                     Item {
-                        property bool contentReady: videoItem.ready
-                        property bool contentError: videoController.status === "error"
+                        readonly property var controller: root.liveSourceData
+                                                          ? WallpaperSessions.controllerForOutput(root.screenName)
+                                                          : null
+                        property bool contentReady: controller ? controller.ready : false
+                        property bool contentError: controller ? controller.status === "error" : false
 
                         WallpaperVideoItem {
-                            id: videoItem
                             anchors.fill: parent
-                            controller: videoController
+                            controller: parent.controller
+                            cropRect: root.cropRect(root.liveCrop)
                         }
                     }
                 }
 
-                Connections {
-                    target: Wallpaper
-                    function onVideoAudioChanged() {
-                        videoController.muted = !Wallpaper.videoAudio;
-                    }
-                }
-
                 Component.onCompleted: syncTarget()
+                Component.onDestruction: WallpaperSessions.releaseOutput(screenName)
             }
         }
     }
