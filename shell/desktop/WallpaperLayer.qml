@@ -5,6 +5,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
+import Quicksov.WallpaperMpv 1.0
 import ".."
 import "../services"
 
@@ -41,14 +42,23 @@ Scope {
                 anchors.fill: parent
                 clip: true
 
-                property string activeSource: ""
-                property string stagedSource: ""
-                property real transitionProgress: 1
-                property bool stageReady: false
+                property string liveKind: ""
+                property string liveSource: ""
+                property string overlaySource: ""
+                property real overlayOpacity: 0
+                property bool transitionPending: false
+                property int switchToken: 0
 
-                readonly property string targetSource: Wallpaper.hasRenderableImage
-                                                      ? root.fileUrl(Wallpaper.currentPath)
-                                                      : ""
+                readonly property string targetKind: Wallpaper.hasRenderableImage
+                                                     ? "image"
+                                                     : (Wallpaper.hasRenderableVideo ? "video" : "")
+                readonly property string targetSource: root.targetKind !== ""
+                                                       && Wallpaper.hasCurrentEntry
+                                                       ? root.fileUrl(Wallpaper.currentPath)
+                                                       : ""
+                readonly property bool contentReady: liveSource === ""
+                                                     || (liveLoader.item && liveLoader.item.contentReady === true)
+                readonly property bool contentError: liveLoader.item && liveLoader.item.contentError === true
                 readonly property real dpr: wallpaperWindow.screen && wallpaperWindow.screen.devicePixelRatio
                                             ? wallpaperWindow.screen.devicePixelRatio
                                             : 1
@@ -65,117 +75,163 @@ Scope {
                     }).join("/");
                 }
 
+                function clearOverlay() {
+                    overlayFade.stop();
+                    root.overlaySource = "";
+                    root.overlayOpacity = 0;
+                    root.transitionPending = false;
+                }
+
+                function applyLiveContent(kind, source) {
+                    var resolvedSource = kind === "" ? "" : source;
+                    root.liveKind = kind;
+                    root.liveSource = resolvedSource;
+                    if (kind === "video") {
+                        WallpaperVideo.muted = !Wallpaper.videoAudio;
+                        WallpaperVideo.ensureInitialized();
+                        WallpaperVideo.source = resolvedSource;
+                    } else {
+                        WallpaperVideo.source = "";
+                    }
+                }
+
+                function finishTransition() {
+                    if (!root.transitionPending)
+                        return;
+                    if (Wallpaper.transitionDurationMs <= 0 || root.overlaySource === "") {
+                        root.clearOverlay();
+                        return;
+                    }
+                    overlayFade.restart();
+                }
+
                 function syncTarget() {
-                    var target = root.targetSource;
+                    var nextKind = root.targetKind;
+                    var nextSource = root.targetSource;
 
-                    if (crossfade.running)
-                        crossfade.stop();
+                    if (nextKind === root.liveKind && nextSource === root.liveSource)
+                        return;
 
-                    if (target === "") {
-                        root.activeSource = "";
-                        root.stagedSource = "";
-                        root.stageReady = false;
-                        root.transitionProgress = 1;
+                    root.switchToken += 1;
+                    var token = root.switchToken;
+
+                    if (root.liveSource === "" || Wallpaper.transitionDurationMs <= 0) {
+                        root.clearOverlay();
+                        root.applyLiveContent(nextKind, nextSource);
                         return;
                     }
 
-                    if (target === root.activeSource && root.stagedSource === "")
-                        return;
-
-                    if (root.activeSource === "" || Wallpaper.transitionDurationMs <= 0) {
-                        root.activeSource = target;
-                        root.stagedSource = "";
-                        root.stageReady = false;
-                        root.transitionProgress = 1;
-                        return;
-                    }
-
-                    root.stagedSource = target;
-                    root.stageReady = stagedImage.status === Image.Ready;
-                    root.transitionProgress = 0;
-
-                    if (root.stageReady)
-                        root.startCrossfade();
-                }
-
-                function startCrossfade() {
-                    if (root.stagedSource === "" || !root.stageReady)
-                        return;
-
-                    if (root.activeSource === "" || Wallpaper.transitionDurationMs <= 0) {
-                        root.activeSource = root.stagedSource;
-                        root.stagedSource = "";
-                        root.stageReady = false;
-                        root.transitionProgress = 1;
-                        return;
-                    }
-
-                    root.transitionProgress = 0;
-                    crossfade.start();
-                }
-
-                onTargetSourceChanged: syncTarget()
-
-                Image {
-                    id: activeImage
-                    anchors.fill: parent
-                    source: root.activeSource
-                    fillMode: Image.PreserveAspectCrop
-                    asynchronous: true
-                    cache: true
-                    smooth: true
-                    mipmap: true
-                    sourceSize: root.textureSize
-                    opacity: root.stagedSource !== ""
-                             ? (1 - root.transitionProgress)
-                             : (root.activeSource !== "" ? 1 : 0)
-                }
-
-                Image {
-                    id: stagedImage
-                    anchors.fill: parent
-                    source: root.stagedSource
-                    fillMode: Image.PreserveAspectCrop
-                    asynchronous: true
-                    cache: true
-                    smooth: true
-                    mipmap: true
-                    sourceSize: root.textureSize
-                    opacity: root.stagedSource !== "" ? root.transitionProgress : 0
-
-                    onStatusChanged: {
-                        if (root.stagedSource === "")
+                    root.grabToImage(function(result) {
+                        if (token !== root.switchToken)
                             return;
 
-                        if (status === Image.Ready) {
-                            root.stageReady = true;
-                            root.startCrossfade();
-                        } else if (status === Image.Error) {
-                            console.warn("[wallpaper] failed to load:", root.stagedSource);
-                            root.stagedSource = "";
-                            root.stageReady = false;
-                            root.transitionProgress = 1;
-                        }
-                    }
+                        root.overlaySource = result && result.url ? result.url : "";
+                        root.overlayOpacity = root.overlaySource !== "" ? 1 : 0;
+                        root.transitionPending = root.overlaySource !== "";
+                        root.applyLiveContent(nextKind, nextSource);
+
+                        if (!root.transitionPending || root.contentReady || root.contentError)
+                            root.finishTransition();
+                        else
+                            overlayFailSafe.restart();
+                    });
+                }
+
+                onTargetKindChanged: syncTarget()
+                onTargetSourceChanged: syncTarget()
+                onContentReadyChanged: {
+                    if (contentReady || contentError)
+                        root.finishTransition();
+                }
+                onContentErrorChanged: {
+                    if (contentError)
+                        root.finishTransition();
+                }
+
+                Loader {
+                    id: liveLoader
+                    anchors.fill: parent
+                    active: root.liveKind !== ""
+                    sourceComponent: root.liveKind === "image"
+                                     ? imageWallpaperComponent
+                                     : (root.liveKind === "video" ? videoWallpaperComponent : null)
+                }
+
+                Image {
+                    id: overlaySourceImage
+                    anchors.fill: parent
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    cache: true
+                    smooth: true
+                    mipmap: true
+                    sourceSize: root.textureSize
+                    source: root.overlaySource
+                    opacity: root.overlayOpacity
+                    visible: opacity > 0
                 }
 
                 NumberAnimation {
-                    id: crossfade
+                    id: overlayFade
                     target: root
-                    property: "transitionProgress"
-                    from: 0
-                    to: 1
+                    property: "overlayOpacity"
+                    from: root.overlayOpacity
+                    to: 0
                     duration: Math.max(0, Wallpaper.transitionDurationMs)
                     easing.type: Easing.OutCubic
 
                     onFinished: {
-                        if (root.stagedSource === "")
-                            return;
+                        root.clearOverlay();
+                    }
+                }
 
-                        root.activeSource = root.stagedSource;
-                        root.stagedSource = "";
-                        root.stageReady = false;
-                        root.transitionProgress = 1;
+                Timer {
+                    id: overlayFailSafe
+                    interval: Math.max(1000, Wallpaper.transitionDurationMs * 4)
+                    repeat: false
+                    onTriggered: root.finishTransition()
+                }
+
+                Component {
+                    id: imageWallpaperComponent
+
+                    Item {
+                        property bool contentReady: image.status === Image.Ready || root.liveSource === ""
+                        property bool contentError: image.status === Image.Error
+
+                        Image {
+                            id: image
+                            anchors.fill: parent
+                            source: root.liveSource
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                            cache: true
+                            smooth: true
+                            mipmap: true
+                            sourceSize: root.textureSize
+                        }
+                    }
+                }
+
+                Component {
+                    id: videoWallpaperComponent
+
+                    Item {
+                        property bool contentReady: videoItem.ready
+                        property bool contentError: WallpaperVideo.status === "error"
+
+                        WallpaperVideoItem {
+                            id: videoItem
+                            anchors.fill: parent
+                            controller: WallpaperVideo
+                        }
+                    }
+                }
+
+                Connections {
+                    target: Wallpaper
+                    function onVideoAudioChanged() {
+                        WallpaperVideo.muted = !Wallpaper.videoAudio;
                     }
                 }
 

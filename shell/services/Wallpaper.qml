@@ -23,6 +23,9 @@ Singleton {
     property var current: null
     property string transitionType: "fade"
     property int transitionDurationMs: 320
+    property string renderBackend: "mpv"
+    property bool videoEnabled: true
+    property bool videoAudio: false
 
     readonly property string currentPath: current && typeof current.path === "string"
                                         ? current.path
@@ -30,9 +33,12 @@ Singleton {
     readonly property string currentKind: current && typeof current.kind === "string"
                                         ? current.kind
                                         : ""
-    readonly property bool hasRenderableImage: availability === "ready"
-                                            && currentKind === "image"
-                                            && currentPath !== ""
+    readonly property bool hasCurrentEntry: availability === "ready" && currentPath !== ""
+    readonly property bool hasRenderableImage: hasCurrentEntry && currentKind === "image"
+    readonly property bool hasRenderableVideo: hasCurrentEntry
+                                            && currentKind === "video"
+                                            && videoEnabled
+                                            && renderBackend === "mpv"
 
     function _resetState() {
         root.directory = "";
@@ -42,6 +48,9 @@ Singleton {
         root.current = null;
         root.transitionType = "fade";
         root.transitionDurationMs = 320;
+        root.renderBackend = "mpv";
+        root.videoEnabled = true;
+        root.videoAudio = false;
         root.lastError = "";
     }
 
@@ -81,6 +90,7 @@ Singleton {
 
     function _onSnapshot(payload) {
         var transition = payload.transition || {};
+        var render = payload.render || {};
 
         root.directory = payload.directory || "";
         root.availability = payload.availability || "unavailable";
@@ -91,6 +101,13 @@ Singleton {
         root.transitionDurationMs = typeof transition.duration_ms === "number"
             ? transition.duration_ms
             : 320;
+        root.renderBackend = render.backend || "mpv";
+        root.videoEnabled = typeof render.video_enabled === "boolean"
+            ? render.video_enabled
+            : true;
+        root.videoAudio = typeof render.video_audio === "boolean"
+            ? render.video_audio
+            : false;
         root.ready = true;
         root.lastError = "";
         if (root.status !== "error")
