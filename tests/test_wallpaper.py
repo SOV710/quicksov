@@ -24,10 +24,12 @@ REQUIRED = [
     "entries",
     "current",
     "transition",
+    "render",
 ]
 ENTRY_REQUIRED = ["path", "name", "kind"]
 TRANSITION_REQUIRED = ["type", "duration_ms"]
-AVAILABILITY_VALUES = {"ready", "empty", "video_only", "unavailable"}
+RENDER_REQUIRED = ["backend", "video_enabled", "video_audio"]
+AVAILABILITY_VALUES = {"ready", "empty", "unavailable"}
 REASON_VALUES = {"none", "directory_missing", "permission_denied", "scan_failed"}
 KIND_VALUES = {"image", "video"}
 
@@ -77,9 +79,8 @@ def validate_snapshot(h: Harness, payload: Any) -> dict[str, Any] | None:
     current = payload.get("current")
     if current is None:
         h.warn("wallpaper.current is null")
-    elif validate_entry(h, current, "wallpaper.current"):
-        if current.get("kind") != "image":
-            h.error(f"wallpaper.current.kind must be image in v1: {current!r}")
+    else:
+        validate_entry(h, current, "wallpaper.current")
 
     transition = payload.get("transition")
     if assert_dict_keys(h, transition, TRANSITION_REQUIRED, "wallpaper.transition"):
@@ -94,9 +95,22 @@ def validate_snapshot(h: Harness, payload: Any) -> dict[str, Any] | None:
         else:
             h.error(f"wallpaper.transition.duration_ms invalid: {transition!r}")
 
+    render = payload.get("render")
+    if assert_dict_keys(h, render, RENDER_REQUIRED, "wallpaper.render"):
+        assert isinstance(render, dict)
+        if render.get("backend") == "mpv":
+            h.ok("wallpaper.render.backend is mpv")
+        else:
+            h.error(f"wallpaper.render.backend invalid: {render!r}")
+        for key in ("video_enabled", "video_audio"):
+            if isinstance(render.get(key), bool):
+                h.ok(f"wallpaper.render.{key} is boolean ({render.get(key)})")
+            else:
+                h.error(f"wallpaper.render.{key} invalid: {render!r}")
+
     if availability == "ready" and current is None:
         h.error("wallpaper.current is null while availability=ready")
-    elif availability in {"empty", "video_only", "unavailable"} and current is not None:
+    elif availability in {"empty", "unavailable"} and current is not None:
         h.warn(f"wallpaper.current is set while availability={availability}")
 
     if availability != "ready":
