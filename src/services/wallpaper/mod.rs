@@ -31,6 +31,9 @@ const DEFAULT_TRANSITION: &str = "fade";
 const DEFAULT_TRANSITION_DURATION_MS: u64 = 320;
 const DEFAULT_RENDERER_BACKEND: &str = "native-wayland-ffmpeg";
 const DEFAULT_PRESENT_BACKEND: &str = "auto";
+const DEFAULT_DECODE_DEVICE_POLICY: &str = "same-as-render";
+const DEFAULT_RENDER_DEVICE_POLICY: &str = "same-as-compositor";
+const DEFAULT_ALLOW_CROSS_GPU: bool = false;
 const DEFAULT_VSYNC: bool = true;
 const DEFAULT_VIDEO_AUDIO: bool = false;
 const DEFAULT_SOURCE_LOOP: bool = true;
@@ -68,6 +71,9 @@ struct WallpaperCfg {
     transition_duration_ms: u64,
     renderer_backend: String,
     decode_backend_order: Vec<String>,
+    decode_device_policy: String,
+    render_device_policy: String,
+    allow_cross_gpu: bool,
     present_backend: String,
     present_mode: Option<String>,
     vsync: bool,
@@ -118,6 +124,20 @@ impl WallpaperCfg {
             }
         };
 
+        let decode_device_policy =
+            normalize_gpu_policy(
+                wallpaper.and_then(|entry| entry.decode_device_policy.as_deref()),
+                DEFAULT_DECODE_DEVICE_POLICY,
+                "decode_device_policy",
+            );
+
+        let render_device_policy =
+            normalize_gpu_policy(
+                wallpaper.and_then(|entry| entry.render_device_policy.as_deref()),
+                DEFAULT_RENDER_DEVICE_POLICY,
+                "render_device_policy",
+            );
+
         Self {
             socket_path: cfg.daemon.socket_path.clone(),
             directory: wallpaper
@@ -138,6 +158,11 @@ impl WallpaperCfg {
                         "software".to_string(),
                     ]
                 }),
+            decode_device_policy,
+            render_device_policy,
+            allow_cross_gpu: wallpaper
+                .and_then(|entry| entry.allow_cross_gpu)
+                .unwrap_or(DEFAULT_ALLOW_CROSS_GPU),
             present_backend,
             present_mode: wallpaper.and_then(|entry| entry.present_mode.clone()),
             vsync: wallpaper
@@ -148,6 +173,32 @@ impl WallpaperCfg {
                 .unwrap_or(DEFAULT_VIDEO_AUDIO),
             configured_sources: configured_sources(wallpaper),
             configured_views: configured_views(wallpaper),
+        }
+    }
+}
+
+fn normalize_gpu_policy(value: Option<&str>, default: &str, field: &str) -> String {
+    let Some(value) = value else {
+        return default.to_string();
+    };
+
+    match value {
+        "auto"
+        | "same-as-compositor"
+        | "same-as-render"
+        | "prefer-discrete"
+        | "prefer-integrated"
+        | "nvidia"
+        | "amdgpu"
+        | "intel" => value.to_string(),
+        other => {
+            warn!(
+                policy_field = field,
+                value = %other,
+                fallback = %default,
+                "unsupported wallpaper gpu policy configured; falling back to default"
+            );
+            default.to_string()
         }
     }
 }
@@ -489,6 +540,9 @@ struct WallpaperState {
     transition_duration_ms: u64,
     renderer_backend: String,
     decode_backend_order: Vec<String>,
+    decode_device_policy: String,
+    render_device_policy: String,
+    allow_cross_gpu: bool,
     present_backend: String,
     present_mode: Option<String>,
     vsync: bool,
@@ -511,6 +565,9 @@ impl WallpaperState {
             transition_duration_ms: cfg.transition_duration_ms,
             renderer_backend: cfg.renderer_backend.clone(),
             decode_backend_order: cfg.decode_backend_order.clone(),
+            decode_device_policy: cfg.decode_device_policy.clone(),
+            render_device_policy: cfg.render_device_policy.clone(),
+            allow_cross_gpu: cfg.allow_cross_gpu,
             present_backend: cfg.present_backend.clone(),
             present_mode: cfg.present_mode.clone(),
             vsync: cfg.vsync,
@@ -665,6 +722,9 @@ impl WallpaperState {
                 "pid": self.renderer.pid,
                 "last_error": self.renderer.last_error,
                 "decode_backend_order": self.decode_backend_order,
+                "decode_device_policy": self.decode_device_policy,
+                "render_device_policy": self.render_device_policy,
+                "allow_cross_gpu": self.allow_cross_gpu,
                 "present_backend": self.present_backend,
                 "present_mode": self.present_mode,
                 "vsync": self.vsync,

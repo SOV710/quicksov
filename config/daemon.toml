@@ -57,8 +57,15 @@ log_level = "info"
 # directory = "$HOME/.config/quicksov/wallpapers"
 # transition = "fade"
 # transition_duration_ms = 320
-# renderer = "quickshell-ffmpeg"
+# renderer = "native-wayland-ffmpeg"
 # decode_backend_order = ["vaapi", "cuda", "software"]
+# render_device_policy = "same-as-compositor"
+# decode_device_policy = "same-as-render"
+# allow_cross_gpu = false
+# Explicit cross-GPU experiments:
+# render_device_policy = "nvidia"
+# decode_device_policy = "nvidia"
+# allow_cross_gpu = true
 # present_mode = "mailbox"
 # vsync = true
 # video_audio = false

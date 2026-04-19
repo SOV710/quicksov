@@ -113,6 +113,18 @@ AVHWDeviceType hwDeviceTypeForBackend(const QString &backend) {
     return AV_HWDEVICE_TYPE_NONE;
 }
 
+QString hwDeviceStringForBackend(const QString &backend, const QString &preferredDevicePath) {
+    if (preferredDevicePath.isEmpty()) {
+        return QString();
+    }
+
+    if (backend == QLatin1String("vaapi") || backend == QLatin1String("vulkan")) {
+        return preferredDevicePath;
+    }
+
+    return QString();
+}
+
 const AVCodecHWConfig *codecHwConfigFor(const AVCodec *codec, AVHWDeviceType deviceType) {
     for (int i = 0;; ++i) {
         const AVCodecHWConfig *config = avcodec_get_hw_config(codec, i);
@@ -269,6 +281,10 @@ QStringList WallpaperVideo::preferredHwdecOrder() const {
     return m_preferredHwdecOrder;
 }
 
+QString WallpaperVideo::preferredDevicePath() const {
+    return m_preferredDevicePath;
+}
+
 WallpaperVideo::FrameSnapshot WallpaperVideo::frameSnapshot() const {
     QMutexLocker locker(&m_frameMutex);
     return FrameSnapshot{
@@ -390,6 +406,26 @@ void WallpaperVideo::setPreferredHwdecOrder(const QStringList &order) {
     restartDecoder();
 }
 
+void WallpaperVideo::setPreferredDevicePath(const QString &path) {
+    const QString normalized = path.trimmed();
+    if (m_preferredDevicePath == normalized) {
+        return;
+    }
+
+    m_preferredDevicePath = normalized;
+
+    if (m_source.isEmpty()) {
+        return;
+    }
+
+    stopDecoder();
+    clearFrame();
+    setErrorString(QString());
+    setStatus(QStringLiteral("loading"));
+    setReady(false);
+    restartDecoder();
+}
+
 void WallpaperVideo::restartDecoder() {
     const QString localSource = m_source.isLocalFile() ? m_source.toLocalFile() : m_source.toString();
     if (localSource.isEmpty()) {
@@ -406,8 +442,9 @@ void WallpaperVideo::restartDecoder() {
         generation = m_decoderGeneration;
     }
     const QStringList hwdecOrder = m_preferredHwdecOrder;
-    m_decoderThread = std::thread([this, localSource, hwdecOrder, generation]() {
-        decoderMain(localSource, hwdecOrder, generation);
+    const QString preferredDevicePath = m_preferredDevicePath;
+    m_decoderThread = std::thread([this, localSource, hwdecOrder, preferredDevicePath, generation]() {
+        decoderMain(localSource, hwdecOrder, preferredDevicePath, generation);
     });
 }
 
@@ -424,7 +461,12 @@ void WallpaperVideo::stopDecoder() {
     }
 }
 
-void WallpaperVideo::decoderMain(QString localSource, QStringList hwdecOrder, quint64 generation) {
+void WallpaperVideo::decoderMain(
+    QString localSource,
+    QStringList hwdecOrder,
+    QString preferredDevicePath,
+    quint64 generation
+) {
     AVFormatContext *formatContext = nullptr;
     int rc = avformat_open_input(&formatContext, localSource.toUtf8().constData(), nullptr, nullptr);
     if (rc < 0) {
@@ -517,6 +559,7 @@ void WallpaperVideo::decoderMain(QString localSource, QStringList hwdecOrder, qu
 
     DecoderHwState hwState;
     QString chosenHwdec = QStringLiteral("software");
+    QString chosenHwdecDevice = QStringLiteral("<default-device>");
     CodecContextPtr codecContext(nullptr, [](AVCodecContext *ctx) {
         if (ctx != nullptr) {
             avcodec_free_context(&ctx);
@@ -551,10 +594,21 @@ void WallpaperVideo::decoderMain(QString localSource, QStringList hwdecOrder, qu
         }
 
         AVBufferRef *deviceContext = nullptr;
-        rc = av_hwdevice_ctx_create(&deviceContext, deviceType, nullptr, nullptr, 0);
+        const QString backendDevicePath =
+            hwDeviceStringForBackend(backend, preferredDevicePath);
+        const QByteArray backendDevicePathBytes = backendDevicePath.toUtf8();
+        rc = av_hwdevice_ctx_create(
+            &deviceContext,
+            deviceType,
+            backendDevicePath.isEmpty() ? nullptr : backendDevicePathBytes.constData(),
+            nullptr,
+            0
+        );
         if (rc < 0) {
             qInfo().noquote() << logPrefix() << "hwdec backend unavailable"
-                              << backend << ffmpegErrorString(rc);
+                              << backend
+                              << (backendDevicePath.isEmpty() ? QStringLiteral("<default-device>") : backendDevicePath)
+                              << ffmpegErrorString(rc);
             continue;
         }
 
@@ -572,6 +626,9 @@ void WallpaperVideo::decoderMain(QString localSource, QStringList hwdecOrder, qu
         }
 
         chosenHwdec = backend;
+        chosenHwdecDevice = backendDevicePath.isEmpty()
+            ? QStringLiteral("<default-device>")
+            : backendDevicePath;
         codecContext = std::move(candidate);
         break;
     }
@@ -598,6 +655,7 @@ void WallpaperVideo::decoderMain(QString localSource, QStringList hwdecOrder, qu
     const QSize videoSize(codecContext->width, codecContext->height);
     qInfo().noquote() << logPrefix() << "decoder opened"
                       << "hwdec =" << chosenHwdec
+                      << "device =" << chosenHwdecDevice
                       << "hw_pix_fmt =" << pixelFormatName(hwState.hwPixelFormat);
     QMetaObject::invokeMethod(this, [this, videoSize, chosenHwdec, generation]() {
         if (shouldStop(generation)) {

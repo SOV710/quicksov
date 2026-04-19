@@ -899,6 +899,10 @@
               "pid",
               "last_error",
               "decode_backend_order",
+              "decode_device_policy",
+              "render_device_policy",
+              "allow_cross_gpu",
+              "present_backend",
               "present_mode",
               "vsync",
               "video_audio"
@@ -912,6 +916,37 @@
               "decode_backend_order": {
                 "type": "array",
                 "items": { "type": "string" }
+              },
+              "decode_device_policy": {
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "same-as-compositor",
+                  "same-as-render",
+                  "prefer-discrete",
+                  "prefer-integrated",
+                  "nvidia",
+                  "amdgpu",
+                  "intel"
+                ]
+              },
+              "render_device_policy": {
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "same-as-compositor",
+                  "same-as-render",
+                  "prefer-discrete",
+                  "prefer-integrated",
+                  "nvidia",
+                  "amdgpu",
+                  "intel"
+                ]
+              },
+              "allow_cross_gpu": { "type": "boolean" },
+              "present_backend": {
+                "type": "string",
+                "enum": ["auto", "shm", "dmabuf"]
               },
               "present_mode": { "type": ["string", "null"] },
               "vsync": { "type": "boolean" },

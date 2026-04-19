@@ -95,6 +95,7 @@ public:
     [[nodiscard]] QSize videoSize() const;
     [[nodiscard]] QSize frameSize() const;
     [[nodiscard]] QStringList preferredHwdecOrder() const;
+    [[nodiscard]] QString preferredDevicePath() const;
 
     [[nodiscard]] FrameSnapshot frameSnapshot() const;
     [[nodiscard]] HardwareFrameSnapshot hardwareFrameSnapshot() const;
@@ -107,6 +108,7 @@ public:
     void setCpuFrameRequired(QObject *item, bool required);
     void updateShareContextHint(QOpenGLContext *context);
     void setPreferredHwdecOrder(const QStringList &order);
+    void setPreferredDevicePath(const QString &path);
 
 signals:
     void sourceChanged();
@@ -126,7 +128,7 @@ signals:
 private:
     void restartDecoder();
     void stopDecoder();
-    void decoderMain(QString localSource, QStringList hwdecOrder, quint64 generation);
+    void decoderMain(QString localSource, QStringList hwdecOrder, QString preferredDevicePath, quint64 generation);
     void acceptFrame(
         const QImage &image,
         const QSize &videoSize,
@@ -167,6 +169,7 @@ private:
     QString m_status = QStringLiteral("idle");
     QString m_errorString;
     QString m_hwdecCurrent;
+    QString m_preferredDevicePath;
     QStringList m_preferredHwdecOrder;
     QImage m_frameImage;
     AvFramePtr m_hardwareFrame;

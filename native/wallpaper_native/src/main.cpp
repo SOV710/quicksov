@@ -10,6 +10,7 @@
 #include <cstring>
 #include <map>
 #include <memory>
+#include <limits>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -25,6 +26,7 @@
 #include <QDebug>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QFileInfo>
 #include <QHash>
 #include <QImage>
@@ -101,6 +103,21 @@ QString normalizePresentBackend(QString backend) {
     return QStringLiteral("auto");
 }
 
+QString normalizeGpuPolicy(QString policy, const QString &fallback) {
+    policy = policy.trimmed().toLower();
+    if (policy == QLatin1String("auto") ||
+        policy == QLatin1String("same-as-compositor") ||
+        policy == QLatin1String("same-as-render") ||
+        policy == QLatin1String("prefer-discrete") ||
+        policy == QLatin1String("prefer-integrated") ||
+        policy == QLatin1String("nvidia") ||
+        policy == QLatin1String("amdgpu") ||
+        policy == QLatin1String("intel")) {
+        return policy;
+    }
+    return fallback;
+}
+
 QRectF clampRectToBounds(const QRectF &rect, const QRectF &bounds) {
     if (!bounds.isValid()) {
         return QRectF();
@@ -143,8 +160,28 @@ struct SnapshotModel {
     QHash<QString, ViewSpec> views;
     QString fallbackSource;
     QStringList decodeBackendOrder;
+    QString decodeDevicePolicy = QStringLiteral("same-as-render");
+    QString renderDevicePolicy = QStringLiteral("same-as-compositor");
+    bool allowCrossGpu = false;
     QString presentBackend = QStringLiteral("auto");
     int transitionDurationMs = 0;
+};
+
+enum class GpuVendor {
+    Nvidia,
+    Amd,
+    Intel,
+    Other,
+};
+
+struct GpuDeviceInfo {
+    QString nodePath;
+    QString sysfsDevicePath;
+    QString vendorId;
+    QString deviceId;
+    GpuVendor vendor = GpuVendor::Other;
+    bool discrete = false;
+    dev_t deviceNumber = 0;
 };
 
 struct DmabufFormatModifier {
@@ -171,6 +208,198 @@ QString dmabufModifierString(uint64_t modifier) {
         return QStringLiteral("linear");
     }
     return QStringLiteral("0x%1").arg(QString::number(modifier, 16));
+}
+
+QString gpuVendorString(GpuVendor vendor) {
+    switch (vendor) {
+    case GpuVendor::Nvidia:
+        return QStringLiteral("nvidia");
+    case GpuVendor::Amd:
+        return QStringLiteral("amdgpu");
+    case GpuVendor::Intel:
+        return QStringLiteral("intel");
+    case GpuVendor::Other:
+    default:
+        return QStringLiteral("other");
+    }
+}
+
+GpuVendor gpuVendorFromId(const QString &vendorId) {
+    const QString normalized = vendorId.trimmed().toLower();
+    if (normalized == QLatin1String("0x10de")) {
+        return GpuVendor::Nvidia;
+    }
+    if (normalized == QLatin1String("0x1002") || normalized == QLatin1String("0x1022")) {
+        return GpuVendor::Amd;
+    }
+    if (normalized == QLatin1String("0x8086")) {
+        return GpuVendor::Intel;
+    }
+    return GpuVendor::Other;
+}
+
+int gpuVendorRank(GpuVendor vendor) {
+    switch (vendor) {
+    case GpuVendor::Nvidia:
+        return 300;
+    case GpuVendor::Amd:
+        return 200;
+    case GpuVendor::Intel:
+        return 100;
+    case GpuVendor::Other:
+    default:
+        return 0;
+    }
+}
+
+QString readTrimmedFile(const QString &path) {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return QString();
+    }
+    return QString::fromUtf8(file.readAll()).trimmed();
+}
+
+bool isDiscretePciDevicePath(const QString &sysfsDevicePath) {
+    const QStringList segments = sysfsDevicePath.split(QLatin1Char('/'), Qt::SkipEmptyParts);
+    int pciSegments = 0;
+    for (const QString &segment : segments) {
+        if (segment.contains(QLatin1Char(':')) && segment.contains(QLatin1Char('.'))) {
+            pciSegments += 1;
+        }
+    }
+    return pciSegments > 1;
+}
+
+std::optional<dev_t> deviceNumberForPath(const QString &path) {
+    struct stat st {};
+    if (::stat(path.toUtf8().constData(), &st) != 0) {
+        return std::nullopt;
+    }
+    if (!S_ISCHR(st.st_mode)) {
+        return std::nullopt;
+    }
+    return st.st_rdev;
+}
+
+QVector<GpuDeviceInfo> discoverGpuDevices() {
+    QVector<GpuDeviceInfo> devices;
+    const QDir drmDir(QStringLiteral("/sys/class/drm"));
+    const QStringList entries =
+        drmDir.entryList(QStringList{QStringLiteral("renderD*")}, QDir::System | QDir::NoDotAndDotDot, QDir::Name);
+
+    for (const QString &entry : entries) {
+        const QString nodePath = QStringLiteral("/dev/dri/%1").arg(entry);
+        const QString sysfsDevicePath =
+            QFileInfo(drmDir.absoluteFilePath(entry) + QStringLiteral("/device")).canonicalFilePath();
+        if (sysfsDevicePath.isEmpty()) {
+            continue;
+        }
+
+        const QString vendorId = readTrimmedFile(sysfsDevicePath + QStringLiteral("/vendor"));
+        const QString deviceId = readTrimmedFile(sysfsDevicePath + QStringLiteral("/device"));
+        const auto deviceNumber = deviceNumberForPath(nodePath);
+        if (!deviceNumber.has_value()) {
+            continue;
+        }
+
+        devices.push_back(GpuDeviceInfo{
+            .nodePath = nodePath,
+            .sysfsDevicePath = sysfsDevicePath,
+            .vendorId = vendorId,
+            .deviceId = deviceId,
+            .vendor = gpuVendorFromId(vendorId),
+            .discrete = isDiscretePciDevicePath(sysfsDevicePath),
+            .deviceNumber = *deviceNumber,
+        });
+    }
+
+    return devices;
+}
+
+QString scoreLabel(const GpuDeviceInfo &device) {
+    return QStringLiteral("%1 %2 %3")
+        .arg(device.nodePath, gpuVendorString(device.vendor), device.discrete ? QStringLiteral("discrete") : QStringLiteral("integrated"));
+}
+
+int scoreGpuForPolicy(
+    const GpuDeviceInfo &device,
+    const QString &policy,
+    const QString &preferredPath
+) {
+    int score = gpuVendorRank(device.vendor);
+    if (!preferredPath.isEmpty() && device.nodePath == preferredPath) {
+        score += 10'000;
+    }
+
+    if (policy == QLatin1String("prefer-discrete")) {
+        score += device.discrete ? 5'000 : 0;
+    } else if (policy == QLatin1String("prefer-integrated")) {
+        score += device.discrete ? 0 : 5'000;
+    } else if (policy == QLatin1String("nvidia")) {
+        score += device.vendor == GpuVendor::Nvidia ? 5'000 : 0;
+    } else if (policy == QLatin1String("amdgpu")) {
+        score += device.vendor == GpuVendor::Amd ? 5'000 : 0;
+    } else if (policy == QLatin1String("intel")) {
+        score += device.vendor == GpuVendor::Intel ? 5'000 : 0;
+    }
+
+    return score;
+}
+
+QString selectGpuDevicePath(
+    const QVector<GpuDeviceInfo> &devices,
+    const QString &policy,
+    const QString &preferredPath
+) {
+    if (devices.isEmpty()) {
+        return QString();
+    }
+
+    int bestIndex = -1;
+    int bestScore = std::numeric_limits<int>::min();
+    for (int i = 0; i < devices.size(); ++i) {
+        const int score = scoreGpuForPolicy(devices[i], policy, preferredPath);
+        if (bestIndex < 0 || score > bestScore ||
+            (score == bestScore && devices[i].nodePath < devices[bestIndex].nodePath)) {
+            bestIndex = i;
+            bestScore = score;
+        }
+    }
+
+    return bestIndex >= 0 ? devices[bestIndex].nodePath : QString();
+}
+
+std::optional<GpuDeviceInfo> gpuInfoForPath(const QVector<GpuDeviceInfo> &devices, const QString &path) {
+    for (const auto &device : devices) {
+        if (device.nodePath == path) {
+            return device;
+        }
+    }
+    return std::nullopt;
+}
+
+QStringList reorderDecodeBackendsForGpu(QStringList backends, GpuVendor vendor) {
+    for (QString &backend : backends) {
+        backend = backend.trimmed().toLower();
+    }
+    backends.removeAll(QString());
+    backends.removeDuplicates();
+
+    auto preferFront = [&](const QString &backend) {
+        backends.removeAll(backend);
+        backends.prepend(backend);
+    };
+
+    if (vendor == GpuVendor::Nvidia) {
+        preferFront(QStringLiteral("cuda"));
+    } else if (vendor == GpuVendor::Amd || vendor == GpuVendor::Intel) {
+        preferFront(QStringLiteral("vaapi"));
+    }
+
+    backends.removeAll(QStringLiteral("software"));
+    backends.append(QStringLiteral("software"));
+    return backends;
 }
 
 QString avPixelFormatString(int format) {
@@ -407,6 +636,17 @@ SnapshotModel parseSnapshot(const QJsonObject &payload) {
         renderer.value(QStringLiteral("decode_backend_order")).toArray();
     model.presentBackend =
         normalizePresentBackend(renderer.value(QStringLiteral("present_backend")).toString());
+    model.decodeDevicePolicy =
+        normalizeGpuPolicy(
+            renderer.value(QStringLiteral("decode_device_policy")).toString(),
+            QStringLiteral("same-as-render")
+        );
+    model.renderDevicePolicy =
+        normalizeGpuPolicy(
+            renderer.value(QStringLiteral("render_device_policy")).toString(),
+            QStringLiteral("same-as-compositor")
+        );
+    model.allowCrossGpu = renderer.value(QStringLiteral("allow_cross_gpu")).toBool(false);
     for (const QJsonValue &entry : decodeBackendOrder) {
         const QString backend = entry.toString().trimmed().toLower();
         if (!backend.isEmpty() && !model.decodeBackendOrder.contains(backend)) {
@@ -914,16 +1154,23 @@ public:
         bool ready = false;
     };
 
-    explicit SourceSession(const SourceSpec &spec, const QStringList &decodeBackendOrder, QObject *parent = nullptr)
+    explicit SourceSession(
+        const SourceSpec &spec,
+        const QStringList &decodeBackendOrder,
+        const QString &preferredDevicePath,
+        QObject *parent = nullptr
+    )
         : QObject(parent)
         , m_spec(spec)
-        , m_decodeBackendOrder(decodeBackendOrder) {
+        , m_decodeBackendOrder(decodeBackendOrder)
+        , m_preferredDevicePath(preferredDevicePath) {
         if (m_spec.kind == QStringLiteral("video")) {
             auto *video = new WallpaperVideo(this);
             video->setDebugName(QStringLiteral("source:%1").arg(m_spec.id));
             video->setMuted(m_spec.mute);
             video->setLoopEnabled(m_spec.loopEnabled);
             video->setPreferredHwdecOrder(m_decodeBackendOrder);
+            video->setPreferredDevicePath(m_preferredDevicePath);
             connect(video, &WallpaperVideo::renderableFrameAvailable, this, &SourceSession::updated);
             connect(video, &WallpaperVideo::readyChanged, this, &SourceSession::updated);
             connect(video, &WallpaperVideo::statusChanged, this, &SourceSession::updated);
@@ -957,12 +1204,17 @@ public:
         return !m_image.isNull();
     }
 
-    [[nodiscard]] bool matches(const SourceSpec &spec, const QStringList &decodeBackendOrder) const {
+    [[nodiscard]] bool matches(
+        const SourceSpec &spec,
+        const QStringList &decodeBackendOrder,
+        const QString &preferredDevicePath
+    ) const {
         return m_spec.path == spec.path &&
                m_spec.kind == spec.kind &&
                m_spec.loopEnabled == spec.loopEnabled &&
                m_spec.mute == spec.mute &&
-               m_decodeBackendOrder == decodeBackendOrder;
+               m_decodeBackendOrder == decodeBackendOrder &&
+               m_preferredDevicePath == preferredDevicePath;
     }
 
     [[nodiscard]] StatsSnapshot statsSnapshot() const {
@@ -1030,6 +1282,7 @@ signals:
 private:
     SourceSpec m_spec;
     QStringList m_decodeBackendOrder;
+    QString m_preferredDevicePath;
     QImage m_image;
     QPointer<WallpaperVideo> m_video;
 };
@@ -1074,6 +1327,7 @@ public:
     void handleClosed();
     void handleConfigure(uint32_t serial, uint32_t width, uint32_t height);
     void updateVideoHint();
+    void resetGpuResources();
 
     wl_output *output() const;
 
@@ -1344,16 +1598,57 @@ public:
 
     void applySnapshot(const SnapshotModel &snapshot) {
         m_snapshot = snapshot;
+        const QVector<GpuDeviceInfo> devices = gpuDevices();
+        const QString compositorPath = compositorDevicePath();
+        const QString renderDevicePath = resolveRenderDevicePath(devices);
+        const QString decodeDevicePath = resolveDecodeDevicePath(devices, renderDevicePath);
+        const QStringList decodeBackendOrder = resolveDecodeBackendOrder(devices, decodeDevicePath);
+
+        if (!m_effectiveRenderDevicePath.isEmpty() &&
+            !renderDevicePath.isEmpty() &&
+            m_effectiveRenderDevicePath != renderDevicePath) {
+            qInfo().noquote() << kLogPrefix
+                              << "wallpaper render device changed; resetting GPU pipeline"
+                              << "old =" << describeGpuPath(devices, m_effectiveRenderDevicePath)
+                              << "new =" << describeGpuPath(devices, renderDevicePath);
+            resetGpuPipeline();
+            for (auto &entry : m_outputs) {
+                entry.second->resetGpuResources();
+            }
+        }
+
+        const bool gpuSelectionChanged =
+            m_effectiveCompositorDevicePath != compositorPath ||
+            m_effectiveRenderDevicePath != renderDevicePath ||
+            m_effectiveDecodeDevicePath != decodeDevicePath ||
+            m_effectiveDecodeBackendOrder != decodeBackendOrder;
+
+        m_effectiveCompositorDevicePath = compositorPath;
+        m_effectiveRenderDevicePath = renderDevicePath;
+        m_effectiveDecodeDevicePath = decodeDevicePath;
+        m_effectiveDecodeBackendOrder = decodeBackendOrder;
+
+        if (gpuSelectionChanged) {
+            qInfo().noquote() << kLogPrefix
+                              << "wallpaper GPU selection"
+                              << "render_policy =" << snapshot.renderDevicePolicy
+                              << "decode_policy =" << snapshot.decodeDevicePolicy
+                              << "allow_cross_gpu =" << snapshot.allowCrossGpu
+                              << "compositor =" << describeGpuPath(devices, compositorPath)
+                              << "render =" << describeGpuPath(devices, renderDevicePath)
+                              << "decode =" << describeGpuPath(devices, decodeDevicePath)
+                              << "decode_backends =" << decodeBackendOrder.join(QLatin1Char(','));
+        }
 
         for (const auto &[id, spec] : snapshot.sources.asKeyValueRange()) {
             auto it = m_sources.find(id);
             if (it != m_sources.end()) {
-                if (it->second->matches(spec, snapshot.decodeBackendOrder)) {
+                if (it->second->matches(spec, decodeBackendOrder, decodeDevicePath)) {
                     continue;
                 }
             }
 
-            auto session = std::make_shared<SourceSession>(spec, snapshot.decodeBackendOrder);
+            auto session = std::make_shared<SourceSession>(spec, decodeBackendOrder, decodeDevicePath);
             connect(session.get(), &SourceSession::updated, this, [this, raw = session.get()]() {
                 onSourceUpdated(raw);
             });
@@ -1445,11 +1740,25 @@ public:
             return false;
         }
 
-        if (m_gbmDevice != nullptr) {
+        const QVector<GpuDeviceInfo> devices = gpuDevices();
+        const QString selectedPath = resolveRenderDevicePath(devices);
+
+        if (m_gbmDevice != nullptr && m_gbmDevicePath == selectedPath) {
             if (reason != nullptr) {
                 reason->clear();
             }
             return true;
+        }
+
+        if (m_gbmDevice != nullptr && m_gbmDevicePath != selectedPath) {
+            qInfo().noquote() << kLogPrefix
+                              << "reinitializing GBM device for updated GPU selection"
+                              << "old =" << describeGpuPath(devices, m_gbmDevicePath)
+                              << "new =" << describeGpuPath(devices, selectedPath);
+            resetGpuPipeline();
+            for (auto &entry : m_outputs) {
+                entry.second->resetGpuResources();
+            }
         }
 
         if (m_gbmDeviceAttempted) {
@@ -1461,10 +1770,7 @@ public:
 
         m_gbmDeviceAttempted = true;
 
-        QString path;
-        if (m_dmabufMainDevice.has_value()) {
-            path = drmNodePathForDevice(*m_dmabufMainDevice);
-        }
+        QString path = selectedPath;
         if (path.isEmpty()) {
             path = firstExistingDrmNode(QStringList{QStringLiteral("renderD*"), QStringLiteral("card*")});
         }
@@ -1588,12 +1894,138 @@ signals:
     void fatalError(const QString &message);
 
 private:
+    [[nodiscard]] QVector<GpuDeviceInfo> gpuDevices() const {
+        return discoverGpuDevices();
+    }
+
+    [[nodiscard]] QString compositorDevicePath() const {
+        if (!m_dmabufMainDevice.has_value()) {
+            return QString();
+        }
+        return drmNodePathForDevice(*m_dmabufMainDevice);
+    }
+
+    [[nodiscard]] QString resolveRenderDevicePath(const QVector<GpuDeviceInfo> &devices) const {
+        const QString compositorPath = compositorDevicePath();
+        const QString policy =
+            normalizeGpuPolicy(m_snapshot.renderDevicePolicy, QStringLiteral("same-as-compositor"));
+
+        if (policy == QLatin1String("same-as-compositor") ||
+            policy == QLatin1String("same-as-render")) {
+            return compositorPath;
+        }
+
+        if (!m_snapshot.allowCrossGpu && !compositorPath.isEmpty()) {
+            return compositorPath;
+        }
+
+        const QString selected = selectGpuDevicePath(devices, policy, compositorPath);
+        if (!selected.isEmpty()) {
+            return selected;
+        }
+
+        return compositorPath;
+    }
+
+    [[nodiscard]] QString resolveDecodeDevicePath(
+        const QVector<GpuDeviceInfo> &devices,
+        const QString &renderDevicePath
+    ) const {
+        const QString compositorPath = compositorDevicePath();
+        const QString policy =
+            normalizeGpuPolicy(m_snapshot.decodeDevicePolicy, QStringLiteral("same-as-render"));
+
+        if (policy == QLatin1String("same-as-render")) {
+            return !renderDevicePath.isEmpty() ? renderDevicePath : compositorPath;
+        }
+        if (policy == QLatin1String("same-as-compositor")) {
+            return !compositorPath.isEmpty() ? compositorPath : renderDevicePath;
+        }
+
+        if (!m_snapshot.allowCrossGpu && !renderDevicePath.isEmpty()) {
+            return renderDevicePath;
+        }
+
+        const QString selected = selectGpuDevicePath(devices, policy, renderDevicePath);
+        if (!selected.isEmpty()) {
+            return selected;
+        }
+
+        if (!renderDevicePath.isEmpty()) {
+            return renderDevicePath;
+        }
+
+        return compositorPath;
+    }
+
+    [[nodiscard]] QStringList resolveDecodeBackendOrder(
+        const QVector<GpuDeviceInfo> &devices,
+        const QString &decodeDevicePath
+    ) const {
+        const auto decodeGpu = gpuInfoForPath(devices, decodeDevicePath);
+        const GpuVendor vendor = decodeGpu.has_value() ? decodeGpu->vendor : GpuVendor::Other;
+        return reorderDecodeBackendsForGpu(m_snapshot.decodeBackendOrder, vendor);
+    }
+
+    [[nodiscard]] QString describeGpuPath(
+        const QVector<GpuDeviceInfo> &devices,
+        const QString &path
+    ) const {
+        if (path.isEmpty()) {
+            return QStringLiteral("<none>");
+        }
+
+        const auto info = gpuInfoForPath(devices, path);
+        if (!info.has_value()) {
+            return path;
+        }
+
+        return QStringLiteral("%1 (%2,%3)")
+            .arg(
+                path,
+                gpuVendorString(info->vendor),
+                info->discrete ? QStringLiteral("discrete") : QStringLiteral("integrated")
+            );
+    }
+
+    void resetGpuPipeline() {
+        m_gpuCompositor.reset();
+        m_gpuCompositorAttempted = false;
+        m_gpuCompositorFailureReason.clear();
+
+        if (m_gbmDevice != nullptr) {
+            gbm_device_destroy(m_gbmDevice);
+            m_gbmDevice = nullptr;
+        }
+        if (m_gbmDeviceFd >= 0) {
+            ::close(m_gbmDeviceFd);
+            m_gbmDeviceFd = -1;
+        }
+
+        m_gbmDeviceAttempted = false;
+        m_gbmDeviceFailureReason.clear();
+        m_gbmDevicePath.clear();
+    }
+
     void logTelemetry() {
+        const QVector<GpuDeviceInfo> devices = gpuDevices();
+        const QString compositorPath = compositorDevicePath();
+        const QString renderPath = resolveRenderDevicePath(devices);
+        const QString decodePath = resolveDecodeDevicePath(devices, renderPath);
+        const QStringList decodeBackendOrder = resolveDecodeBackendOrder(devices, decodePath);
+
         qInfo().noquote() << kLogPrefix
                           << "telemetry"
                           << "sources =" << static_cast<int>(m_sources.size())
                           << "outputs =" << static_cast<int>(m_outputs.size())
                           << "requested_present_backend =" << m_snapshot.presentBackend
+                          << "render_policy =" << m_snapshot.renderDevicePolicy
+                          << "decode_policy =" << m_snapshot.decodeDevicePolicy
+                          << "allow_cross_gpu =" << m_snapshot.allowCrossGpu
+                          << "compositor_device =" << describeGpuPath(devices, compositorPath)
+                          << "render_device =" << describeGpuPath(devices, renderPath)
+                          << "decode_device =" << describeGpuPath(devices, decodePath)
+                          << "decode_backends =" << decodeBackendOrder.join(QLatin1Char(','))
                           << "dmabuf_advertised =" << m_dmabufAdvertised
                           << "dmabuf_version =" << m_dmabufVersion
                           << "dmabuf_formats =" << m_dmabufFormatCount
@@ -1781,7 +2213,12 @@ private:
         wl_array *device
     ) {
         auto *self = static_cast<WaylandRenderer *>(data);
+        const QString previousPath = self->compositorDevicePath();
         self->m_dmabufMainDevice = parseDeviceNumber(device);
+        const QString nextPath = self->compositorDevicePath();
+        if (previousPath != nextPath && !self->m_snapshot.sources.isEmpty()) {
+            self->applySnapshot(self->m_snapshot);
+        }
     }
 
     static void defaultFeedbackTrancheDone(void *, zwp_linux_dmabuf_feedback_v1 *) {}
@@ -1841,6 +2278,10 @@ private:
     std::unique_ptr<GpuCompositor> m_gpuCompositor;
     bool m_gpuCompositorAttempted = false;
     QString m_gpuCompositorFailureReason;
+    QString m_effectiveCompositorDevicePath;
+    QString m_effectiveRenderDevicePath;
+    QString m_effectiveDecodeDevicePath;
+    QStringList m_effectiveDecodeBackendOrder;
 };
 
 OutputSurface::OutputSurface(WaylandRenderer *renderer, uint32_t registryName, wl_output *output)
@@ -2101,6 +2542,14 @@ void OutputSurface::updateVideoHint() {
     if (m_source != nullptr) {
         m_source->updateRenderHint(this, m_pixelSize, m_cpuFrameRequired);
     }
+}
+
+void OutputSurface::resetGpuResources() {
+    m_loggedGpuFastPath = false;
+    m_lastGpuError.clear();
+    m_dmabufDisabled = false;
+    destroyDmabufBuffers();
+    scheduleRender();
 }
 
 void OutputSurface::setCpuFrameRequired(bool required) {
