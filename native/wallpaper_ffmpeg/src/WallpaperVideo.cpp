@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cmath>
 #include <memory>
+#include <optional>
 
 #include <QDebug>
 #include <QMetaObject>
@@ -17,6 +18,7 @@ extern "C" {
 #include <libavformat/avformat.h>
 #include <libavutil/error.h>
 #include <libavutil/frame.h>
+#include <libavutil/hwcontext.h>
 #include <libavutil/imgutils.h>
 #include <libswscale/swscale.h>
 }
@@ -63,6 +65,78 @@ std::chrono::nanoseconds frameDelayFor(
     return std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::duration<double>(seconds)
     );
+}
+
+QStringList normalizeHwdecOrder(QStringList order) {
+    QStringList normalized;
+    normalized.reserve(order.size() + 1);
+
+    for (QString &entry : order) {
+        entry = entry.trimmed().toLower();
+        if (entry.isEmpty()) {
+            continue;
+        }
+        if (!normalized.contains(entry)) {
+            normalized.push_back(entry);
+        }
+    }
+
+    if (!normalized.contains(QStringLiteral("software"))) {
+        normalized.push_back(QStringLiteral("software"));
+    }
+
+    return normalized;
+}
+
+AVHWDeviceType hwDeviceTypeForBackend(const QString &backend) {
+    if (backend == QLatin1String("vaapi")) {
+        return AV_HWDEVICE_TYPE_VAAPI;
+    }
+    if (backend == QLatin1String("cuda")) {
+        return AV_HWDEVICE_TYPE_CUDA;
+    }
+    if (backend == QLatin1String("vulkan")) {
+        return AV_HWDEVICE_TYPE_VULKAN;
+    }
+    if (backend == QLatin1String("qsv")) {
+        return AV_HWDEVICE_TYPE_QSV;
+    }
+    return AV_HWDEVICE_TYPE_NONE;
+}
+
+const AVCodecHWConfig *codecHwConfigFor(const AVCodec *codec, AVHWDeviceType deviceType) {
+    for (int i = 0;; ++i) {
+        const AVCodecHWConfig *config = avcodec_get_hw_config(codec, i);
+        if (config == nullptr) {
+            return nullptr;
+        }
+        if (config->device_type != deviceType) {
+            continue;
+        }
+        if ((config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) == 0) {
+            continue;
+        }
+        return config;
+    }
+}
+
+struct DecoderHwState {
+    AVPixelFormat hwPixelFormat = AV_PIX_FMT_NONE;
+};
+
+enum AVPixelFormat selectHwPixelFormat(AVCodecContext *ctx, const enum AVPixelFormat *pixFmts) {
+    const auto *state = static_cast<const DecoderHwState *>(ctx->opaque);
+    if (state == nullptr || state->hwPixelFormat == AV_PIX_FMT_NONE) {
+        return pixFmts[0];
+    }
+
+    for (const enum AVPixelFormat *it = pixFmts; *it != AV_PIX_FMT_NONE; ++it) {
+        if (*it == state->hwPixelFormat) {
+            return *it;
+        }
+    }
+
+    return pixFmts[0];
 }
 
 } // namespace
@@ -182,6 +256,10 @@ QSize WallpaperVideo::frameSize() const {
     return m_frameSizeValue;
 }
 
+QStringList WallpaperVideo::preferredHwdecOrder() const {
+    return m_preferredHwdecOrder;
+}
+
 WallpaperVideo::FrameSnapshot WallpaperVideo::frameSnapshot() const {
     QMutexLocker locker(&m_frameMutex);
     return FrameSnapshot{
@@ -189,6 +267,17 @@ WallpaperVideo::FrameSnapshot WallpaperVideo::frameSnapshot() const {
         .size = m_frameSizeValue,
         .serial = m_frameSerial,
         .hasFrame = m_hasFrame,
+    };
+}
+
+WallpaperVideo::StatsSnapshot WallpaperVideo::statsSnapshot() const {
+    return StatsSnapshot{
+        .status = m_status,
+        .hwdecCurrent = m_hwdecCurrent,
+        .videoSize = m_videoSizeValue,
+        .frameSize = m_frameSizeValue,
+        .decodedFrames = m_decodedFrames,
+        .ready = m_ready,
     };
 }
 
@@ -227,6 +316,26 @@ void WallpaperVideo::updateShareContextHint(QOpenGLContext *context) {
     Q_UNUSED(context)
 }
 
+void WallpaperVideo::setPreferredHwdecOrder(const QStringList &order) {
+    const QStringList normalized = normalizeHwdecOrder(order);
+    if (m_preferredHwdecOrder == normalized) {
+        return;
+    }
+
+    m_preferredHwdecOrder = normalized;
+
+    if (m_source.isEmpty()) {
+        return;
+    }
+
+    stopDecoder();
+    clearFrame();
+    setErrorString(QString());
+    setStatus(QStringLiteral("loading"));
+    setReady(false);
+    restartDecoder();
+}
+
 void WallpaperVideo::restartDecoder() {
     const QString localSource = m_source.isLocalFile() ? m_source.toLocalFile() : m_source.toString();
     if (localSource.isEmpty()) {
@@ -242,8 +351,9 @@ void WallpaperVideo::restartDecoder() {
         m_decoderGeneration += 1;
         generation = m_decoderGeneration;
     }
-    m_decoderThread = std::thread([this, localSource, generation]() {
-        decoderMain(localSource, generation);
+    const QStringList hwdecOrder = m_preferredHwdecOrder;
+    m_decoderThread = std::thread([this, localSource, hwdecOrder, generation]() {
+        decoderMain(localSource, hwdecOrder, generation);
     });
 }
 
@@ -260,7 +370,7 @@ void WallpaperVideo::stopDecoder() {
     }
 }
 
-void WallpaperVideo::decoderMain(QString localSource, quint64 generation) {
+void WallpaperVideo::decoderMain(QString localSource, QStringList hwdecOrder, quint64 generation) {
     AVFormatContext *formatContext = nullptr;
     int rc = avformat_open_input(&formatContext, localSource.toUtf8().constData(), nullptr, nullptr);
     if (rc < 0) {
@@ -320,51 +430,119 @@ void WallpaperVideo::decoderMain(QString localSource, quint64 generation) {
         return;
     }
 
-    auto codecContext = std::unique_ptr<AVCodecContext, void (*)(AVCodecContext *)>(
-        avcodec_alloc_context3(codec),
-        [](AVCodecContext *ctx) {
-            if (ctx != nullptr) {
-                avcodec_free_context(&ctx);
+    using CodecContextPtr = std::unique_ptr<AVCodecContext, void (*)(AVCodecContext *)>;
+    auto makeCodecContext = [codec]() -> CodecContextPtr {
+        return CodecContextPtr(
+            avcodec_alloc_context3(codec),
+            [](AVCodecContext *ctx) {
+                if (ctx != nullptr) {
+                    avcodec_free_context(&ctx);
+                }
             }
+        );
+    };
+
+    auto emitFatalError = [this, generation](const QString &message) {
+        QMetaObject::invokeMethod(this, [this, generation, message]() {
+            if (shouldStop(generation)) {
+                return;
+            }
+            setStatus(QStringLiteral("error"));
+            setErrorString(message);
+        }, Qt::QueuedConnection);
+    };
+
+    auto prepareCodecContext = [&](AVCodecContext *ctx) -> bool {
+        rc = avcodec_parameters_to_context(ctx, stream->codecpar);
+        if (rc < 0) {
+            emitFatalError(QStringLiteral("avcodec_parameters_to_context failed: %1").arg(ffmpegErrorString(rc)));
+            return false;
         }
-    );
+        return true;
+    };
+
+    DecoderHwState hwState;
+    QString chosenHwdec = QStringLiteral("software");
+    CodecContextPtr codecContext(nullptr, [](AVCodecContext *ctx) {
+        if (ctx != nullptr) {
+            avcodec_free_context(&ctx);
+        }
+    });
+
+    const QStringList normalizedHwdecOrder = normalizeHwdecOrder(hwdecOrder);
+    for (const QString &backend : normalizedHwdecOrder) {
+        if (backend == QLatin1String("software")) {
+            continue;
+        }
+
+        const AVHWDeviceType deviceType = hwDeviceTypeForBackend(backend);
+        if (deviceType == AV_HWDEVICE_TYPE_NONE) {
+            qInfo().noquote() << logPrefix() << "skip unsupported hwdec backend" << backend;
+            continue;
+        }
+
+        const AVCodecHWConfig *config = codecHwConfigFor(codec, deviceType);
+        if (config == nullptr) {
+            qInfo().noquote() << logPrefix() << "codec has no hw config for" << backend;
+            continue;
+        }
+
+        CodecContextPtr candidate = makeCodecContext();
+        if (!candidate) {
+            emitFatalError(QStringLiteral("avcodec_alloc_context3 failed"));
+            return;
+        }
+        if (!prepareCodecContext(candidate.get())) {
+            return;
+        }
+
+        AVBufferRef *deviceContext = nullptr;
+        rc = av_hwdevice_ctx_create(&deviceContext, deviceType, nullptr, nullptr, 0);
+        if (rc < 0) {
+            qInfo().noquote() << logPrefix() << "hwdec backend unavailable"
+                              << backend << ffmpegErrorString(rc);
+            continue;
+        }
+
+        candidate->hw_device_ctx = av_buffer_ref(deviceContext);
+        av_buffer_unref(&deviceContext);
+        hwState.hwPixelFormat = config->pix_fmt;
+        candidate->opaque = &hwState;
+        candidate->get_format = &selectHwPixelFormat;
+
+        rc = avcodec_open2(candidate.get(), codec, nullptr);
+        if (rc < 0) {
+            qInfo().noquote() << logPrefix() << "hwdec backend failed to open"
+                              << backend << ffmpegErrorString(rc);
+            continue;
+        }
+
+        chosenHwdec = backend;
+        codecContext = std::move(candidate);
+        break;
+    }
+
     if (!codecContext) {
-        QMetaObject::invokeMethod(this, [this, generation]() {
-            if (shouldStop(generation)) {
-                return;
-            }
-            setStatus(QStringLiteral("error"));
-            setErrorString(QStringLiteral("avcodec_alloc_context3 failed"));
-        }, Qt::QueuedConnection);
-        return;
-    }
+        codecContext = makeCodecContext();
+        if (!codecContext) {
+            emitFatalError(QStringLiteral("avcodec_alloc_context3 failed"));
+            return;
+        }
+        if (!prepareCodecContext(codecContext.get())) {
+            return;
+        }
 
-    rc = avcodec_parameters_to_context(codecContext.get(), stream->codecpar);
-    if (rc < 0) {
-        QMetaObject::invokeMethod(this, [this, rc, generation]() {
-            if (shouldStop(generation)) {
-                return;
-            }
-            setStatus(QStringLiteral("error"));
-            setErrorString(QStringLiteral("avcodec_parameters_to_context failed: %1").arg(ffmpegErrorString(rc)));
-        }, Qt::QueuedConnection);
-        return;
-    }
+        rc = avcodec_open2(codecContext.get(), codec, nullptr);
+        if (rc < 0) {
+            emitFatalError(QStringLiteral("avcodec_open2 failed: %1").arg(ffmpegErrorString(rc)));
+            return;
+        }
 
-    rc = avcodec_open2(codecContext.get(), codec, nullptr);
-    if (rc < 0) {
-        QMetaObject::invokeMethod(this, [this, rc, generation]() {
-            if (shouldStop(generation)) {
-                return;
-            }
-            setStatus(QStringLiteral("error"));
-            setErrorString(QStringLiteral("avcodec_open2 failed: %1").arg(ffmpegErrorString(rc)));
-        }, Qt::QueuedConnection);
-        return;
+        hwState.hwPixelFormat = AV_PIX_FMT_NONE;
     }
 
     const QSize videoSize(codecContext->width, codecContext->height);
-    QMetaObject::invokeMethod(this, [this, videoSize, generation]() {
+    QMetaObject::invokeMethod(this, [this, videoSize, chosenHwdec, generation]() {
         if (shouldStop(generation)) {
             return;
         }
@@ -372,7 +550,7 @@ void WallpaperVideo::decoderMain(QString localSource, quint64 generation) {
             m_videoSizeValue = videoSize;
             emit videoSizeChanged();
         }
-        setHwdecCurrent(QStringLiteral("software"));
+        setHwdecCurrent(chosenHwdec);
     }, Qt::QueuedConnection);
 
     auto packet = std::unique_ptr<AVPacket, void (*)(AVPacket *)>(
@@ -391,8 +569,16 @@ void WallpaperVideo::decoderMain(QString localSource, quint64 generation) {
             }
         }
     );
+    auto transferFrame = std::unique_ptr<AVFrame, void (*)(AVFrame *)>(
+        av_frame_alloc(),
+        [](AVFrame *value) {
+            if (value != nullptr) {
+                av_frame_free(&value);
+            }
+        }
+    );
 
-    if (!packet || !frame) {
+    if (!packet || !frame || !transferFrame) {
         QMetaObject::invokeMethod(this, [this, generation]() {
             if (shouldStop(generation)) {
                 return;
@@ -405,6 +591,8 @@ void WallpaperVideo::decoderMain(QString localSource, quint64 generation) {
 
     SwsContext *swsContext = nullptr;
     QSize scaledSize;
+    AVPixelFormat swsPixelFormat = AV_PIX_FMT_NONE;
+    QSize swsSourceSize;
     std::optional<int64_t> lastPts;
 
     const double fps = rationalToDouble(stream->avg_frame_rate);
@@ -482,13 +670,49 @@ void WallpaperVideo::decoderMain(QString localSource, quint64 generation) {
                 return;
             }
 
+            AVFrame *convertFrame = frame.get();
+            if (hwState.hwPixelFormat != AV_PIX_FMT_NONE &&
+                frame->format == static_cast<int>(hwState.hwPixelFormat)) {
+                av_frame_unref(transferFrame.get());
+                rc = av_hwframe_transfer_data(transferFrame.get(), frame.get(), 0);
+                if (rc < 0) {
+                    QMetaObject::invokeMethod(this, [this, rc, generation]() {
+                        if (shouldStop(generation)) {
+                            return;
+                        }
+                        setStatus(QStringLiteral("error"));
+                        setErrorString(QStringLiteral("av_hwframe_transfer_data failed: %1").arg(ffmpegErrorString(rc)));
+                    }, Qt::QueuedConnection);
+                    freeSws();
+                    return;
+                }
+                rc = av_frame_copy_props(transferFrame.get(), frame.get());
+                if (rc < 0) {
+                    QMetaObject::invokeMethod(this, [this, rc, generation]() {
+                        if (shouldStop(generation)) {
+                            return;
+                        }
+                        setStatus(QStringLiteral("error"));
+                        setErrorString(QStringLiteral("av_frame_copy_props failed: %1").arg(ffmpegErrorString(rc)));
+                    }, Qt::QueuedConnection);
+                    freeSws();
+                    return;
+                }
+                convertFrame = transferFrame.get();
+            }
+
             const QSize nextScaledSize = targetFrameSize(videoSize);
-            if (swsContext == nullptr || scaledSize != nextScaledSize) {
+            const QSize currentSourceSize(convertFrame->width, convertFrame->height);
+            const AVPixelFormat currentPixelFormat = static_cast<AVPixelFormat>(convertFrame->format);
+            if (swsContext == nullptr ||
+                scaledSize != nextScaledSize ||
+                swsPixelFormat != currentPixelFormat ||
+                swsSourceSize != currentSourceSize) {
                 freeSws();
                 swsContext = sws_getContext(
-                    frame->width,
-                    frame->height,
-                    static_cast<AVPixelFormat>(frame->format),
+                    convertFrame->width,
+                    convertFrame->height,
+                    currentPixelFormat,
                     nextScaledSize.width(),
                     nextScaledSize.height(),
                     AV_PIX_FMT_RGBA,
@@ -498,6 +722,8 @@ void WallpaperVideo::decoderMain(QString localSource, quint64 generation) {
                     nullptr
                 );
                 scaledSize = nextScaledSize;
+                swsPixelFormat = currentPixelFormat;
+                swsSourceSize = currentSourceSize;
             }
 
             if (swsContext == nullptr) {
@@ -529,10 +755,10 @@ void WallpaperVideo::decoderMain(QString localSource, quint64 generation) {
 
             sws_scale(
                 swsContext,
-                frame->data,
-                frame->linesize,
+                convertFrame->data,
+                convertFrame->linesize,
                 0,
-                frame->height,
+                convertFrame->height,
                 dstData,
                 dstLinesize
             );
@@ -566,6 +792,7 @@ void WallpaperVideo::acceptFrame(const QImage &image, const QSize &videoSize, qu
         m_frameImage = image;
         m_frameSizeValue = frameSize;
         m_frameSerial += 1;
+        m_decodedFrames += 1;
         m_hasFrame = true;
         frameSizeChangedFlag = true;
     }

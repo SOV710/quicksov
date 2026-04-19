@@ -15,6 +15,7 @@
 #include <QObject>
 #include <QPointer>
 #include <QSize>
+#include <QStringList>
 #include <QUrl>
 #include <QtQmlIntegration/qqmlintegration.h>
 
@@ -44,6 +45,15 @@ public:
         bool hasFrame = false;
     };
 
+    struct StatsSnapshot {
+        QString status;
+        QString hwdecCurrent;
+        QSize videoSize;
+        QSize frameSize;
+        quint64 decodedFrames = 0;
+        bool ready = false;
+    };
+
     explicit WallpaperVideo(QObject *parent = nullptr);
     ~WallpaperVideo() override;
 
@@ -68,13 +78,16 @@ public:
     [[nodiscard]] QString hwdecCurrent() const;
     [[nodiscard]] QSize videoSize() const;
     [[nodiscard]] QSize frameSize() const;
+    [[nodiscard]] QStringList preferredHwdecOrder() const;
 
     [[nodiscard]] FrameSnapshot frameSnapshot() const;
+    [[nodiscard]] StatsSnapshot statsSnapshot() const;
 
     Q_INVOKABLE void ensureInitialized();
     Q_INVOKABLE void updateRenderTargetHint(QObject *item, const QSize &size);
     Q_INVOKABLE void removeRenderTargetHint(QObject *item);
     void updateShareContextHint(QOpenGLContext *context);
+    void setPreferredHwdecOrder(const QStringList &order);
 
 signals:
     void sourceChanged();
@@ -93,7 +106,7 @@ signals:
 private:
     void restartDecoder();
     void stopDecoder();
-    void decoderMain(QString localSource, quint64 generation);
+    void decoderMain(QString localSource, QStringList hwdecOrder, quint64 generation);
     void acceptFrame(const QImage &image, const QSize &videoSize, quint64 generation);
     [[nodiscard]] QSize targetFrameSize(const QSize &videoSize) const;
     [[nodiscard]] bool shouldStop(quint64 generation) const;
@@ -120,10 +133,12 @@ private:
     QString m_status = QStringLiteral("idle");
     QString m_errorString;
     QString m_hwdecCurrent;
+    QStringList m_preferredHwdecOrder;
     QImage m_frameImage;
     QSize m_videoSizeValue;
     QSize m_frameSizeValue;
     quint64 m_frameSerial = 0;
+    quint64 m_decodedFrames = 0;
     quint64 m_decoderGeneration = 0;
     bool m_hasFrame = false;
     bool m_stopRequested = false;
