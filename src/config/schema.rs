@@ -129,6 +129,8 @@ pub struct WallpaperConfig {
     pub directory: Option<String>,
     pub transition: Option<String>,
     pub transition_duration_ms: Option<u64>,
+    pub video_enabled: Option<bool>,
+    pub video_audio: Option<bool>,
 }
 
 /// Configuration for the `net.link` / `net.wifi` services.

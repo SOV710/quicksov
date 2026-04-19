@@ -19,6 +19,8 @@ use crate::util::is_empty_object;
 
 const DEFAULT_TRANSITION: &str = "fade";
 const DEFAULT_TRANSITION_DURATION_MS: u64 = 320;
+const DEFAULT_VIDEO_ENABLED: bool = true;
+const DEFAULT_VIDEO_AUDIO: bool = false;
 const IMAGE_EXTS: &[&str] = &["avif", "bmp", "jpeg", "jpg", "png", "svg", "webp"];
 const VIDEO_EXTS: &[&str] = &["avi", "mkv", "mov", "mp4", "webm"];
 
@@ -45,6 +47,8 @@ struct WallpaperCfg {
     directory: PathBuf,
     transition_type: String,
     transition_duration_ms: u64,
+    video_enabled: bool,
+    video_audio: bool,
 }
 
 impl WallpaperCfg {
@@ -71,6 +75,12 @@ impl WallpaperCfg {
             transition_duration_ms: wallpaper
                 .and_then(|entry| entry.transition_duration_ms)
                 .unwrap_or(DEFAULT_TRANSITION_DURATION_MS),
+            video_enabled: wallpaper
+                .and_then(|entry| entry.video_enabled)
+                .unwrap_or(DEFAULT_VIDEO_ENABLED),
+            video_audio: wallpaper
+                .and_then(|entry| entry.video_audio)
+                .unwrap_or(DEFAULT_VIDEO_AUDIO),
         }
     }
 }
@@ -118,7 +128,6 @@ impl WallpaperEntry {
 enum WallpaperAvailability {
     Ready,
     Empty,
-    VideoOnly,
     Unavailable,
 }
 
@@ -127,7 +136,6 @@ impl WallpaperAvailability {
         match self {
             Self::Ready => "ready",
             Self::Empty => "empty",
-            Self::VideoOnly => "video_only",
             Self::Unavailable => "unavailable",
         }
     }
@@ -157,6 +165,8 @@ struct WallpaperState {
     directory: PathBuf,
     transition_type: String,
     transition_duration_ms: u64,
+    video_enabled: bool,
+    video_audio: bool,
     availability: WallpaperAvailability,
     availability_reason: WallpaperAvailabilityReason,
     entries: Vec<WallpaperEntry>,
@@ -169,6 +179,8 @@ impl WallpaperState {
             directory: cfg.directory.clone(),
             transition_type: cfg.transition_type.clone(),
             transition_duration_ms: cfg.transition_duration_ms,
+            video_enabled: cfg.video_enabled,
+            video_audio: cfg.video_audio,
             availability: WallpaperAvailability::Unavailable,
             availability_reason: WallpaperAvailabilityReason::DirectoryMissing,
             entries: Vec::new(),
@@ -184,15 +196,11 @@ impl WallpaperState {
     }
 
     fn apply_entries(&mut self, entries: Vec<WallpaperEntry>) {
-        let first_image = entries
-            .iter()
-            .find(|entry| entry.kind == WallpaperKind::Image)
-            .map(|entry| entry.path.clone());
-        let current_still_exists = self.current_path.as_ref().is_some_and(|current| {
-            entries
-                .iter()
-                .any(|entry| entry.kind == WallpaperKind::Image && entry.path == *current)
-        });
+        let first_entry = entries.first().map(|entry| entry.path.clone());
+        let current_still_exists = self
+            .current_path
+            .as_ref()
+            .is_some_and(|current| entries.iter().any(|entry| entry.path == *current));
 
         self.entries = entries;
         self.availability_reason = WallpaperAvailabilityReason::None;
@@ -203,15 +211,9 @@ impl WallpaperState {
             return;
         }
 
-        if first_image.is_none() {
-            self.availability = WallpaperAvailability::VideoOnly;
-            self.current_path = None;
-            return;
-        }
-
         self.availability = WallpaperAvailability::Ready;
         if !current_still_exists {
-            self.current_path = first_image;
+            self.current_path = first_entry;
         }
     }
 
@@ -244,6 +246,11 @@ impl WallpaperState {
             "transition": {
                 "type": self.transition_type,
                 "duration_ms": self.transition_duration_ms,
+            },
+            "render": {
+                "backend": "mpv",
+                "video_enabled": self.video_enabled,
+                "video_audio": self.video_audio,
             }
         })
     }
@@ -253,24 +260,19 @@ impl WallpaperState {
         self.entries.iter().find(|entry| entry.path == current)
     }
 
-    fn next_image(&mut self, step: isize) -> Result<(), ServiceError> {
-        let images = self
-            .entries
-            .iter()
-            .filter(|entry| entry.kind == WallpaperKind::Image)
-            .collect::<Vec<_>>();
-        if images.is_empty() {
+    fn next_entry(&mut self, step: isize) -> Result<(), ServiceError> {
+        if self.entries.is_empty() {
             return Err(ServiceError::Unavailable);
         }
 
-        let len = images.len() as isize;
+        let len = self.entries.len() as isize;
         let current_idx = self
             .current_path
             .as_ref()
-            .and_then(|current| images.iter().position(|entry| &entry.path == current))
+            .and_then(|current| self.entries.iter().position(|entry| &entry.path == current))
             .unwrap_or(0) as isize;
         let next_idx = (current_idx + step).rem_euclid(len) as usize;
-        self.current_path = Some(images[next_idx].path.clone());
+        self.current_path = Some(self.entries[next_idx].path.clone());
         Ok(())
     }
 
@@ -284,12 +286,6 @@ impl WallpaperState {
                 msg: "path is not a known wallpaper entry".to_string(),
             });
         };
-
-        if entry.kind != WallpaperKind::Image {
-            return Err(ServiceError::ActionPayload {
-                msg: "video wallpapers are indexed but not yet renderable".to_string(),
-            });
-        }
 
         self.current_path = Some(entry.path.clone());
         Ok(())
@@ -347,7 +343,7 @@ fn handle_step(
         });
     }
 
-    state.next_image(step)?;
+    state.next_entry(step)?;
     Ok(Value::Null)
 }
 
