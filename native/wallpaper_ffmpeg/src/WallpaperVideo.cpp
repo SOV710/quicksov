@@ -321,7 +321,9 @@ void WallpaperVideo::updateRenderTargetHint(QObject *item, const QSize &size) {
     const QSize clamped = size.isValid() ? clampSize(size) : QSize();
 
     if (clamped.isValid()) {
-        m_renderTargetHints.insert(key, clamped);
+        auto hint = m_renderTargetHints.value(key);
+        hint.size = clamped;
+        m_renderTargetHints.insert(key, hint);
     } else {
         m_renderTargetHints.remove(key);
     }
@@ -334,6 +336,34 @@ void WallpaperVideo::removeRenderTargetHint(QObject *item) {
 
     QMutexLocker locker(&m_hintMutex);
     m_renderTargetHints.remove(reinterpret_cast<quintptr>(item));
+}
+
+void WallpaperVideo::setCpuFrameRequired(QObject *item, bool required) {
+    if (item == nullptr) {
+        return;
+    }
+
+    QMutexLocker locker(&m_hintMutex);
+    const quintptr key = reinterpret_cast<quintptr>(item);
+    auto it = m_renderTargetHints.find(key);
+    if (it == m_renderTargetHints.end()) {
+        if (!required) {
+            return;
+        }
+        m_renderTargetHints.insert(
+            key,
+            RenderTargetHint{
+                .size = QSize(),
+                .cpuFrameRequired = required,
+            }
+        );
+        return;
+    }
+
+    if (it->cpuFrameRequired == required) {
+        return;
+    }
+    it->cpuFrameRequired = required;
 }
 
 void WallpaperVideo::updateShareContextHint(QOpenGLContext *context) {
@@ -699,6 +729,7 @@ void WallpaperVideo::decoderMain(QString localSource, QStringList hwdecOrder, qu
             }
 
             AVFrame *convertFrame = frame.get();
+            const bool needsCpuFrame = cpuFrameRequired();
             if (hwState.hwPixelFormat != AV_PIX_FMT_NONE &&
                 frame->format == static_cast<int>(hwState.hwPixelFormat)) {
                 if (!loggedHardwareFrame) {
@@ -724,9 +755,24 @@ void WallpaperVideo::decoderMain(QString localSource, QStringList hwdecOrder, qu
                             av_frame_free(&value);
                         }
                     );
-                    QMetaObject::invokeMethod(this, [this, hardwareFrame, videoSize, generation]() {
-                        acceptHardwareFrame(hardwareFrame, videoSize, generation);
+                    QMetaObject::invokeMethod(this, [this, hardwareFrame, videoSize, generation, needsCpuFrame]() {
+                        acceptHardwareFrame(
+                            hardwareFrame,
+                            videoSize,
+                            generation,
+                            true,
+                            true
+                        );
                     }, Qt::QueuedConnection);
+                }
+
+                if (!needsCpuFrame) {
+                    const auto delay = frameDelayFor(frame.get(), stream->time_base, lastPts, fallbackFrameSeconds);
+                    if (waitForStop(delay, generation)) {
+                        freeSws();
+                        return;
+                    }
+                    continue;
                 }
 
                 av_frame_unref(transferFrame.get());
@@ -819,8 +865,16 @@ void WallpaperVideo::decoderMain(QString localSource, QStringList hwdecOrder, qu
                 dstLinesize
             );
 
-            QMetaObject::invokeMethod(this, [this, image, videoSize, generation]() {
-                acceptFrame(image, videoSize, generation);
+            const bool emitRenderableSignal = hwState.hwPixelFormat == AV_PIX_FMT_NONE;
+            const bool countDecodedFrame = hwState.hwPixelFormat == AV_PIX_FMT_NONE;
+            QMetaObject::invokeMethod(this, [this, image, videoSize, generation, countDecodedFrame, emitRenderableSignal]() {
+                acceptFrame(
+                    image,
+                    videoSize,
+                    generation,
+                    countDecodedFrame,
+                    emitRenderableSignal
+                );
             }, Qt::QueuedConnection);
 
             const auto delay = frameDelayFor(frame.get(), stream->time_base, lastPts, fallbackFrameSeconds);
@@ -834,7 +888,13 @@ void WallpaperVideo::decoderMain(QString localSource, QStringList hwdecOrder, qu
     freeSws();
 }
 
-void WallpaperVideo::acceptFrame(const QImage &image, const QSize &videoSize, quint64 generation) {
+void WallpaperVideo::acceptFrame(
+    const QImage &image,
+    const QSize &videoSize,
+    quint64 generation,
+    bool countDecodedFrame,
+    bool emitRenderableSignal
+) {
     if (shouldStop(generation)) {
         return;
     }
@@ -848,7 +908,9 @@ void WallpaperVideo::acceptFrame(const QImage &image, const QSize &videoSize, qu
         m_frameImage = image;
         m_frameSizeValue = frameSize;
         m_frameSerial += 1;
-        m_decodedFrames += 1;
+        if (countDecodedFrame) {
+            m_decodedFrames += 1;
+        }
         m_hasFrame = true;
         frameSizeChangedFlag = true;
     }
@@ -871,10 +933,19 @@ void WallpaperVideo::acceptFrame(const QImage &image, const QSize &videoSize, qu
     if (frameSizeChangedFlag) {
         emit frameSizeChanged();
     }
+    if (emitRenderableSignal) {
+        emit renderableFrameAvailable();
+    }
     emit frameAvailable();
 }
 
-void WallpaperVideo::acceptHardwareFrame(const AvFramePtr &frame, const QSize &videoSize, quint64 generation) {
+void WallpaperVideo::acceptHardwareFrame(
+    const AvFramePtr &frame,
+    const QSize &videoSize,
+    quint64 generation,
+    bool countDecodedFrame,
+    bool emitRenderableSignal
+) {
     if (shouldStop(generation) || !frame) {
         return;
     }
@@ -884,6 +955,9 @@ void WallpaperVideo::acceptHardwareFrame(const AvFramePtr &frame, const QSize &v
         QMutexLocker locker(&m_frameMutex);
         m_hardwareFrame = frame;
         m_frameSerial += 1;
+        if (countDecodedFrame) {
+            m_decodedFrames += 1;
+        }
     }
 
     if (m_videoSizeValue != videoSize) {
@@ -900,6 +974,9 @@ void WallpaperVideo::acceptHardwareFrame(const AvFramePtr &frame, const QSize &v
 
     if (videoSizeChangedFlag) {
         emit videoSizeChanged();
+    }
+    if (emitRenderableSignal) {
+        emit renderableFrameAvailable();
     }
 }
 
@@ -918,7 +995,7 @@ QSize WallpaperVideo::targetFrameSize(const QSize &videoSize) const {
     int requiredHeight = videoSize.height();
 
     for (auto it = m_renderTargetHints.cbegin(); it != m_renderTargetHints.cend(); ++it) {
-        const QSize hint = it.value();
+        const QSize hint = it.value().size;
         if (!hint.isValid()) {
             continue;
         }
@@ -940,6 +1017,21 @@ QSize WallpaperVideo::targetFrameSize(const QSize &videoSize) const {
     }
 
     return QSize(requiredWidth, requiredHeight);
+}
+
+bool WallpaperVideo::cpuFrameRequired() const {
+    QMutexLocker locker(&m_hintMutex);
+    if (m_renderTargetHints.isEmpty()) {
+        return true;
+    }
+
+    for (auto it = m_renderTargetHints.cbegin(); it != m_renderTargetHints.cend(); ++it) {
+        if (it.value().cpuFrameRequired) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool WallpaperVideo::shouldStop(quint64 generation) const {

@@ -617,6 +617,7 @@ public:
         }
 
         makeCurrent();
+        releaseSourceFrame();
         for (auto &entry : m_targets) {
             if (entry.second.texture != nullptr) {
                 pl_tex_destroy(m_opengl->gpu, &entry.second.texture);
@@ -690,16 +691,12 @@ public:
             return false;
         }
 
-        struct pl_frame image = {};
-        pl_tex imageTex[4] = {};
-        if (!pl_map_avframe(m_opengl->gpu, &image, imageTex, source.frame.get())) {
-            if (error != nullptr) {
-                *error = QStringLiteral("pl_map_avframe failed (%1 %2)")
-                             .arg(describeAvFrame(source.frame.get()), describeDerivedDrmFrame(source.frame.get()));
-            }
+        const SourceFrame *mappedSource = ensureSourceFrame(source, error);
+        if (mappedSource == nullptr) {
             return false;
         }
 
+        struct pl_frame image = mappedSource->image;
         const QRectF sourceRect = coverSourceRect(cropRectFor(source.size, crop), targetSize);
         image.crop = pl_rect2df{
             static_cast<float>(sourceRect.left()),
@@ -720,10 +717,7 @@ public:
         targetFrame.color = pl_color_space_unknown;
         targetFrame.crop = pl_rect2df{0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height)};
 
-        const float clearColor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
-        pl_frame_clear_rgba(m_opengl->gpu, &targetFrame, clearColor);
-        const bool ok = pl_render_image(m_renderer, &image, &targetFrame, &pl_render_default_params);
-        pl_unmap_avframe(m_opengl->gpu, &image);
+        const bool ok = pl_render_image(m_renderer, &image, &targetFrame, &pl_render_fast_params);
         glFlush();
 
         if (!ok) {
@@ -737,6 +731,13 @@ public:
     }
 
 private:
+    struct SourceFrame {
+        quint64 serial = 0;
+        WallpaperVideo::AvFramePtr frame;
+        struct pl_frame image = {};
+        pl_tex textures[4] = {};
+    };
+
     struct TargetTexture {
         pl_tex texture = nullptr;
         int fd = -1;
@@ -780,6 +781,39 @@ private:
     bool makeCurrent() const {
         return m_display != EGL_NO_DISPLAY &&
                eglMakeCurrent(m_display, m_surface, m_surface, m_context);
+    }
+
+    void releaseSourceFrame() {
+        if (m_sourceFrame.frame != nullptr) {
+            pl_unmap_avframe(m_opengl->gpu, &m_sourceFrame.image);
+        }
+        m_sourceFrame = SourceFrame{};
+    }
+
+    SourceFrame *ensureSourceFrame(
+        const WallpaperVideo::HardwareFrameSnapshot &source,
+        QString *error
+    ) {
+        if (m_sourceFrame.frame == source.frame &&
+            m_sourceFrame.serial == source.serial &&
+            m_sourceFrame.frame != nullptr) {
+            return &m_sourceFrame;
+        }
+
+        releaseSourceFrame();
+
+        if (!pl_map_avframe(m_opengl->gpu, &m_sourceFrame.image, m_sourceFrame.textures, source.frame.get())) {
+            if (error != nullptr) {
+                *error = QStringLiteral("pl_map_avframe failed (%1 %2)")
+                             .arg(describeAvFrame(source.frame.get()), describeDerivedDrmFrame(source.frame.get()));
+            }
+            m_sourceFrame = SourceFrame{};
+            return nullptr;
+        }
+
+        m_sourceFrame.serial = source.serial;
+        m_sourceFrame.frame = source.frame;
+        return &m_sourceFrame;
     }
 
     TargetTexture *ensureTarget(
@@ -861,6 +895,7 @@ private:
     pl_log m_log = nullptr;
     pl_opengl m_opengl = nullptr;
     pl_renderer m_renderer = nullptr;
+    SourceFrame m_sourceFrame;
     std::map<quintptr, TargetTexture> m_targets;
 };
 
@@ -889,7 +924,7 @@ public:
             video->setMuted(m_spec.mute);
             video->setLoopEnabled(m_spec.loopEnabled);
             video->setPreferredHwdecOrder(m_decodeBackendOrder);
-            connect(video, &WallpaperVideo::frameAvailable, this, &SourceSession::updated);
+            connect(video, &WallpaperVideo::renderableFrameAvailable, this, &SourceSession::updated);
             connect(video, &WallpaperVideo::readyChanged, this, &SourceSession::updated);
             connect(video, &WallpaperVideo::statusChanged, this, &SourceSession::updated);
             connect(video, &WallpaperVideo::errorStringChanged, this, &SourceSession::updated);
@@ -951,9 +986,10 @@ public:
         return stats;
     }
 
-    void updateRenderHint(QObject *owner, const QSize &size) {
+    void updateRenderHint(QObject *owner, const QSize &size, bool cpuFrameRequired) {
         if (m_video != nullptr) {
             m_video->updateRenderTargetHint(owner, size);
+            m_video->setCpuFrameRequired(owner, cpuFrameRequired);
         }
     }
 
@@ -1072,6 +1108,7 @@ private:
 
     void setBinding(std::shared_ptr<SourceSession> source, std::optional<CropRect> crop, int transitionMs);
     void detachCurrentSourceHint();
+    void setCpuFrameRequired(bool required);
     void ensureShmBuffers();
     bool ensureDmabufBuffers();
     void destroyBuffers();
@@ -1149,6 +1186,7 @@ private:
     QString m_requestedPresentBackend = QStringLiteral("auto");
     QString m_resolvedPresentBackend = QStringLiteral("shm");
     QString m_presentBackendFallbackReason;
+    bool m_cpuFrameRequired = true;
     int m_scale = 1;
     QSize m_logicalSize;
     QSize m_pixelSize;
@@ -2061,8 +2099,17 @@ void OutputSurface::handleConfigure(uint32_t serial, uint32_t width, uint32_t he
 
 void OutputSurface::updateVideoHint() {
     if (m_source != nullptr) {
-        m_source->updateRenderHint(this, m_pixelSize);
+        m_source->updateRenderHint(this, m_pixelSize, m_cpuFrameRequired);
     }
+}
+
+void OutputSurface::setCpuFrameRequired(bool required) {
+    if (m_cpuFrameRequired == required) {
+        return;
+    }
+
+    m_cpuFrameRequired = required;
+    updateVideoHint();
 }
 
 void OutputSurface::setBinding(std::shared_ptr<SourceSession> source, std::optional<CropRect> crop, int transitionMs) {
@@ -2076,6 +2123,7 @@ void OutputSurface::setBinding(std::shared_ptr<SourceSession> source, std::optio
         capturePreviousImage();
         detachCurrentSourceHint();
         m_source = std::move(source);
+        m_cpuFrameRequired = true;
         updateVideoHint();
     } else {
         m_source = std::move(source);
@@ -2629,9 +2677,12 @@ void OutputSurface::render() {
     }
 
     if (wlBuffer == nullptr || (!renderedWithGpu && data == nullptr)) {
+        setCpuFrameRequired(!renderedWithGpu);
         m_bufferStarvedFrames += 1;
         return;
     }
+
+    setCpuFrameRequired(!renderedWithGpu);
 
     if (!renderedWithGpu) {
         QImage target(

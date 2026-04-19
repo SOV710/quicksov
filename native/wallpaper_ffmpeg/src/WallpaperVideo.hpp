@@ -42,6 +42,11 @@ class WallpaperVideo : public QObject {
 public:
     using AvFramePtr = std::shared_ptr<AVFrame>;
 
+    struct RenderTargetHint {
+        QSize size;
+        bool cpuFrameRequired = true;
+    };
+
     struct FrameSnapshot {
         QImage image;
         QSize size;
@@ -99,6 +104,7 @@ public:
     Q_INVOKABLE void ensureInitialized();
     Q_INVOKABLE void updateRenderTargetHint(QObject *item, const QSize &size);
     Q_INVOKABLE void removeRenderTargetHint(QObject *item);
+    void setCpuFrameRequired(QObject *item, bool required);
     void updateShareContextHint(QOpenGLContext *context);
     void setPreferredHwdecOrder(const QStringList &order);
 
@@ -114,15 +120,29 @@ signals:
     void hwdecCurrentChanged();
     void videoSizeChanged();
     void frameSizeChanged();
+    void renderableFrameAvailable();
     void frameAvailable();
 
 private:
     void restartDecoder();
     void stopDecoder();
     void decoderMain(QString localSource, QStringList hwdecOrder, quint64 generation);
-    void acceptFrame(const QImage &image, const QSize &videoSize, quint64 generation);
-    void acceptHardwareFrame(const AvFramePtr &frame, const QSize &videoSize, quint64 generation);
+    void acceptFrame(
+        const QImage &image,
+        const QSize &videoSize,
+        quint64 generation,
+        bool countDecodedFrame,
+        bool emitRenderableSignal
+    );
+    void acceptHardwareFrame(
+        const AvFramePtr &frame,
+        const QSize &videoSize,
+        quint64 generation,
+        bool countDecodedFrame,
+        bool emitRenderableSignal
+    );
     [[nodiscard]] QSize targetFrameSize(const QSize &videoSize) const;
+    [[nodiscard]] bool cpuFrameRequired() const;
     [[nodiscard]] bool shouldStop(quint64 generation) const;
     bool waitForStop(std::chrono::nanoseconds delay, quint64 generation);
     void clearFrame();
@@ -137,7 +157,7 @@ private:
     mutable std::mutex m_threadMutex;
     std::condition_variable m_stopCv;
     std::thread m_decoderThread;
-    QHash<quintptr, QSize> m_renderTargetHints;
+    QHash<quintptr, RenderTargetHint> m_renderTargetHints;
     QUrl m_source;
     bool m_muted = true;
     bool m_loopEnabled = true;
