@@ -356,8 +356,9 @@ directory = "$HOME/.config/quicksov/wallpapers"
 transition = "fade"
 transition_duration_ms = 320
 video_audio = false
-renderer = "quickshell-ffmpeg"
+renderer = "native-wayland-ffmpeg"
 decode_backend_order = ["vaapi", "cuda", "software"]
+present_backend = "auto"
 present_mode = "mailbox"
 vsync = true
 
