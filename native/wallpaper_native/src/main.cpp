@@ -585,13 +585,49 @@ private:
     );
     static void layerSurfaceClosed(void *data, zwlr_layer_surface_v1 *layerSurface);
     static void frameDone(void *data, wl_callback *callback, uint32_t time);
-    static void bufferReleased(void *data, wl_buffer *buffer);
+    static void shmBufferReleased(void *data, wl_buffer *buffer);
+    static void dmabufBufferReleased(void *data, wl_buffer *buffer);
+    static void dmabufParamsCreated(
+        void *data,
+        zwp_linux_buffer_params_v1 *params,
+        wl_buffer *buffer
+    );
+    static void dmabufParamsFailed(void *data, zwp_linux_buffer_params_v1 *params);
+    static void dmabufFeedbackDone(void *data, zwp_linux_dmabuf_feedback_v1 *feedback);
+    static void dmabufFeedbackFormatTable(
+        void *data,
+        zwp_linux_dmabuf_feedback_v1 *feedback,
+        int32_t fd,
+        uint32_t size
+    );
+    static void dmabufFeedbackMainDevice(
+        void *data,
+        zwp_linux_dmabuf_feedback_v1 *feedback,
+        wl_array *device
+    );
+    static void dmabufFeedbackTrancheDone(void *data, zwp_linux_dmabuf_feedback_v1 *feedback);
+    static void dmabufFeedbackTrancheTargetDevice(
+        void *data,
+        zwp_linux_dmabuf_feedback_v1 *feedback,
+        wl_array *device
+    );
+    static void dmabufFeedbackTrancheFormats(
+        void *data,
+        zwp_linux_dmabuf_feedback_v1 *feedback,
+        wl_array *indices
+    );
+    static void dmabufFeedbackTrancheFlags(
+        void *data,
+        zwp_linux_dmabuf_feedback_v1 *feedback,
+        uint32_t flags
+    );
 
     WaylandRenderer *m_renderer = nullptr;
     uint32_t m_registryName = 0;
     wl_output *m_output = nullptr;
     wl_surface *m_surface = nullptr;
     zwlr_layer_surface_v1 *m_layerSurface = nullptr;
+    zwp_linux_dmabuf_feedback_v1 *m_surfaceDmabufFeedback = nullptr;
     wl_callback *m_frameCallback = nullptr;
     QString m_outputName;
     QString m_requestedPresentBackend = QStringLiteral("auto");
@@ -604,8 +640,10 @@ private:
     bool m_dirty = false;
     std::shared_ptr<SourceSession> m_source;
     std::optional<CropRect> m_crop;
-    std::array<ShmBuffer, 2> m_buffers;
+    std::array<ShmBuffer, 2> m_shmBuffers;
+    std::array<DmaBuffer, 2> m_dmabufBuffers;
     int m_lastPresentedIndex = -1;
+    QString m_lastPresentedBackend = QStringLiteral("shm");
     QImage m_previousImage;
     QElapsedTimer m_transitionClock;
     QTimer m_transitionTimer;
@@ -613,6 +651,10 @@ private:
     quint64 m_committedFrames = 0;
     quint64 m_presentedFrames = 0;
     quint64 m_bufferStarvedFrames = 0;
+    QByteArray m_dmabufFormatTable;
+    std::vector<DmabufFormatModifier> m_surfaceDmabufFormats;
+    bool m_dmabufFeedbackReady = false;
+    bool m_dmabufDisabled = false;
 };
 
 class WaylandRenderer final : public QObject {
@@ -1314,6 +1356,25 @@ void OutputSurface::createSurface() {
     wl_surface_set_input_region(m_surface, region);
     wl_region_destroy(region);
 
+    if (m_renderer->linuxDmabuf() != nullptr && m_renderer->dmabufVersion() >= 4) {
+        m_surfaceDmabufFeedback =
+            zwp_linux_dmabuf_v1_get_surface_feedback(m_renderer->linuxDmabuf(), m_surface);
+        static constexpr zwp_linux_dmabuf_feedback_v1_listener feedbackListener = {
+            .done = &OutputSurface::dmabufFeedbackDone,
+            .format_table = &OutputSurface::dmabufFeedbackFormatTable,
+            .main_device = &OutputSurface::dmabufFeedbackMainDevice,
+            .tranche_done = &OutputSurface::dmabufFeedbackTrancheDone,
+            .tranche_target_device = &OutputSurface::dmabufFeedbackTrancheTargetDevice,
+            .tranche_formats = &OutputSurface::dmabufFeedbackTrancheFormats,
+            .tranche_flags = &OutputSurface::dmabufFeedbackTrancheFlags,
+        };
+        zwp_linux_dmabuf_feedback_v1_add_listener(
+            m_surfaceDmabufFeedback,
+            &feedbackListener,
+            this
+        );
+    }
+
     wl_surface_commit(m_surface);
     flush();
 }
@@ -1324,6 +1385,14 @@ void OutputSurface::destroySurface() {
         m_frameCallback = nullptr;
     }
     destroyBuffers();
+    if (m_surfaceDmabufFeedback != nullptr) {
+        zwp_linux_dmabuf_feedback_v1_destroy(m_surfaceDmabufFeedback);
+        m_surfaceDmabufFeedback = nullptr;
+    }
+    m_dmabufFormatTable.clear();
+    m_surfaceDmabufFormats.clear();
+    m_dmabufFeedbackReady = false;
+    m_dmabufDisabled = false;
     if (m_layerSurface != nullptr) {
         zwlr_layer_surface_v1_destroy(m_layerSurface);
         m_layerSurface = nullptr;
@@ -1344,6 +1413,10 @@ void OutputSurface::applySnapshot(
     m_requestedPresentBackend = presentBackend.requested;
     m_resolvedPresentBackend = presentBackend.resolved;
     m_presentBackendFallbackReason = presentBackend.fallbackReason;
+    if (m_requestedPresentBackend == QLatin1String("shm")) {
+        destroyDmabufBuffers();
+        m_dmabufDisabled = false;
+    }
 
     std::shared_ptr<SourceSession> nextSource;
     std::optional<CropRect> nextCrop;
@@ -1451,23 +1524,23 @@ void OutputSurface::detachCurrentSourceHint() {
     }
 }
 
-void OutputSurface::ensureBuffers() {
+void OutputSurface::ensureShmBuffers() {
     if (m_pixelSize.isEmpty() || m_renderer->shm() == nullptr) {
         return;
     }
 
     const int expectedWidth = m_pixelSize.width();
     const int expectedHeight = m_pixelSize.height();
-    for (const auto &buffer : m_buffers) {
+    for (const auto &buffer : m_shmBuffers) {
         if (buffer.buffer == nullptr ||
             buffer.width != expectedWidth ||
             buffer.height != expectedHeight) {
-            destroyBuffers();
+            destroyShmBuffers();
             break;
         }
     }
 
-    for (auto &buffer : m_buffers) {
+    for (auto &buffer : m_shmBuffers) {
         if (buffer.buffer != nullptr) {
             continue;
         }
@@ -1481,14 +1554,14 @@ void OutputSurface::ensureBuffers() {
         const int fd = ::memfd_create("qsov-wallpaper-buffer", MFD_CLOEXEC);
         if (fd < 0) {
             qWarning().noquote() << kLogPrefix << "memfd_create failed";
-            destroyBuffers();
+            destroyShmBuffers();
             return;
         }
 
         if (::ftruncate(fd, static_cast<off_t>(buffer.bytes)) < 0) {
             qWarning().noquote() << kLogPrefix << "ftruncate failed";
             ::close(fd);
-            destroyBuffers();
+            destroyShmBuffers();
             return;
         }
 
@@ -1497,7 +1570,7 @@ void OutputSurface::ensureBuffers() {
             qWarning().noquote() << kLogPrefix << "mmap failed";
             buffer.data = nullptr;
             ::close(fd);
-            destroyBuffers();
+            destroyShmBuffers();
             return;
         }
 
@@ -1518,15 +1591,261 @@ void OutputSurface::ensureBuffers() {
         ::close(fd);
 
         static constexpr wl_buffer_listener bufferListener = {
-            .release = &OutputSurface::bufferReleased,
+            .release = &OutputSurface::shmBufferReleased,
         };
         wl_buffer_add_listener(buffer.buffer, &bufferListener, &buffer);
     }
 }
 
-void OutputSurface::destroyBuffers() {
-    m_lastPresentedIndex = -1;
-    for (auto &buffer : m_buffers) {
+bool OutputSurface::supportsDmabufModifier(uint32_t format, uint64_t modifier) const {
+    return std::any_of(
+        m_surfaceDmabufFormats.cbegin(),
+        m_surfaceDmabufFormats.cend(),
+        [format, modifier](const DmabufFormatModifier &entry) {
+            return entry.format == format && entry.modifier == modifier;
+        }
+    );
+}
+
+std::vector<uint64_t> OutputSurface::supportedDmabufModifiers(uint32_t format) const {
+    std::vector<uint64_t> modifiers;
+    for (const auto &entry : m_surfaceDmabufFormats) {
+        if (entry.format != format) {
+            continue;
+        }
+        if (std::find(modifiers.cbegin(), modifiers.cend(), entry.modifier) == modifiers.cend()) {
+            modifiers.push_back(entry.modifier);
+        }
+    }
+
+    std::sort(modifiers.begin(), modifiers.end(), [](uint64_t left, uint64_t right) {
+        auto rank = [](uint64_t modifier) {
+            if (modifier == DRM_FORMAT_MOD_LINEAR) {
+                return 0;
+            }
+            if (modifier == DRM_FORMAT_MOD_INVALID) {
+                return 1;
+            }
+            return 2;
+        };
+        if (rank(left) != rank(right)) {
+            return rank(left) < rank(right);
+        }
+        return left < right;
+    });
+
+    return modifiers;
+}
+
+bool OutputSurface::createDmabufBuffer(DmaBuffer &buffer) {
+    QString reason;
+    if (!m_renderer->ensureGbmDevice(&reason) || m_renderer->gbmDevice() == nullptr) {
+        m_presentBackendFallbackReason = reason.isEmpty()
+            ? QStringLiteral("gbm_device_unavailable")
+            : reason;
+        return false;
+    }
+
+    if (m_renderer->dmabufVersion() >= 4 && !m_dmabufFeedbackReady) {
+        m_presentBackendFallbackReason = QStringLiteral("dmabuf_feedback_pending");
+        return false;
+    }
+
+    std::vector<uint64_t> modifiers = supportedDmabufModifiers(kDmabufDrmFormat);
+    if (m_renderer->dmabufVersion() >= 4 && modifiers.empty()) {
+        m_presentBackendFallbackReason = QStringLiteral("dmabuf_format_unsupported");
+        return false;
+    }
+    if (modifiers.empty()) {
+        modifiers = {DRM_FORMAT_MOD_LINEAR, DRM_FORMAT_MOD_INVALID};
+    }
+
+    gbm_bo *bo = nullptr;
+    uint64_t protocolModifier = DRM_FORMAT_MOD_INVALID;
+    for (const uint64_t advertisedModifier : modifiers) {
+        if (advertisedModifier == DRM_FORMAT_MOD_INVALID) {
+            bo = gbm_bo_create(
+                m_renderer->gbmDevice(),
+                static_cast<uint32_t>(m_pixelSize.width()),
+                static_cast<uint32_t>(m_pixelSize.height()),
+                kDmabufDrmFormat,
+                GBM_BO_USE_RENDERING | GBM_BO_USE_LINEAR
+            );
+            protocolModifier = DRM_FORMAT_MOD_INVALID;
+        } else {
+            const uint64_t modifier = advertisedModifier;
+            bo = gbm_bo_create_with_modifiers2(
+                m_renderer->gbmDevice(),
+                static_cast<uint32_t>(m_pixelSize.width()),
+                static_cast<uint32_t>(m_pixelSize.height()),
+                kDmabufDrmFormat,
+                &modifier,
+                1,
+                GBM_BO_USE_RENDERING
+            );
+            protocolModifier = modifier;
+        }
+
+        if (bo == nullptr) {
+            continue;
+        }
+
+        if (gbm_bo_get_plane_count(bo) != 1) {
+            gbm_bo_destroy(bo);
+            bo = nullptr;
+            continue;
+        }
+
+        if (protocolModifier != DRM_FORMAT_MOD_INVALID) {
+            const uint64_t actualModifier = gbm_bo_get_modifier(bo);
+            if (!supportsDmabufModifier(kDmabufDrmFormat, actualModifier)) {
+                gbm_bo_destroy(bo);
+                bo = nullptr;
+                continue;
+            }
+            protocolModifier = actualModifier;
+        }
+
+        break;
+    }
+
+    if (bo == nullptr) {
+        m_presentBackendFallbackReason = QStringLiteral("gbm_bo_create_failed");
+        return false;
+    }
+
+    uint32_t planeStride = gbm_bo_get_stride_for_plane(bo, 0);
+    if (planeStride == 0) {
+        planeStride = gbm_bo_get_stride(bo);
+    }
+    const uint32_t planeOffset = gbm_bo_get_offset(bo, 0);
+    int fd = gbm_bo_get_fd_for_plane(bo, 0);
+    if (fd < 0) {
+        fd = gbm_bo_get_fd(bo);
+    }
+    if (fd < 0) {
+        gbm_bo_destroy(bo);
+        m_presentBackendFallbackReason = QStringLiteral("gbm_bo_export_failed");
+        return false;
+    }
+
+    zwp_linux_buffer_params_v1 *params =
+        zwp_linux_dmabuf_v1_create_params(m_renderer->linuxDmabuf());
+    if (params == nullptr) {
+        ::close(fd);
+        gbm_bo_destroy(bo);
+        m_presentBackendFallbackReason = QStringLiteral("dmabuf_params_create_failed");
+        return false;
+    }
+
+    static constexpr zwp_linux_buffer_params_v1_listener paramsListener = {
+        .created = &OutputSurface::dmabufParamsCreated,
+        .failed = &OutputSurface::dmabufParamsFailed,
+    };
+    zwp_linux_buffer_params_v1_add_listener(params, &paramsListener, &buffer);
+    zwp_linux_buffer_params_v1_add(
+        params,
+        fd,
+        0,
+        planeOffset,
+        planeStride,
+        modifierHi(protocolModifier),
+        modifierLo(protocolModifier)
+    );
+    ::close(fd);
+    zwp_linux_buffer_params_v1_create(
+        params,
+        m_pixelSize.width(),
+        m_pixelSize.height(),
+        kDmabufDrmFormat,
+        0
+    );
+
+    buffer.owner = this;
+    buffer.params = params;
+    buffer.bo = bo;
+    buffer.data = nullptr;
+    buffer.mapData = nullptr;
+    buffer.width = m_pixelSize.width();
+    buffer.height = m_pixelSize.height();
+    buffer.stride = static_cast<int>(planeStride);
+    buffer.format = kDmabufDrmFormat;
+    buffer.modifier = protocolModifier;
+    buffer.pending = true;
+    buffer.busy = false;
+    flush();
+
+    qInfo().noquote() << kLogPrefix
+                      << "dmabuf buffer requested"
+                      << m_outputName
+                      << drmFormatString(buffer.format)
+                      << dmabufModifierString(buffer.modifier);
+    return true;
+}
+
+bool OutputSurface::ensureDmabufBuffers() {
+    if (m_requestedPresentBackend == QLatin1String("shm") ||
+        m_pixelSize.isEmpty() ||
+        m_renderer->linuxDmabuf() == nullptr ||
+        m_dmabufDisabled) {
+        return false;
+    }
+
+    const int expectedWidth = m_pixelSize.width();
+    const int expectedHeight = m_pixelSize.height();
+    for (const auto &buffer : m_dmabufBuffers) {
+        if ((buffer.buffer != nullptr || buffer.pending) &&
+            (buffer.width != expectedWidth || buffer.height != expectedHeight)) {
+            destroyDmabufBuffers();
+            break;
+        }
+    }
+
+    bool anyReady = false;
+    for (auto &buffer : m_dmabufBuffers) {
+        if (buffer.buffer != nullptr) {
+            anyReady = true;
+            continue;
+        }
+        if (buffer.pending) {
+            continue;
+        }
+        if (!createDmabufBuffer(buffer)) {
+            return anyReady;
+        }
+    }
+
+    return anyReady;
+}
+
+void OutputSurface::releaseDmabufBuffer(DmaBuffer &buffer) {
+    if (buffer.buffer != nullptr) {
+        wl_buffer_destroy(buffer.buffer);
+        buffer.buffer = nullptr;
+    }
+    if (buffer.params != nullptr) {
+        zwp_linux_buffer_params_v1_destroy(buffer.params);
+        buffer.params = nullptr;
+    }
+    if (buffer.bo != nullptr && buffer.mapData != nullptr) {
+        gbm_bo_unmap(buffer.bo, buffer.mapData);
+        buffer.mapData = nullptr;
+    }
+    if (buffer.bo != nullptr) {
+        gbm_bo_destroy(buffer.bo);
+        buffer.bo = nullptr;
+    }
+    buffer.data = nullptr;
+    buffer.width = 0;
+    buffer.height = 0;
+    buffer.stride = 0;
+    buffer.modifier = DRM_FORMAT_MOD_INVALID;
+    buffer.busy = false;
+    buffer.pending = false;
+}
+
+void OutputSurface::destroyShmBuffers() {
+    for (auto &buffer : m_shmBuffers) {
         if (buffer.buffer != nullptr) {
             wl_buffer_destroy(buffer.buffer);
             buffer.buffer = nullptr;
@@ -1543,14 +1862,42 @@ void OutputSurface::destroyBuffers() {
     }
 }
 
-OutputSurface::ShmBuffer *OutputSurface::nextFreeBuffer() {
-    for (auto &buffer : m_buffers) {
+void OutputSurface::destroyDmabufBuffers() {
+    for (auto &buffer : m_dmabufBuffers) {
+        releaseDmabufBuffer(buffer);
+    }
+}
+
+void OutputSurface::destroyBuffers() {
+    m_lastPresentedIndex = -1;
+    m_lastPresentedBackend = QStringLiteral("shm");
+    destroyDmabufBuffers();
+    destroyShmBuffers();
+}
+
+OutputSurface::ShmBuffer *OutputSurface::nextFreeShmBuffer() {
+    for (auto &buffer : m_shmBuffers) {
         if (!buffer.busy && buffer.buffer != nullptr) {
             return &buffer;
         }
     }
-    m_bufferStarvedFrames += 1;
     return nullptr;
+}
+
+OutputSurface::DmaBuffer *OutputSurface::nextFreeDmabufBuffer() {
+    for (auto &buffer : m_dmabufBuffers) {
+        if (!buffer.busy && !buffer.pending && buffer.buffer != nullptr) {
+            return &buffer;
+        }
+    }
+    return nullptr;
+}
+
+void OutputSurface::disableDmabuf(const QString &reason) {
+    m_dmabufDisabled = true;
+    m_presentBackendFallbackReason = reason;
+    m_resolvedPresentBackend = QStringLiteral("shm");
+    destroyDmabufBuffers();
 }
 
 void OutputSurface::render() {
@@ -1558,14 +1905,100 @@ void OutputSurface::render() {
         return;
     }
 
-    ensureBuffers();
-    ShmBuffer *buffer = nextFreeBuffer();
-    if (buffer == nullptr) {
+    wl_buffer *wlBuffer = nullptr;
+    void *data = nullptr;
+    int width = 0;
+    int height = 0;
+    int stride = 0;
+    int bufferIndex = -1;
+    QString usedBackend = QStringLiteral("shm");
+    DmaBuffer *usedDmabuf = nullptr;
+    ShmBuffer *usedShm = nullptr;
+
+    if (ensureDmabufBuffers()) {
+        if (DmaBuffer *buffer = nextFreeDmabufBuffer(); buffer != nullptr) {
+            buffer->busy = true;
+            wlBuffer = buffer->buffer;
+            width = buffer->width;
+            height = buffer->height;
+            bufferIndex = static_cast<int>(buffer - m_dmabufBuffers.data());
+            usedBackend = QStringLiteral("dmabuf");
+            usedDmabuf = buffer;
+        }
+    }
+
+    if (wlBuffer == nullptr) {
+        ensureShmBuffers();
+        if (ShmBuffer *buffer = nextFreeShmBuffer(); buffer != nullptr) {
+            buffer->busy = true;
+            wlBuffer = buffer->buffer;
+            data = buffer->data;
+            width = buffer->width;
+            height = buffer->height;
+            stride = buffer->stride;
+            bufferIndex = static_cast<int>(buffer - m_shmBuffers.data());
+            usedBackend = QStringLiteral("shm");
+            usedShm = buffer;
+        }
+    }
+
+    if (usedDmabuf != nullptr) {
+        uint32_t mappedStride = 0;
+        void *mapData = nullptr;
+        void *mapped = gbm_bo_map(
+            usedDmabuf->bo,
+            0,
+            0,
+            static_cast<uint32_t>(usedDmabuf->width),
+            static_cast<uint32_t>(usedDmabuf->height),
+            GBM_BO_TRANSFER_WRITE,
+            &mappedStride,
+            &mapData
+        );
+        if (mapped == nullptr || mapped == MAP_FAILED) {
+            usedDmabuf->busy = false;
+            disableDmabuf(QStringLiteral("gbm_bo_map_failed"));
+            wlBuffer = nullptr;
+            usedDmabuf = nullptr;
+            usedBackend = QStringLiteral("shm");
+        } else {
+            usedDmabuf->data = mapped;
+            usedDmabuf->mapData = mapData;
+            usedDmabuf->stride = static_cast<int>(mappedStride);
+            data = mapped;
+            stride = usedDmabuf->stride;
+        }
+    }
+
+    if (wlBuffer == nullptr) {
+        ensureShmBuffers();
+        if (usedShm == nullptr) {
+            usedShm = nextFreeShmBuffer();
+            if (usedShm != nullptr) {
+                usedShm->busy = true;
+                wlBuffer = usedShm->buffer;
+                data = usedShm->data;
+                width = usedShm->width;
+                height = usedShm->height;
+                stride = usedShm->stride;
+                bufferIndex = static_cast<int>(usedShm - m_shmBuffers.data());
+                usedBackend = QStringLiteral("shm");
+            }
+        }
+    }
+
+    if (wlBuffer == nullptr || data == nullptr) {
+        m_bufferStarvedFrames += 1;
         return;
     }
 
-    buffer->busy = true;
-    QImage target(static_cast<uchar *>(buffer->data), buffer->width, buffer->height, buffer->stride, QImage::Format_ARGB32_Premultiplied);
+    QImage target(
+        static_cast<uchar *>(data),
+        width,
+        height,
+        stride,
+        QImage::Format_ARGB32_Premultiplied
+    );
     target.fill(Qt::black);
 
     QPainter painter(&target);
@@ -1596,9 +2029,15 @@ void OutputSurface::render() {
 
     painter.end();
 
+    if (usedDmabuf != nullptr && usedDmabuf->mapData != nullptr) {
+        gbm_bo_unmap(usedDmabuf->bo, usedDmabuf->mapData);
+        usedDmabuf->mapData = nullptr;
+        usedDmabuf->data = nullptr;
+    }
+
     wl_surface_set_buffer_scale(m_surface, m_scale);
-    wl_surface_attach(m_surface, buffer->buffer, 0, 0);
-    wl_surface_damage_buffer(m_surface, 0, 0, buffer->width, buffer->height);
+    wl_surface_attach(m_surface, wlBuffer, 0, 0);
+    wl_surface_damage_buffer(m_surface, 0, 0, width, height);
     if (m_frameCallback != nullptr) {
         wl_callback_destroy(m_frameCallback);
         m_frameCallback = nullptr;
@@ -1612,7 +2051,17 @@ void OutputSurface::render() {
     flush();
 
     m_committedFrames += 1;
-    m_lastPresentedIndex = static_cast<int>(buffer - m_buffers.data());
+    m_lastPresentedIndex = bufferIndex;
+    m_lastPresentedBackend = usedBackend;
+    m_resolvedPresentBackend = usedBackend;
+    if (usedBackend == QLatin1String("dmabuf")) {
+        m_presentBackendFallbackReason.clear();
+    } else if (m_requestedPresentBackend != QLatin1String("shm") &&
+               m_presentBackendFallbackReason.isEmpty()) {
+        m_presentBackendFallbackReason = m_dmabufFeedbackReady
+            ? QStringLiteral("dmabuf_buffer_pending")
+            : QStringLiteral("dmabuf_feedback_pending");
+    }
     m_dirty = false;
 }
 
@@ -1638,24 +2087,36 @@ void OutputSurface::stopTransition() {
 }
 
 void OutputSurface::capturePreviousImage() {
-    if (m_lastPresentedIndex < 0 || m_lastPresentedIndex >= static_cast<int>(m_buffers.size())) {
+    if (m_lastPresentedIndex < 0 || m_lastPresentedIndex >= static_cast<int>(m_shmBuffers.size())) {
         m_previousImage = QImage();
         return;
     }
 
-    const ShmBuffer &buffer = m_buffers[static_cast<size_t>(m_lastPresentedIndex)];
-    if (buffer.data == nullptr || buffer.width <= 0 || buffer.height <= 0) {
+    const uchar *data = nullptr;
+    int width = 0;
+    int height = 0;
+    int stride = 0;
+
+    if (m_lastPresentedBackend == QLatin1String("dmabuf")) {
+        const DmaBuffer &buffer = m_dmabufBuffers[static_cast<size_t>(m_lastPresentedIndex)];
+        data = static_cast<const uchar *>(buffer.data);
+        width = buffer.width;
+        height = buffer.height;
+        stride = buffer.stride;
+    } else {
+        const ShmBuffer &buffer = m_shmBuffers[static_cast<size_t>(m_lastPresentedIndex)];
+        data = static_cast<const uchar *>(buffer.data);
+        width = buffer.width;
+        height = buffer.height;
+        stride = buffer.stride;
+    }
+
+    if (data == nullptr || width <= 0 || height <= 0) {
         m_previousImage = QImage();
         return;
     }
 
-    const QImage current(
-        static_cast<const uchar *>(buffer.data),
-        buffer.width,
-        buffer.height,
-        buffer.stride,
-        QImage::Format_ARGB32_Premultiplied
-    );
+    const QImage current(data, width, height, stride, QImage::Format_ARGB32_Premultiplied);
     m_previousImage = current.copy();
 }
 
@@ -1681,12 +2142,162 @@ void OutputSurface::frameDone(void *data, wl_callback *, uint32_t) {
     static_cast<OutputSurface *>(data)->onFrameCallbackDone();
 }
 
-void OutputSurface::bufferReleased(void *data, wl_buffer *) {
+void OutputSurface::shmBufferReleased(void *data, wl_buffer *) {
     auto *buffer = static_cast<ShmBuffer *>(data);
     buffer->busy = false;
     if (buffer->owner != nullptr) {
         buffer->owner->onBufferReleased();
     }
+}
+
+void OutputSurface::dmabufBufferReleased(void *data, wl_buffer *) {
+    auto *buffer = static_cast<DmaBuffer *>(data);
+    buffer->busy = false;
+    if (buffer->owner != nullptr) {
+        buffer->owner->onBufferReleased();
+    }
+}
+
+void OutputSurface::dmabufParamsCreated(
+    void *data,
+    zwp_linux_buffer_params_v1 *params,
+    wl_buffer *buffer
+) {
+    auto *dmabuf = static_cast<DmaBuffer *>(data);
+    dmabuf->params = nullptr;
+    dmabuf->buffer = buffer;
+    dmabuf->pending = false;
+    zwp_linux_buffer_params_v1_destroy(params);
+
+    static constexpr wl_buffer_listener bufferListener = {
+        .release = &OutputSurface::dmabufBufferReleased,
+    };
+    wl_buffer_add_listener(buffer, &bufferListener, dmabuf);
+
+    if (dmabuf->owner != nullptr) {
+        dmabuf->owner->onDmabufBufferCreated();
+    }
+}
+
+void OutputSurface::dmabufParamsFailed(void *data, zwp_linux_buffer_params_v1 *params) {
+    auto *dmabuf = static_cast<DmaBuffer *>(data);
+    dmabuf->params = nullptr;
+    dmabuf->pending = false;
+    zwp_linux_buffer_params_v1_destroy(params);
+
+    if (dmabuf->owner != nullptr) {
+        dmabuf->owner->onDmabufBufferFailed(dmabuf);
+    }
+}
+
+void OutputSurface::dmabufFeedbackDone(void *data, zwp_linux_dmabuf_feedback_v1 *) {
+    auto *self = static_cast<OutputSurface *>(data);
+    self->m_dmabufFeedbackReady = true;
+    self->scheduleRender();
+}
+
+void OutputSurface::dmabufFeedbackFormatTable(
+    void *data,
+    zwp_linux_dmabuf_feedback_v1 *,
+    int32_t fd,
+    uint32_t size
+) {
+    auto *self = static_cast<OutputSurface *>(data);
+    self->m_dmabufFormatTable.clear();
+    self->m_surfaceDmabufFormats.clear();
+
+    if (fd < 0 || size == 0) {
+        if (fd >= 0) {
+            ::close(fd);
+        }
+        return;
+    }
+
+    void *mapped = ::mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (mapped != MAP_FAILED) {
+        self->m_dmabufFormatTable = QByteArray(static_cast<const char *>(mapped), static_cast<int>(size));
+        ::munmap(mapped, size);
+    }
+    ::close(fd);
+}
+
+void OutputSurface::dmabufFeedbackMainDevice(
+    void *,
+    zwp_linux_dmabuf_feedback_v1 *,
+    wl_array *
+) {}
+
+void OutputSurface::dmabufFeedbackTrancheDone(void *, zwp_linux_dmabuf_feedback_v1 *) {}
+
+void OutputSurface::dmabufFeedbackTrancheTargetDevice(
+    void *,
+    zwp_linux_dmabuf_feedback_v1 *,
+    wl_array *
+) {}
+
+void OutputSurface::dmabufFeedbackTrancheFormats(
+    void *data,
+    zwp_linux_dmabuf_feedback_v1 *,
+    wl_array *indices
+) {
+    auto *self = static_cast<OutputSurface *>(data);
+    if (indices == nullptr || indices->data == nullptr || self->m_dmabufFormatTable.isEmpty()) {
+        return;
+    }
+
+    const auto *table = reinterpret_cast<const unsigned char *>(self->m_dmabufFormatTable.constData());
+    const size_t tableSize = static_cast<size_t>(self->m_dmabufFormatTable.size());
+    const auto *begin = static_cast<const uint16_t *>(indices->data);
+    const auto count = indices->size / sizeof(uint16_t);
+
+    for (size_t i = 0; i < count; ++i) {
+        const size_t offset = static_cast<size_t>(begin[i]) * 16;
+        if (offset + 16 > tableSize) {
+            continue;
+        }
+
+        uint32_t format = 0;
+        uint64_t modifier = DRM_FORMAT_MOD_INVALID;
+        std::memcpy(&format, table + offset, sizeof(uint32_t));
+        std::memcpy(&modifier, table + offset + 8, sizeof(uint64_t));
+
+        const DmabufFormatModifier entry{
+            .format = format,
+            .modifier = modifier,
+        };
+        if (std::find(
+                self->m_surfaceDmabufFormats.cbegin(),
+                self->m_surfaceDmabufFormats.cend(),
+                entry
+            ) == self->m_surfaceDmabufFormats.cend()) {
+            self->m_surfaceDmabufFormats.push_back(entry);
+        }
+    }
+}
+
+void OutputSurface::dmabufFeedbackTrancheFlags(
+    void *,
+    zwp_linux_dmabuf_feedback_v1 *,
+    uint32_t
+) {}
+
+void OutputSurface::onDmabufBufferCreated() {
+    scheduleRender();
+}
+
+void OutputSurface::onDmabufBufferFailed(DmaBuffer *buffer) {
+    if (buffer == nullptr) {
+        return;
+    }
+
+    qWarning().noquote() << kLogPrefix
+                         << "dmabuf buffer import failed"
+                         << m_outputName
+                         << drmFormatString(buffer->format)
+                         << dmabufModifierString(buffer->modifier);
+    releaseDmabufBuffer(*buffer);
+    disableDmabuf(QStringLiteral("dmabuf_import_failed"));
+    scheduleRender();
 }
 
 wl_output *OutputSurface::output() const {
