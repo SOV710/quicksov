@@ -10,6 +10,7 @@
 #include <QObject>
 #include <QOpenGLContext>
 #include <QPointer>
+#include <QQuickWindow>
 #include <QSize>
 #include <QTimer>
 #include <QUrl>
@@ -68,6 +69,7 @@ public:
     Q_INVOKABLE void ensureInitialized();
     Q_INVOKABLE void updateRenderTargetHint(QObject *item, const QSize &size);
     Q_INVOKABLE void removeRenderTargetHint(QObject *item);
+    void updateShareContextHint(QOpenGLContext *context);
 
 signals:
     void sourceChanged();
@@ -105,6 +107,7 @@ private:
     WallpaperSharedFrame m_frame;
     QOffscreenSurface *m_offscreenSurface = nullptr;
     QOpenGLContext *m_offscreenContext = nullptr;
+    QPointer<QOpenGLContext> m_shareContextHint;
     QTimer m_initRetryTimer;
     QUrl m_source;
     bool m_muted = true;
@@ -117,6 +120,8 @@ private:
     bool m_renderScheduled = false;
     bool m_forceRender = false;
     bool m_hasFrame = false;
+    bool m_loggedFirstFrame = false;
+    bool m_loggedWaitingForShareContext = false;
     quint64 m_frameSerial = 0;
     GLuint m_textureId = 0;
     qint64 m_observedDwidth = 0;

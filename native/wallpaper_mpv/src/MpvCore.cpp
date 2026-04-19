@@ -4,9 +4,11 @@
 
 #include "MpvCore.hpp"
 
+#include <clocale>
 #include <vector>
 
 #include <QByteArray>
+#include <QDebug>
 #include <QOpenGLContext>
 
 namespace {
@@ -47,6 +49,9 @@ bool MpvCore::initialize(QString *error) {
         return true;
     }
 
+    std::setlocale(LC_NUMERIC, "C");
+    qInfo().noquote() << "[wallpaper-video] forced LC_NUMERIC=C before mpv_create";
+
     m_handle = mpv_create();
     if (m_handle == nullptr) {
         if (error != nullptr) {
@@ -83,7 +88,7 @@ bool MpvCore::initialize(QString *error) {
         return false;
     }
 
-    mpv_request_log_messages(m_handle, "error");
+    mpv_request_log_messages(m_handle, "info");
     return true;
 }
 

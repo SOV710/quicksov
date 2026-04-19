@@ -9,6 +9,7 @@
 
 #include <QGuiApplication>
 #include <QJSEngine>
+#include <QDebug>
 #include <QQmlEngine>
 #include <QOpenGLFunctions>
 #include <QQuickWindow>
@@ -49,6 +50,7 @@ WallpaperVideo::WallpaperVideo(QObject *parent)
     connect(&m_initRetryTimer, &QTimer::timeout, this, &WallpaperVideo::ensureGraphicsReady);
 
     ensureMpvCore();
+    qInfo().noquote() << "[wallpaper-video] singleton created";
 }
 
 WallpaperVideo::~WallpaperVideo() {
@@ -76,6 +78,8 @@ void WallpaperVideo::setSource(const QUrl &source) {
     setReady(false);
     m_forceRender = true;
     emit sourceChanged();
+    qInfo().noquote() << "[wallpaper-video] source set:"
+                      << (m_source.isEmpty() ? QStringLiteral("<empty>") : m_source.toString());
 
     if (m_source.isEmpty()) {
         setStatus(QStringLiteral("idle"));
@@ -105,6 +109,7 @@ void WallpaperVideo::setMuted(bool muted) {
 
     m_muted = muted;
     emit mutedChanged();
+    qInfo().noquote() << "[wallpaper-video] muted =" << m_muted;
     applyAudioState();
 }
 
@@ -120,6 +125,7 @@ void WallpaperVideo::setVolume(qreal volume) {
 
     m_volume = clamped;
     emit volumeChanged();
+    qInfo().noquote() << "[wallpaper-video] volume =" << m_volume;
     applyAudioState();
 }
 
@@ -192,6 +198,16 @@ void WallpaperVideo::removeRenderTargetHint(QObject *item) {
     }
 }
 
+void WallpaperVideo::updateShareContextHint(QOpenGLContext *context) {
+    if (context == nullptr || m_offscreenContext != nullptr || m_shareContextHint == context) {
+        return;
+    }
+
+    m_shareContextHint = context;
+    qInfo().noquote() << "[wallpaper-video] received scene-graph share context hint";
+    ensureInitialized();
+}
+
 void WallpaperVideo::ensureGraphicsReady() {
     if (!ensureMpvCore()) {
         return;
@@ -204,12 +220,23 @@ void WallpaperVideo::ensureGraphicsReady() {
         return;
     }
 
-    QOpenGLContext *shareContext = QOpenGLContext::globalShareContext();
+    QOpenGLContext *shareContext = m_shareContextHint.data();
     if (shareContext == nullptr) {
+        shareContext = QOpenGLContext::globalShareContext();
+    }
+    if (shareContext == nullptr) {
+        if (!m_loggedWaitingForShareContext) {
+            qInfo().noquote() << "[wallpaper-video] waiting for share context";
+            m_loggedWaitingForShareContext = true;
+        }
         if (!m_initRetryTimer.isActive()) {
             m_initRetryTimer.start();
         }
         return;
+    }
+    if (m_loggedWaitingForShareContext) {
+        qInfo().noquote() << "[wallpaper-video] share context became available";
+        m_loggedWaitingForShareContext = false;
     }
 
     bool renderContextCreated = false;
@@ -225,6 +252,7 @@ void WallpaperVideo::ensureGraphicsReady() {
             return;
         }
         m_offscreenSurface = surface;
+        qInfo().noquote() << "[wallpaper-video] offscreen surface created";
     }
 
     if (m_offscreenContext == nullptr) {
@@ -238,6 +266,7 @@ void WallpaperVideo::ensureGraphicsReady() {
             return;
         }
         m_offscreenContext = context;
+        qInfo().noquote() << "[wallpaper-video] offscreen OpenGL context created";
     }
 
     if (m_mpv.renderContext() == nullptr) {
@@ -260,6 +289,7 @@ void WallpaperVideo::ensureGraphicsReady() {
         m_mpv.setRenderUpdateCallback(&WallpaperVideo::onRenderUpdate, this);
         m_offscreenContext->doneCurrent();
         renderContextCreated = true;
+        qInfo().noquote() << "[wallpaper-video] mpv render context created";
     }
 
     if (renderContextCreated && !m_source.isEmpty()) {
@@ -279,12 +309,23 @@ void WallpaperVideo::drainEvents() {
         }
 
         switch (event->event_id) {
+        case MPV_EVENT_LOG_MESSAGE: {
+            const auto *message = static_cast<mpv_event_log_message *>(event->data);
+            if (message != nullptr) {
+                qInfo().noquote() << "[wallpaper-video][mpv]"
+                                  << QString::fromUtf8(message->level)
+                                  << QString::fromUtf8(message->prefix) + ":"
+                                  << QString::fromUtf8(message->text).trimmed();
+            }
+            break;
+        }
         case MPV_EVENT_FILE_LOADED:
             m_forceRender = true;
             if (!m_source.isEmpty()) {
                 setStatus(QStringLiteral("loading"));
                 setErrorString(QString());
             }
+            qInfo().noquote() << "[wallpaper-video] mpv file loaded";
             applyAudioState();
             scheduleRender();
             break;
@@ -293,6 +334,8 @@ void WallpaperVideo::drainEvents() {
             if (endFile != nullptr && endFile->reason == MPV_END_FILE_REASON_ERROR) {
                 setStatus(QStringLiteral("error"));
                 setErrorString(mpvEventErrorString(endFile->error));
+                qWarning().noquote() << "[wallpaper-video] end-file error:"
+                                     << mpvEventErrorString(endFile->error);
                 if (!m_hasFrame) {
                     setReady(false);
                 }
@@ -393,6 +436,12 @@ void WallpaperVideo::renderFrame() {
     if (m_status != QLatin1String("ready")) {
         setStatus(QStringLiteral("ready"));
     }
+    if (!m_loggedFirstFrame) {
+        qInfo().noquote() << "[wallpaper-video] first frame rendered"
+                          << "frameSize=" << target
+                          << "videoSize=" << m_videoSizeValue;
+        m_loggedFirstFrame = true;
+    }
 
     if (frameSizeChangedValue) {
         emit frameSizeChanged();
@@ -426,6 +475,7 @@ bool WallpaperVideo::ensureMpvCore() {
     mpv_observe_property(m_mpv.handle(), 1, "dwidth", MPV_FORMAT_INT64);
     mpv_observe_property(m_mpv.handle(), 2, "dheight", MPV_FORMAT_INT64);
     applyAudioState();
+    qInfo().noquote() << "[wallpaper-video] mpv core initialized";
     return true;
 }
 
@@ -440,6 +490,7 @@ void WallpaperVideo::loadCurrentSource() {
         setErrorString(QStringLiteral("invalid wallpaper video source"));
         return;
     }
+    m_loggedFirstFrame = false;
 
     QString error;
     if (!m_mpv.command(
@@ -450,6 +501,7 @@ void WallpaperVideo::loadCurrentSource() {
         setErrorString(error);
         return;
     }
+    qInfo().noquote() << "[wallpaper-video] loadfile issued:" << localSource;
 
     applyAudioState();
 }
@@ -481,6 +533,7 @@ void WallpaperVideo::updateVideoSize() {
 
     m_videoSizeValue = nextSize;
     m_forceRender = true;
+    qInfo().noquote() << "[wallpaper-video] video size changed to" << m_videoSizeValue;
     emit videoSizeChanged();
     scheduleRender();
 }
@@ -531,6 +584,7 @@ void WallpaperVideo::setReady(bool ready) {
     }
 
     m_ready = ready;
+    qInfo().noquote() << "[wallpaper-video] ready =" << m_ready;
     emit readyChanged();
 }
 
@@ -540,6 +594,7 @@ void WallpaperVideo::setStatus(const QString &status) {
     }
 
     m_status = status;
+    qInfo().noquote() << "[wallpaper-video] status =" << m_status;
     emit statusChanged();
 }
 
@@ -549,6 +604,9 @@ void WallpaperVideo::setErrorString(const QString &errorString) {
     }
 
     m_errorString = errorString;
+    if (!m_errorString.isEmpty()) {
+        qWarning().noquote() << "[wallpaper-video] error =" << m_errorString;
+    }
     emit errorStringChanged();
 }
 

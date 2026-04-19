@@ -8,6 +8,7 @@
 #include <cmath>
 
 #include <QQuickWindow>
+#include <QSGRendererInterface>
 #include <QSGNode>
 #include <QSGSimpleTextureNode>
 #include <QSGTexture>
@@ -78,6 +79,22 @@ QSGNode *WallpaperVideoItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeDa
         clearTexture();
         delete oldNode;
         return nullptr;
+    }
+
+    auto *context = static_cast<QOpenGLContext *>(
+        window()->rendererInterface()->getResource(window(), QSGRendererInterface::OpenGLContextResource)
+    );
+    if (context != nullptr) {
+        QPointer<WallpaperVideo> controller = m_controller;
+        QMetaObject::invokeMethod(
+            m_controller,
+            [controller, context]() {
+                if (controller != nullptr) {
+                    controller->updateShareContextHint(context);
+                }
+            },
+            Qt::QueuedConnection
+        );
     }
 
     const WallpaperVideo::FrameSnapshot snapshot = m_controller->frameSnapshot();
