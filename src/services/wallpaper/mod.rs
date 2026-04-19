@@ -30,6 +30,7 @@ use crate::util::is_empty_object;
 const DEFAULT_TRANSITION: &str = "fade";
 const DEFAULT_TRANSITION_DURATION_MS: u64 = 320;
 const DEFAULT_RENDERER_BACKEND: &str = "native-wayland-ffmpeg";
+const DEFAULT_PRESENT_BACKEND: &str = "auto";
 const DEFAULT_VSYNC: bool = true;
 const DEFAULT_VIDEO_AUDIO: bool = false;
 const DEFAULT_SOURCE_LOOP: bool = true;
@@ -67,6 +68,7 @@ struct WallpaperCfg {
     transition_duration_ms: u64,
     renderer_backend: String,
     decode_backend_order: Vec<String>,
+    present_backend: String,
     present_mode: Option<String>,
     vsync: bool,
     video_audio: bool,
@@ -103,6 +105,19 @@ impl WallpaperCfg {
             }
         };
 
+        let present_backend = match wallpaper.and_then(|entry| entry.present_backend.as_deref()) {
+            Some("auto" | "shm" | "dmabuf") | None => wallpaper
+                .and_then(|entry| entry.present_backend.clone())
+                .unwrap_or_else(|| DEFAULT_PRESENT_BACKEND.to_string()),
+            Some(other) => {
+                warn!(
+                    present_backend = %other,
+                    "unsupported wallpaper present backend configured; falling back to auto"
+                );
+                DEFAULT_PRESENT_BACKEND.to_string()
+            }
+        };
+
         Self {
             socket_path: cfg.daemon.socket_path.clone(),
             directory: wallpaper
@@ -123,6 +138,7 @@ impl WallpaperCfg {
                         "software".to_string(),
                     ]
                 }),
+            present_backend,
             present_mode: wallpaper.and_then(|entry| entry.present_mode.clone()),
             vsync: wallpaper
                 .and_then(|entry| entry.vsync)
@@ -473,6 +489,7 @@ struct WallpaperState {
     transition_duration_ms: u64,
     renderer_backend: String,
     decode_backend_order: Vec<String>,
+    present_backend: String,
     present_mode: Option<String>,
     vsync: bool,
     video_audio: bool,
@@ -494,6 +511,7 @@ impl WallpaperState {
             transition_duration_ms: cfg.transition_duration_ms,
             renderer_backend: cfg.renderer_backend.clone(),
             decode_backend_order: cfg.decode_backend_order.clone(),
+            present_backend: cfg.present_backend.clone(),
             present_mode: cfg.present_mode.clone(),
             vsync: cfg.vsync,
             video_audio: cfg.video_audio,
@@ -647,6 +665,7 @@ impl WallpaperState {
                 "pid": self.renderer.pid,
                 "last_error": self.renderer.last_error,
                 "decode_backend_order": self.decode_backend_order,
+                "present_backend": self.present_backend,
                 "present_mode": self.present_mode,
                 "vsync": self.vsync,
                 "video_audio": self.video_audio,

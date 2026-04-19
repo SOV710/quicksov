@@ -133,6 +133,7 @@ pub struct WallpaperConfig {
     pub transition_duration_ms: Option<u64>,
     pub renderer: Option<String>,
     pub decode_backend_order: Option<Vec<String>>,
+    pub present_backend: Option<String>,
     pub present_mode: Option<String>,
     pub vsync: Option<bool>,
     pub video_audio: Option<bool>,

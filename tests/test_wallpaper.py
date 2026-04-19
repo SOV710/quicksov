@@ -39,6 +39,7 @@ RENDERER_REQUIRED = [
     "pid",
     "last_error",
     "decode_backend_order",
+    "present_backend",
     "present_mode",
     "vsync",
     "video_audio",
@@ -48,6 +49,7 @@ REASON_VALUES = {"none", "directory_missing", "permission_denied", "scan_failed"
 KIND_VALUES = {"image", "video"}
 FIT_VALUES = {"cover"}
 RENDERER_STATUS_VALUES = {"starting", "running", "error"}
+PRESENT_BACKEND_VALUES = {"auto", "shm", "dmabuf"}
 
 
 def validate_entry(h: Harness, entry: Any, label: str) -> bool:
@@ -181,6 +183,12 @@ def validate_snapshot(h: Harness, payload: Any) -> dict[str, Any] | None:
             h.ok("wallpaper.renderer.decode_backend_order is a list")
         else:
             h.error(f"wallpaper.renderer.decode_backend_order invalid: {renderer!r}")
+        if renderer.get("present_backend") in PRESENT_BACKEND_VALUES:
+            h.ok(
+                f"wallpaper.renderer.present_backend enum is valid ({renderer.get('present_backend')})"
+            )
+        else:
+            h.error(f"wallpaper.renderer.present_backend invalid: {renderer!r}")
         for key in ("vsync", "video_audio"):
             if isinstance(renderer.get(key), bool):
                 h.ok(f"wallpaper.renderer.{key} is boolean ({renderer.get(key)})")
