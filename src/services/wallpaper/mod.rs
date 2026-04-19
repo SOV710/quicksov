@@ -2,25 +2,40 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `wallpaper` service — wallpaper directory scan + current selection state.
+//! `wallpaper` service — wallpaper source/view state plus renderer supervision.
 //!
-//! The daemon owns wallpaper discovery and current-image selection. Rendering
-//! remains entirely in QML via per-screen background layer-shell windows.
+//! The daemon owns:
+//! - wallpaper directory discovery
+//! - source and per-output view selection
+//! - process supervision for the dedicated wallpaper renderer
+//!
+//! The renderer is isolated in a separate process (`qsov-wallpaperd`) so the
+//! main shell no longer carries wallpaper video decode / render load.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
+use tokio::process::Command;
 use tokio::sync::{mpsc, watch};
 use tracing::{info, warn};
 
 use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
-use crate::config::Config;
+use crate::config::{
+    Config, WallpaperConfig, WallpaperCropConfig, WallpaperSourceConfig, WallpaperViewConfig,
+};
 use crate::util::is_empty_object;
 
 const DEFAULT_TRANSITION: &str = "fade";
 const DEFAULT_TRANSITION_DURATION_MS: u64 = 320;
-const DEFAULT_VIDEO_ENABLED: bool = true;
+const DEFAULT_RENDERER_BACKEND: &str = "quickshell-ffmpeg";
+const DEFAULT_VSYNC: bool = true;
 const DEFAULT_VIDEO_AUDIO: bool = false;
+const DEFAULT_SOURCE_LOOP: bool = true;
+const DEFAULT_SOURCE_MUTE: bool = true;
+const DEFAULT_VIEW_FIT: &str = "cover";
+const DEFAULT_RENDERER_PROCESS: &str = "qsov-wallpaperd";
 const IMAGE_EXTS: &[&str] = &["avif", "bmp", "jpeg", "jpg", "png", "svg", "webp"];
 const VIDEO_EXTS: &[&str] = &["avi", "mkv", "mov", "mp4", "webm"];
 
@@ -32,8 +47,10 @@ pub fn spawn(cfg: &Config) -> ServiceHandle {
 
     let (state_tx, state_rx) = watch::channel(state.snapshot());
     let (request_tx, request_rx) = mpsc::channel(16);
+    let (renderer_tx, renderer_rx) = watch::channel(RendererRuntime::starting());
 
-    tokio::spawn(run(request_rx, state_tx, state));
+    tokio::spawn(supervise_renderer(cfg.clone(), renderer_tx));
+    tokio::spawn(run(request_rx, state_tx, renderer_rx, state));
 
     ServiceHandle {
         request_tx,
@@ -44,11 +61,17 @@ pub fn spawn(cfg: &Config) -> ServiceHandle {
 
 #[derive(Clone, Debug)]
 struct WallpaperCfg {
+    socket_path: String,
     directory: PathBuf,
     transition_type: String,
     transition_duration_ms: u64,
-    video_enabled: bool,
+    renderer_backend: String,
+    decode_backend_order: Vec<String>,
+    present_mode: Option<String>,
+    vsync: bool,
     video_audio: bool,
+    configured_sources: BTreeMap<String, SourceSpec>,
+    configured_views: BTreeMap<String, ViewState>,
 }
 
 impl WallpaperCfg {
@@ -66,7 +89,21 @@ impl WallpaperCfg {
             }
         };
 
+        let renderer_backend = match wallpaper.and_then(|entry| entry.renderer.as_deref()) {
+            Some("quickshell-ffmpeg") | Some("quickshell-mpv") | None => {
+                DEFAULT_RENDERER_BACKEND.to_string()
+            }
+            Some(other) => {
+                warn!(
+                    renderer = %other,
+                    "unsupported wallpaper renderer configured; falling back to quickshell-ffmpeg"
+                );
+                DEFAULT_RENDERER_BACKEND.to_string()
+            }
+        };
+
         Self {
+            socket_path: cfg.daemon.socket_path.clone(),
             directory: wallpaper
                 .and_then(|entry| entry.directory.clone())
                 .map(PathBuf::from)
@@ -75,14 +112,63 @@ impl WallpaperCfg {
             transition_duration_ms: wallpaper
                 .and_then(|entry| entry.transition_duration_ms)
                 .unwrap_or(DEFAULT_TRANSITION_DURATION_MS),
-            video_enabled: wallpaper
-                .and_then(|entry| entry.video_enabled)
-                .unwrap_or(DEFAULT_VIDEO_ENABLED),
+            renderer_backend,
+            decode_backend_order: wallpaper
+                .and_then(|entry| entry.decode_backend_order.clone())
+                .unwrap_or_else(|| {
+                    vec![
+                        "vaapi".to_string(),
+                        "cuda".to_string(),
+                        "software".to_string(),
+                    ]
+                }),
+            present_mode: wallpaper.and_then(|entry| entry.present_mode.clone()),
+            vsync: wallpaper
+                .and_then(|entry| entry.vsync)
+                .unwrap_or(DEFAULT_VSYNC),
             video_audio: wallpaper
                 .and_then(|entry| entry.video_audio)
                 .unwrap_or(DEFAULT_VIDEO_AUDIO),
+            configured_sources: configured_sources(wallpaper),
+            configured_views: configured_views(wallpaper),
         }
     }
+}
+
+fn configured_sources(wallpaper: Option<&WallpaperConfig>) -> BTreeMap<String, SourceSpec> {
+    let Some(wallpaper) = wallpaper else {
+        return BTreeMap::new();
+    };
+
+    wallpaper
+        .sources
+        .iter()
+        .filter_map(|(id, source)| {
+            if id.is_empty() {
+                warn!("ignoring wallpaper source with empty id");
+                return None;
+            }
+            SourceSpec::from_config(id, source).map(|spec| (id.clone(), spec))
+        })
+        .collect()
+}
+
+fn configured_views(wallpaper: Option<&WallpaperConfig>) -> BTreeMap<String, ViewState> {
+    let Some(wallpaper) = wallpaper else {
+        return BTreeMap::new();
+    };
+
+    wallpaper
+        .views
+        .iter()
+        .filter_map(|(output, view)| {
+            if output.is_empty() {
+                warn!("ignoring wallpaper view with empty output name");
+                return None;
+            }
+            ViewState::from_config(output, view).map(|state| (output.clone(), state))
+        })
+        .collect()
 }
 
 fn default_wallpaper_directory() -> PathBuf {
@@ -103,6 +189,14 @@ impl WallpaperKind {
         match self {
             Self::Image => "image",
             Self::Video => "video",
+        }
+    }
+
+    fn from_hint(value: &str) -> Option<Self> {
+        match value {
+            "image" => Some(Self::Image),
+            "video" => Some(Self::Video),
+            _ => None,
         }
     }
 }
@@ -160,17 +254,235 @@ impl WallpaperAvailabilityReason {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RendererStatus {
+    Starting,
+    Running,
+    Error,
+}
+
+impl RendererStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Starting => "starting",
+            Self::Running => "running",
+            Self::Error => "error",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RendererRuntime {
+    status: RendererStatus,
+    pid: Option<u32>,
+    last_error: Option<String>,
+}
+
+impl RendererRuntime {
+    fn starting() -> Self {
+        Self {
+            status: RendererStatus::Starting,
+            pid: None,
+            last_error: None,
+        }
+    }
+
+    fn running(pid: u32) -> Self {
+        Self {
+            status: RendererStatus::Running,
+            pid: Some(pid),
+            last_error: None,
+        }
+    }
+
+    fn error(message: String) -> Self {
+        Self {
+            status: RendererStatus::Error,
+            pid: None,
+            last_error: Some(message),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct CropRect {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+impl CropRect {
+    fn from_config(config: &WallpaperCropConfig) -> Option<Self> {
+        let crop = Self {
+            x: config.x,
+            y: config.y,
+            width: config.width,
+            height: config.height,
+        };
+        crop.is_valid().then_some(crop)
+    }
+
+    fn is_valid(self) -> bool {
+        self.x >= 0.0
+            && self.y >= 0.0
+            && self.width > 0.0
+            && self.height > 0.0
+            && self.x + self.width <= 1.0
+            && self.y + self.height <= 1.0
+    }
+
+    fn to_json(self) -> Value {
+        json!({
+            "x": self.x,
+            "y": self.y,
+            "width": self.width,
+            "height": self.height,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SourceSpec {
+    path: PathBuf,
+    kind_hint: Option<WallpaperKind>,
+    loop_enabled: bool,
+    mute: bool,
+}
+
+impl SourceSpec {
+    fn from_config(id: &str, source: &WallpaperSourceConfig) -> Option<Self> {
+        let kind_hint = match source.kind.as_deref() {
+            Some(value) => match WallpaperKind::from_hint(value) {
+                Some(kind) => Some(kind),
+                None => {
+                    warn!(source = %id, kind = %value, "ignoring wallpaper source with unsupported kind");
+                    return None;
+                }
+            },
+            None => None,
+        };
+
+        Some(Self {
+            path: PathBuf::from(&source.path),
+            kind_hint,
+            loop_enabled: source.loop_enabled.unwrap_or(DEFAULT_SOURCE_LOOP),
+            mute: source.mute.unwrap_or(DEFAULT_SOURCE_MUTE),
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ResolvedSource {
+    id: String,
+    path: String,
+    name: String,
+    kind: WallpaperKind,
+    loop_enabled: bool,
+    mute: bool,
+}
+
+impl ResolvedSource {
+    fn to_json(&self) -> Value {
+        json!({
+            "id": self.id,
+            "path": self.path,
+            "name": self.name,
+            "kind": self.kind.as_str(),
+            "loop": self.loop_enabled,
+            "mute": self.mute,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ViewFit {
+    Cover,
+}
+
+impl ViewFit {
+    fn from_str(value: &str) -> Option<Self> {
+        match value {
+            "cover" => Some(Self::Cover),
+            _ => None,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Cover => DEFAULT_VIEW_FIT,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct ViewState {
+    output: String,
+    source: String,
+    fit: ViewFit,
+    crop: Option<CropRect>,
+}
+
+impl ViewState {
+    fn from_config(output: &str, view: &WallpaperViewConfig) -> Option<Self> {
+        let fit = match view.fit.as_deref() {
+            Some(value) => match ViewFit::from_str(value) {
+                Some(fit) => fit,
+                None => {
+                    warn!(output = %output, fit = %value, "ignoring wallpaper view with unsupported fit");
+                    return None;
+                }
+            },
+            None => ViewFit::Cover,
+        };
+
+        let crop = match view.crop.as_ref() {
+            Some(crop) => match CropRect::from_config(crop) {
+                Some(crop) => Some(crop),
+                None => {
+                    warn!(output = %output, "ignoring wallpaper view crop outside normalized bounds");
+                    None
+                }
+            },
+            None => None,
+        };
+
+        Some(Self {
+            output: output.to_string(),
+            source: view.source.clone(),
+            fit,
+            crop,
+        })
+    }
+
+    fn to_json(&self) -> Value {
+        json!({
+            "output": self.output,
+            "source": self.source,
+            "fit": self.fit.as_str(),
+            "crop": self.crop.map(CropRect::to_json),
+        })
+    }
+}
+
 #[derive(Debug)]
 struct WallpaperState {
     directory: PathBuf,
     transition_type: String,
     transition_duration_ms: u64,
-    video_enabled: bool,
+    renderer_backend: String,
+    decode_backend_order: Vec<String>,
+    present_mode: Option<String>,
+    vsync: bool,
     video_audio: bool,
     availability: WallpaperAvailability,
     availability_reason: WallpaperAvailabilityReason,
     entries: Vec<WallpaperEntry>,
-    current_path: Option<String>,
+    source_specs: BTreeMap<String, SourceSpec>,
+    sources: BTreeMap<String, ResolvedSource>,
+    views: BTreeMap<String, ViewState>,
+    fallback_source: Option<String>,
+    renderer: RendererRuntime,
 }
 
 impl WallpaperState {
@@ -179,13 +491,24 @@ impl WallpaperState {
             directory: cfg.directory.clone(),
             transition_type: cfg.transition_type.clone(),
             transition_duration_ms: cfg.transition_duration_ms,
-            video_enabled: cfg.video_enabled,
+            renderer_backend: cfg.renderer_backend.clone(),
+            decode_backend_order: cfg.decode_backend_order.clone(),
+            present_mode: cfg.present_mode.clone(),
+            vsync: cfg.vsync,
             video_audio: cfg.video_audio,
             availability: WallpaperAvailability::Unavailable,
             availability_reason: WallpaperAvailabilityReason::DirectoryMissing,
             entries: Vec::new(),
-            current_path: None,
+            source_specs: cfg.configured_sources.clone(),
+            sources: BTreeMap::new(),
+            views: cfg.configured_views.clone(),
+            fallback_source: None,
+            renderer: RendererRuntime::starting(),
         }
+    }
+
+    fn set_renderer(&mut self, renderer: RendererRuntime) {
+        self.renderer = renderer;
     }
 
     fn rescan(&mut self) {
@@ -196,25 +519,21 @@ impl WallpaperState {
     }
 
     fn apply_entries(&mut self, entries: Vec<WallpaperEntry>) {
-        let first_entry = entries.first().map(|entry| entry.path.clone());
-        let current_still_exists = self
-            .current_path
-            .as_ref()
-            .is_some_and(|current| entries.iter().any(|entry| entry.path == *current));
-
         self.entries = entries;
         self.availability_reason = WallpaperAvailabilityReason::None;
 
         if self.entries.is_empty() {
             self.availability = WallpaperAvailability::Empty;
-            self.current_path = None;
+            self.sources.clear();
+            self.fallback_source = None;
             return;
         }
 
         self.availability = WallpaperAvailability::Ready;
-        if !current_still_exists {
-            self.current_path = first_entry;
-        }
+        self.ensure_default_source();
+        self.resolve_sources();
+        self.reconcile_views();
+        self.fallback_source = self.sources.keys().next().cloned();
     }
 
     fn apply_scan_error(&mut self, err: ScanError) {
@@ -226,7 +545,67 @@ impl WallpaperState {
         self.availability = WallpaperAvailability::Unavailable;
         self.availability_reason = err.reason();
         self.entries.clear();
-        self.current_path = None;
+        self.sources.clear();
+        self.fallback_source = None;
+    }
+
+    fn ensure_default_source(&mut self) {
+        if !self.source_specs.is_empty() {
+            return;
+        }
+        let Some(entry) = self.entries.first() else {
+            return;
+        };
+
+        self.source_specs.insert(
+            "default".to_string(),
+            SourceSpec {
+                path: PathBuf::from(&entry.path),
+                kind_hint: Some(entry.kind),
+                loop_enabled: DEFAULT_SOURCE_LOOP,
+                mute: DEFAULT_SOURCE_MUTE,
+            },
+        );
+    }
+
+    fn resolve_sources(&mut self) {
+        self.sources.clear();
+
+        for (id, spec) in &self.source_specs {
+            let resolved_path = resolve_source_path(&self.directory, &spec.path);
+            let Some(kind) = spec.kind_hint.or_else(|| classify_path(&resolved_path)) else {
+                warn!(source = %id, path = %resolved_path.display(), "skipping wallpaper source with unsupported file type");
+                continue;
+            };
+
+            if !resolved_path.is_file() {
+                warn!(source = %id, path = %resolved_path.display(), "skipping wallpaper source because file is missing");
+                continue;
+            }
+
+            let path_string = resolved_path.to_string_lossy().into_owned();
+            let name = resolved_path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| id.clone());
+
+            self.sources.insert(
+                id.clone(),
+                ResolvedSource {
+                    id: id.clone(),
+                    path: path_string,
+                    name,
+                    kind,
+                    loop_enabled: spec.loop_enabled,
+                    mute: spec.mute,
+                },
+            );
+        }
+    }
+
+    fn reconcile_views(&mut self) {
+        self.views
+            .retain(|_, view| self.sources.contains_key(&view.source));
     }
 
     fn snapshot(&self) -> Value {
@@ -235,86 +614,273 @@ impl WallpaperState {
             .iter()
             .map(WallpaperEntry::to_json)
             .collect::<Vec<_>>();
-        let current = self.current_entry().map(WallpaperEntry::to_json);
+
+        let mut sources = Map::new();
+        for (id, source) in &self.sources {
+            sources.insert(id.clone(), source.to_json());
+        }
+
+        let mut views = Map::new();
+        for (output, view) in &self.views {
+            if self.sources.contains_key(&view.source) {
+                views.insert(output.clone(), view.to_json());
+            }
+        }
 
         json!({
             "directory": self.directory.to_string_lossy(),
             "availability": self.availability.as_str(),
             "availability_reason": self.availability_reason.as_str(),
             "entries": entries,
-            "current": current,
+            "fallback_source": self.fallback_source,
+            "sources": Value::Object(sources),
+            "views": Value::Object(views),
             "transition": {
                 "type": self.transition_type,
                 "duration_ms": self.transition_duration_ms,
             },
-            "render": {
-                "backend": "mpv",
-                "video_enabled": self.video_enabled,
+            "renderer": {
+                "process": DEFAULT_RENDERER_PROCESS,
+                "backend": self.renderer_backend,
+                "status": self.renderer.status.as_str(),
+                "pid": self.renderer.pid,
+                "last_error": self.renderer.last_error,
+                "decode_backend_order": self.decode_backend_order,
+                "present_mode": self.present_mode,
+                "vsync": self.vsync,
                 "video_audio": self.video_audio,
             }
         })
     }
 
-    fn current_entry(&self) -> Option<&WallpaperEntry> {
-        let current = self.current_path.as_deref()?;
-        self.entries.iter().find(|entry| entry.path == current)
-    }
-
-    fn next_entry(&mut self, step: isize) -> Result<(), ServiceError> {
-        if self.entries.is_empty() {
-            return Err(ServiceError::Unavailable);
+    fn set_output_source(&mut self, output: &str, source: &str) -> Result<(), ServiceError> {
+        if !self.sources.contains_key(source) {
+            return Err(ServiceError::ActionPayload {
+                msg: "source is not a known wallpaper source".to_string(),
+            });
         }
 
-        let len = self.entries.len() as isize;
-        let current_idx = self
-            .current_path
-            .as_ref()
-            .and_then(|current| self.entries.iter().position(|entry| &entry.path == current))
-            .unwrap_or(0) as isize;
-        let next_idx = (current_idx + step).rem_euclid(len) as usize;
-        self.current_path = Some(self.entries[next_idx].path.clone());
+        self.views.insert(
+            output.to_string(),
+            ViewState {
+                output: output.to_string(),
+                source: source.to_string(),
+                fit: self
+                    .views
+                    .get(output)
+                    .map_or(ViewFit::Cover, |view| view.fit),
+                crop: self.views.get(output).and_then(|view| view.crop),
+            },
+        );
+
         Ok(())
     }
 
-    fn set_current_path(&mut self, path: &str) -> Result<(), ServiceError> {
-        if self.entries.is_empty() {
-            return Err(ServiceError::Unavailable);
-        }
-
-        let Some(entry) = self.entries.iter().find(|entry| entry.path == path) else {
+    fn set_output_path(&mut self, output: &str, path: &str) -> Result<(), ServiceError> {
+        let Some(entry) = self
+            .entries
+            .iter()
+            .find(|entry| entry.path == path)
+            .cloned()
+        else {
             return Err(ServiceError::ActionPayload {
                 msg: "path is not a known wallpaper entry".to_string(),
             });
         };
 
-        self.current_path = Some(entry.path.clone());
+        let source_id = self.ensure_auto_source(&entry);
+        self.set_output_source(output, &source_id)
+    }
+
+    fn step_output(&mut self, output: &str, step: isize) -> Result<(), ServiceError> {
+        if self.entries.is_empty() {
+            return Err(ServiceError::Unavailable);
+        }
+
+        let current_path = self
+            .current_output_source(output)
+            .and_then(|source_id| self.sources.get(source_id))
+            .map(|source| source.path.clone());
+
+        let current_idx = current_path
+            .as_ref()
+            .and_then(|path| self.entries.iter().position(|entry| entry.path == *path))
+            .unwrap_or(0);
+
+        let len = self.entries.len() as isize;
+        let next_idx = (current_idx as isize + step).rem_euclid(len) as usize;
+        let path = self.entries[next_idx].path.clone();
+        self.set_output_path(output, &path)
+    }
+
+    fn set_output_crop(
+        &mut self,
+        output: &str,
+        crop: Option<CropRect>,
+    ) -> Result<(), ServiceError> {
+        let source = self
+            .current_output_source(output)
+            .cloned()
+            .or_else(|| self.fallback_source.clone())
+            .ok_or(ServiceError::Unavailable)?;
+
+        let fit = self
+            .views
+            .get(output)
+            .map_or(ViewFit::Cover, |view| view.fit);
+
+        self.views.insert(
+            output.to_string(),
+            ViewState {
+                output: output.to_string(),
+                source,
+                fit,
+                crop,
+            },
+        );
+
         Ok(())
+    }
+
+    fn current_output_source(&self, output: &str) -> Option<&String> {
+        self.views
+            .get(output)
+            .map(|view| &view.source)
+            .or(self.fallback_source.as_ref())
+    }
+
+    fn ensure_auto_source(&mut self, entry: &WallpaperEntry) -> String {
+        if let Some((id, _)) = self
+            .sources
+            .iter()
+            .find(|(_, source)| source.path == entry.path)
+        {
+            return id.clone();
+        }
+
+        let mut candidate = sanitize_auto_source_id(&entry.name);
+        let mut suffix: u32 = 1;
+        while self.source_specs.contains_key(&candidate) {
+            suffix += 1;
+            candidate = format!("{}-{}", sanitize_auto_source_id(&entry.name), suffix);
+        }
+
+        self.source_specs.insert(
+            candidate.clone(),
+            SourceSpec {
+                path: PathBuf::from(&entry.path),
+                kind_hint: Some(entry.kind),
+                loop_enabled: entry.kind == WallpaperKind::Video,
+                mute: DEFAULT_SOURCE_MUTE,
+            },
+        );
+        self.resolve_sources();
+        if self.fallback_source.is_none() {
+            self.fallback_source = Some(candidate.clone());
+        }
+        candidate
     }
 }
 
 async fn run(
     mut request_rx: mpsc::Receiver<ServiceRequest>,
     state_tx: watch::Sender<Value>,
+    mut renderer_rx: watch::Receiver<RendererRuntime>,
     mut state: WallpaperState,
 ) {
     info!(path = %state.directory.display(), "wallpaper service started");
 
-    while let Some(req) = request_rx.recv().await {
-        let result = match req.action.as_str() {
-            "refresh" => handle_refresh(&req.payload, &mut state),
-            "next" => handle_step(&req.payload, &mut state, 1),
-            "prev" => handle_step(&req.payload, &mut state, -1),
-            "set_path" => handle_set_path(&req.payload, &mut state),
-            _ => Err(ServiceError::ActionUnknown {
-                action: req.action.clone(),
-            }),
-        };
+    state.set_renderer(renderer_rx.borrow().clone());
+    state_tx.send_replace(state.snapshot());
 
-        state_tx.send_replace(state.snapshot());
-        req.reply.send(result).ok();
+    loop {
+        tokio::select! {
+            maybe_req = request_rx.recv() => {
+                let Some(req) = maybe_req else {
+                    break;
+                };
+
+                let result = match req.action.as_str() {
+                    "refresh" => handle_refresh(&req.payload, &mut state),
+                    "set_output_source" => handle_set_output_source(&req.payload, &mut state),
+                    "set_output_path" => handle_set_output_path(&req.payload, &mut state),
+                    "next_output" => handle_step_output(&req.payload, &mut state, 1),
+                    "prev_output" => handle_step_output(&req.payload, &mut state, -1),
+                    "set_output_crop" => handle_set_output_crop(&req.payload, &mut state),
+                    _ => Err(ServiceError::ActionUnknown {
+                        action: req.action.clone(),
+                    }),
+                };
+
+                state_tx.send_replace(state.snapshot());
+                req.reply.send(result).ok();
+            }
+            changed = renderer_rx.changed() => {
+                if changed.is_err() {
+                    break;
+                }
+                state.set_renderer(renderer_rx.borrow_and_update().clone());
+                state_tx.send_replace(state.snapshot());
+            }
+        }
     }
 
     info!("wallpaper service stopped");
+}
+
+async fn supervise_renderer(cfg: WallpaperCfg, state_tx: watch::Sender<RendererRuntime>) {
+    let binary = renderer_binary_path();
+    let shell_path = wallpaper_shell_path();
+
+    loop {
+        let mut command = Command::new(&binary);
+        command.env("QSOV_SOCKET", &cfg.socket_path);
+        command.env("QSOV_WALLPAPER_SHELL", &shell_path);
+        if let Some(import_path) = wallpaper_qml_import_path() {
+            command.env("QML_IMPORT_PATH", import_path);
+        }
+
+        match command.spawn() {
+            Ok(mut child) => {
+                let pid = child.id().unwrap_or_default();
+                info!(pid, path = %binary.display(), "spawned wallpaper renderer");
+                state_tx.send_replace(RendererRuntime::running(pid));
+
+                match child.wait().await {
+                    Ok(status) if status.success() => {
+                        warn!("wallpaper renderer exited cleanly; restarting");
+                        state_tx.send_replace(RendererRuntime::error(
+                            "renderer exited unexpectedly".to_string(),
+                        ));
+                    }
+                    Ok(status) => {
+                        warn!(status = %status, "wallpaper renderer exited with failure");
+                        state_tx.send_replace(RendererRuntime::error(format!(
+                            "renderer exited with status {status}"
+                        )));
+                    }
+                    Err(err) => {
+                        warn!(error = %err, "failed to wait for wallpaper renderer");
+                        state_tx.send_replace(RendererRuntime::error(format!(
+                            "failed to wait for renderer: {err}"
+                        )));
+                    }
+                }
+            }
+            Err(err) => {
+                warn!(
+                    error = %err,
+                    path = %binary.display(),
+                    "failed to spawn wallpaper renderer"
+                );
+                state_tx.send_replace(RendererRuntime::error(format!(
+                    "failed to spawn renderer: {err}"
+                )));
+            }
+        }
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
 }
 
 fn handle_refresh(payload: &Value, state: &mut WallpaperState) -> Result<Value, ServiceError> {
@@ -332,40 +898,197 @@ fn handle_refresh(payload: &Value, state: &mut WallpaperState) -> Result<Value, 
     }
 }
 
-fn handle_step(
+fn handle_set_output_source(
+    payload: &Value,
+    state: &mut WallpaperState,
+) -> Result<Value, ServiceError> {
+    let obj = action_object(payload, "set_output_source expects an object payload")?;
+    let output = string_field(obj, "output", "set_output_source requires `output`")?;
+    let source = string_field(obj, "source", "set_output_source requires `source`")?;
+    state.set_output_source(output, source)?;
+    Ok(Value::Null)
+}
+
+fn handle_set_output_path(
+    payload: &Value,
+    state: &mut WallpaperState,
+) -> Result<Value, ServiceError> {
+    let obj = action_object(payload, "set_output_path expects an object payload")?;
+    let output = string_field(obj, "output", "set_output_path requires `output`")?;
+    let path = string_field(obj, "path", "set_output_path requires `path`")?;
+    state.set_output_path(output, path)?;
+    Ok(Value::Null)
+}
+
+fn handle_step_output(
     payload: &Value,
     state: &mut WallpaperState,
     step: isize,
 ) -> Result<Value, ServiceError> {
-    if !is_empty_object(payload) {
-        return Err(ServiceError::ActionPayload {
-            msg: "next/prev expect an empty object payload".to_string(),
-        });
-    }
-
-    state.next_entry(step)?;
+    let obj = action_object(payload, "next_output/prev_output expect an object payload")?;
+    let output = string_field(obj, "output", "next_output/prev_output require `output`")?;
+    state.step_output(output, step)?;
     Ok(Value::Null)
 }
 
-fn handle_set_path(payload: &Value, state: &mut WallpaperState) -> Result<Value, ServiceError> {
-    let Some(obj) = payload.as_object() else {
-        return Err(ServiceError::ActionPayload {
-            msg: "set_path expects an object payload".to_string(),
-        });
+fn handle_set_output_crop(
+    payload: &Value,
+    state: &mut WallpaperState,
+) -> Result<Value, ServiceError> {
+    let obj = action_object(payload, "set_output_crop expects an object payload")?;
+    let output = string_field(obj, "output", "set_output_crop requires `output`")?;
+    let crop = match obj.get("crop") {
+        None | Some(Value::Null) => None,
+        Some(value) => Some(parse_crop(value)?),
     };
-    let Some(path) = obj.get("path").and_then(Value::as_str) else {
-        return Err(ServiceError::ActionPayload {
-            msg: "set_path requires a string field `path`".to_string(),
-        });
+    state.set_output_crop(output, crop)?;
+    Ok(Value::Null)
+}
+
+fn parse_crop(value: &Value) -> Result<CropRect, ServiceError> {
+    let obj = value
+        .as_object()
+        .ok_or_else(|| ServiceError::ActionPayload {
+            msg: "crop must be an object or null".to_string(),
+        })?;
+
+    let crop = CropRect {
+        x: number_field(obj, "x", "crop.x is required")?,
+        y: number_field(obj, "y", "crop.y is required")?,
+        width: number_field(obj, "width", "crop.width is required")?,
+        height: number_field(obj, "height", "crop.height is required")?,
     };
-    if path.is_empty() {
+
+    if crop.is_valid() {
+        Ok(crop)
+    } else {
+        Err(ServiceError::ActionPayload {
+            msg: "crop must be normalized to 0..1 and stay inside bounds".to_string(),
+        })
+    }
+}
+
+fn action_object<'a>(
+    payload: &'a Value,
+    message: &str,
+) -> Result<&'a serde_json::Map<String, Value>, ServiceError> {
+    payload
+        .as_object()
+        .ok_or_else(|| ServiceError::ActionPayload {
+            msg: message.to_string(),
+        })
+}
+
+fn string_field<'a>(
+    obj: &'a serde_json::Map<String, Value>,
+    key: &str,
+    message: &str,
+) -> Result<&'a str, ServiceError> {
+    let value =
+        obj.get(key)
+            .and_then(Value::as_str)
+            .ok_or_else(|| ServiceError::ActionPayload {
+                msg: message.to_string(),
+            })?;
+    if value.is_empty() {
         return Err(ServiceError::ActionPayload {
-            msg: "set_path requires a non-empty `path`".to_string(),
+            msg: message.to_string(),
         });
     }
+    Ok(value)
+}
 
-    state.set_current_path(path)?;
-    Ok(Value::Null)
+fn number_field(
+    obj: &serde_json::Map<String, Value>,
+    key: &str,
+    message: &str,
+) -> Result<f64, ServiceError> {
+    obj.get(key)
+        .and_then(Value::as_f64)
+        .ok_or_else(|| ServiceError::ActionPayload {
+            msg: message.to_string(),
+        })
+}
+
+fn resolve_source_path(directory: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        directory.join(path)
+    }
+}
+
+fn sanitize_auto_source_id(name: &str) -> String {
+    let mut out = String::from("auto");
+    for ch in name.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+        } else if ch == '-' || ch == '_' {
+            out.push(ch);
+        } else if out.as_bytes().last().copied() != Some(b'-') {
+            out.push('-');
+        }
+    }
+    out.trim_end_matches('-').to_string()
+}
+
+fn renderer_binary_path() -> PathBuf {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let candidate = dir.join(DEFAULT_RENDERER_PROCESS);
+            if candidate.exists() {
+                return candidate;
+            }
+        }
+    }
+    PathBuf::from(DEFAULT_RENDERER_PROCESS)
+}
+
+fn wallpaper_shell_path() -> PathBuf {
+    if let Ok(path) = std::env::var("QSOV_WALLPAPER_SHELL") {
+        return PathBuf::from(path);
+    }
+
+    let config_root = if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
+        PathBuf::from(xdg_config)
+    } else if let Some(home) = dirs::home_dir() {
+        home.join(".config")
+    } else {
+        PathBuf::from("$HOME/.config")
+    };
+
+    config_root
+        .join("quickshell")
+        .join("quicksov")
+        .join("wallpaper-shell.qml")
+}
+
+fn wallpaper_qml_import_path() -> Option<String> {
+    let mut paths = Vec::new();
+
+    if let Ok(existing) = std::env::var("QML_IMPORT_PATH") {
+        if !existing.is_empty() {
+            paths.push(existing);
+        }
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(target_dir) = exe.parent().and_then(Path::parent) {
+            let build_qml = target_dir
+                .parent()
+                .map(|repo| repo.join(".build").join("qml"));
+            if let Some(build_qml) = build_qml {
+                if build_qml.exists() {
+                    paths.insert(0, build_qml.to_string_lossy().into_owned());
+                }
+            }
+        }
+    }
+
+    let config_qml = wallpaper_shell_path().parent().map(Path::to_path_buf)?;
+    paths.insert(0, config_qml.to_string_lossy().into_owned());
+
+    Some(paths.join(":"))
 }
 
 #[derive(Debug)]

@@ -20,36 +20,42 @@ Singleton {
     property string availability: "unavailable"
     property string availabilityReason: "none"
     property var entries: []
-    property var current: null
+    property string fallbackSource: ""
+    property var sources: ({})
+    property var views: ({})
     property string transitionType: "fade"
     property int transitionDurationMs: 320
-    property string renderBackend: "mpv"
-    property bool videoEnabled: true
+
+    property string rendererProcess: "qsov-wallpaperd"
+    property string rendererBackend: "quickshell-ffmpeg"
+    property string rendererStatus: "starting"
+    property int rendererPid: 0
+    property string rendererLastError: ""
+    property var decodeBackendOrder: []
+    property string presentMode: ""
+    property bool vsync: true
     property bool videoAudio: false
 
-    readonly property string currentPath: current && typeof current.path === "string"
-                                        ? current.path
-                                        : ""
-    readonly property string currentKind: current && typeof current.kind === "string"
-                                        ? current.kind
-                                        : ""
-    readonly property bool hasCurrentEntry: availability === "ready" && currentPath !== ""
-    readonly property bool hasRenderableImage: hasCurrentEntry && currentKind === "image"
-    readonly property bool hasRenderableVideo: hasCurrentEntry
-                                            && currentKind === "video"
-                                            && videoEnabled
-                                            && renderBackend === "mpv"
+    readonly property bool hasSources: Object.keys(root.sources || {}).length > 0
 
     function _resetState() {
         root.directory = "";
         root.availability = "unavailable";
         root.availabilityReason = "none";
         root.entries = [];
-        root.current = null;
+        root.fallbackSource = "";
+        root.sources = ({});
+        root.views = ({});
         root.transitionType = "fade";
         root.transitionDurationMs = 320;
-        root.renderBackend = "mpv";
-        root.videoEnabled = true;
+        root.rendererProcess = "qsov-wallpaperd";
+        root.rendererBackend = "quickshell-ffmpeg";
+        root.rendererStatus = "starting";
+        root.rendererPid = 0;
+        root.rendererLastError = "";
+        root.decodeBackendOrder = [];
+        root.presentMode = "";
+        root.vsync = true;
         root.videoAudio = false;
         root.lastError = "";
     }
@@ -65,7 +71,10 @@ Singleton {
                 errorClearTimer.restart();
             } else if (root.connected) {
                 root.lastError = "";
-                root.status = "ok";
+                if (root.rendererStatus === "error")
+                    root.status = "degraded";
+                else
+                    root.status = "ok";
             }
         });
     }
@@ -74,43 +83,105 @@ Singleton {
         root._request("refresh", {});
     }
 
-    function next() {
-        root._request("next", {});
-    }
-
-    function prev() {
-        root._request("prev", {});
-    }
-
-    function setPath(path) {
-        if (!path || String(path).length === 0)
+    function setOutputSource(output, source) {
+        if (!output || !source)
             return;
-        root._request("set_path", { path: String(path) });
+        root._request("set_output_source", { output: String(output), source: String(source) });
+    }
+
+    function setOutputPath(output, path) {
+        if (!output || !path)
+            return;
+        root._request("set_output_path", { output: String(output), path: String(path) });
+    }
+
+    function nextOutput(output) {
+        if (!output)
+            return;
+        root._request("next_output", { output: String(output) });
+    }
+
+    function prevOutput(output) {
+        if (!output)
+            return;
+        root._request("prev_output", { output: String(output) });
+    }
+
+    function setOutputCrop(output, crop) {
+        if (!output)
+            return;
+        root._request("set_output_crop", { output: String(output), crop: crop === undefined ? null : crop });
+    }
+
+    function sourceById(sourceId) {
+        if (!sourceId || !root.sources)
+            return null;
+        return root.sources[sourceId] || null;
+    }
+
+    function viewForOutput(outputName) {
+        if (!outputName || !root.views)
+            return null;
+        return root.views[outputName] || null;
+    }
+
+    function sourceIdForOutput(outputName) {
+        var view = root.viewForOutput(outputName);
+        if (view && typeof view.source === "string" && view.source.length > 0)
+            return view.source;
+        return root.fallbackSource || "";
+    }
+
+    function sourceForOutput(outputName) {
+        var sourceId = root.sourceIdForOutput(outputName);
+        return root.sourceById(sourceId);
+    }
+
+    function cropForOutput(outputName) {
+        var view = root.viewForOutput(outputName);
+        return view && view.crop ? view.crop : null;
+    }
+
+    function isVideoForOutput(outputName) {
+        var source = root.sourceForOutput(outputName);
+        return source && source.kind === "video";
+    }
+
+    function isImageForOutput(outputName) {
+        var source = root.sourceForOutput(outputName);
+        return source && source.kind === "image";
     }
 
     function _onSnapshot(payload) {
         var transition = payload.transition || {};
-        var render = payload.render || {};
+        var renderer = payload.renderer || {};
 
         root.directory = payload.directory || "";
         root.availability = payload.availability || "unavailable";
         root.availabilityReason = payload.availability_reason || "none";
         root.entries = payload.entries || [];
-        root.current = payload.current || null;
+        root.fallbackSource = payload.fallback_source || "";
+        root.sources = payload.sources || ({});
+        root.views = payload.views || ({});
         root.transitionType = transition.type || "fade";
         root.transitionDurationMs = typeof transition.duration_ms === "number"
             ? transition.duration_ms
             : 320;
-        root.renderBackend = render.backend || "mpv";
-        root.videoEnabled = typeof render.video_enabled === "boolean"
-            ? render.video_enabled
-            : true;
-        root.videoAudio = typeof render.video_audio === "boolean"
-            ? render.video_audio
-            : false;
+        root.rendererProcess = renderer.process || "qsov-wallpaperd";
+        root.rendererBackend = renderer.backend || "quickshell-ffmpeg";
+        root.rendererStatus = renderer.status || "starting";
+        root.rendererPid = typeof renderer.pid === "number" ? renderer.pid : 0;
+        root.rendererLastError = renderer.last_error || "";
+        root.decodeBackendOrder = renderer.decode_backend_order || [];
+        root.presentMode = renderer.present_mode || "";
+        root.vsync = typeof renderer.vsync === "boolean" ? renderer.vsync : true;
+        root.videoAudio = typeof renderer.video_audio === "boolean" ? renderer.video_audio : false;
         root.ready = true;
         root.lastError = "";
-        if (root.status !== "error")
+
+        if (root.rendererStatus === "error")
+            root.status = "degraded";
+        else
             root.status = "ok";
     }
 
@@ -132,7 +203,7 @@ Singleton {
         onTriggered: {
             root.lastError = "";
             if (root.connected)
-                root.status = "ok";
+                root.status = root.rendererStatus === "error" ? "degraded" : "ok";
         }
     }
 
