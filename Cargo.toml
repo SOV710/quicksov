@@ -7,6 +7,10 @@ edition = "2021"
 name = "qsovd"
 path = "src/main.rs"
 
+[[bin]]
+name = "qsov-wallpaperd"
+path = "src/bin/qsov-wallpaperd.rs"
+
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
@@ -17,7 +21,7 @@ thiserror = "2"
 nix = { version = "0.31", features = ["signal", "process", "user"] }
 dirs = "6"
 zbus = { version = "5", features = ["tokio"] }
-rtnetlink = "0.20"
+rtnetlink = "0.21"
 reqwest = { version = "0.13", features = ["json"] }
 serde_json = "1"
 pipewire = "0.9"
