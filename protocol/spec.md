@@ -702,7 +702,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 - 一个 source 可被多个 output view 复用，用于同视频多屏不同裁切
 - 不同 output 也可绑定不同 source，用于多视频并行
 - `renderer.process` / `renderer.status` 反映专用 wallpaper renderer 进程的运行态
-- `renderer.present_backend` 是用户偏好，当前 native renderer 会做 capability probe 并在运行时决定是否 fallback 到 `shm`
+- `renderer.present_backend` 是用户偏好；当前 native renderer 会优先尝试 `dmabuf`，若 feedback / GBM / import 任一步失败则在运行时自动 fallback 到 `shm`
 - 当前实现使用 `qsov-wallpaperd -> qsov-wallpaper-native` 原生 renderer 承载渲染热路径；state/action 面保持不变
 
 **后端**: daemon 本地目录扫描 + `qsov-wallpaperd` 监督。默认目录 `$HOME/.config/quicksov/wallpapers`，可通过 `daemon.toml.[services.wallpaper].directory` 覆盖。渲染器偏好与默认 source/view 绑定来自 `daemon.toml.[services.wallpaper]`。
