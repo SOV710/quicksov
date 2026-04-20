@@ -191,6 +191,12 @@ struct DmabufFormatModifier {
     auto operator==(const DmabufFormatModifier &) const -> bool = default;
 };
 
+struct DmabufTranche {
+    std::optional<dev_t> targetDevice;
+    uint32_t flags = 0;
+    std::vector<DmabufFormatModifier> formats;
+};
+
 QString drmFormatString(uint32_t format) {
     QByteArray text(4, '\0');
     text[0] = static_cast<char>(format & 0xff);
@@ -949,8 +955,10 @@ public:
         int width,
         int height,
         int stride,
+        int offset,
         uint32_t drmFormat,
         uint64_t modifier,
+        bool conservativeSync,
         QString *error
     ) {
         if (!available() || !source.hasFrame || !source.frame || targetFd < 0) {
@@ -964,7 +972,17 @@ public:
             return false;
         }
 
-        TargetTexture *target = ensureTarget(targetKey, targetFd, width, height, stride, drmFormat, modifier, error);
+        TargetTexture *target = ensureTarget(
+            targetKey,
+            targetFd,
+            width,
+            height,
+            stride,
+            offset,
+            drmFormat,
+            modifier,
+            error
+        );
         if (target == nullptr || target->texture == nullptr) {
             return false;
         }
@@ -996,7 +1014,11 @@ public:
         targetFrame.crop = pl_rect2df{0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height)};
 
         const bool ok = pl_render_image(m_renderer, &image, &targetFrame, &pl_render_fast_params);
-        glFlush();
+        if (conservativeSync) {
+            glFinish();
+        } else {
+            glFlush();
+        }
 
         if (!ok) {
             if (error != nullptr) {
@@ -1022,6 +1044,7 @@ private:
         int width = 0;
         int height = 0;
         int stride = 0;
+        int offset = 0;
         uint32_t drmFormat = 0;
         uint64_t modifier = DRM_FORMAT_MOD_INVALID;
     };
@@ -1100,6 +1123,7 @@ private:
         int width,
         int height,
         int stride,
+        int offset,
         uint32_t drmFormat,
         uint64_t modifier,
         QString *error
@@ -1109,6 +1133,7 @@ private:
             it->second.width == width &&
             it->second.height == height &&
             it->second.stride == stride &&
+            it->second.offset == offset &&
             it->second.drmFormat == drmFormat &&
             it->second.modifier == modifier) {
             return &it->second;
@@ -1140,6 +1165,7 @@ private:
             .width = width,
             .height = height,
             .stride = stride,
+            .offset = offset,
             .drmFormat = drmFormat,
             .modifier = modifier,
         };
@@ -1151,13 +1177,21 @@ private:
         params.blit_dst = static_cast<bool>(format->caps & PL_FMT_CAP_BLITTABLE);
         params.import_handle = PL_HANDLE_DMA_BUF;
         params.shared_mem.handle.fd = dupFd;
+        params.shared_mem.offset = static_cast<size_t>(std::max(offset, 0));
         params.shared_mem.drm_format_mod = modifier;
         params.shared_mem.stride_w = static_cast<size_t>(stride);
         target.texture = pl_tex_create(m_opengl->gpu, &params);
         if (target.texture == nullptr) {
             ::close(dupFd);
             if (error != nullptr) {
-                *error = QStringLiteral("pl_tex_create target import failed");
+                *error = QStringLiteral("pl_tex_create target import failed (%1 %2 %3 stride=%4 offset=%5)")
+                             .arg(
+                                 drmFormatString(drmFormat),
+                                 dmabufModifierString(modifier),
+                                 QStringLiteral("%1x%2").arg(width).arg(height)
+                             )
+                             .arg(stride)
+                             .arg(offset);
             }
             return nullptr;
         }
@@ -1392,6 +1426,7 @@ private:
         int width = 0;
         int height = 0;
         int stride = 0;
+        int offset = 0;
         uint32_t format = kDmabufDrmFormat;
         uint64_t modifier = DRM_FORMAT_MOD_INVALID;
         bool busy = false;
@@ -1413,6 +1448,8 @@ private:
     void disableDmabuf(const QString &reason);
     bool supportsDmabufModifier(uint32_t format, uint64_t modifier) const;
     std::vector<uint64_t> supportedDmabufModifiers(uint32_t format) const;
+    std::vector<uint64_t> supportedDmabufModifiersForDevice(uint32_t format, dev_t targetDevice) const;
+    std::vector<uint64_t> dmabufModifierCandidates(uint32_t format) const;
     void render();
     void startTransition(int durationMs);
     void stopTransition();
@@ -1476,7 +1513,8 @@ private:
     wl_callback *m_frameCallback = nullptr;
     QString m_outputName;
     QString m_requestedPresentBackend = QStringLiteral("auto");
-    QString m_resolvedPresentBackend = QStringLiteral("shm");
+    QString m_targetPresentBackend = QStringLiteral("shm");
+    QString m_activePresentBackend = QStringLiteral("shm");
     QString m_presentBackendFallbackReason;
     bool m_cpuFrameRequired = true;
     int m_scale = 1;
@@ -1501,6 +1539,10 @@ private:
     quint64 m_bufferStarvedFrames = 0;
     QByteArray m_dmabufFormatTable;
     std::vector<DmabufFormatModifier> m_surfaceDmabufFormats;
+    std::vector<DmabufTranche> m_surfaceDmabufTranches;
+    DmabufTranche m_pendingDmabufTranche;
+    QString m_lastDmabufAllocFailureSignature;
+    quint64 m_dmabufAllocFailureRepeats = 0;
     bool m_dmabufFeedbackReady = false;
     bool m_dmabufDisabled = false;
 };
@@ -1640,8 +1682,10 @@ public:
         const QVector<GpuDeviceInfo> devices = gpuDevices();
         const QString compositorPath = compositorDevicePath();
         const QString renderDevicePath = resolveRenderDevicePath(devices);
+        const QString presentDevicePath = resolvePresentDevicePath(devices, renderDevicePath);
         const QString decodeDevicePath = resolveDecodeDevicePath(devices, renderDevicePath);
         const QStringList decodeBackendOrder = resolveDecodeBackendOrder(devices, decodeDevicePath);
+        const bool presentDeviceChanged = m_effectivePresentDevicePath != presentDevicePath;
 
         if (!m_effectiveRenderDevicePath.isEmpty() &&
             !renderDevicePath.isEmpty() &&
@@ -1656,14 +1700,31 @@ public:
             }
         }
 
+        if (presentDeviceChanged && m_dmabufAllocationDevice != nullptr) {
+            gbm_device_destroy(m_dmabufAllocationDevice);
+            m_dmabufAllocationDevice = nullptr;
+            if (m_dmabufAllocationDeviceFd >= 0) {
+                ::close(m_dmabufAllocationDeviceFd);
+                m_dmabufAllocationDeviceFd = -1;
+            }
+            m_dmabufAllocationDeviceAttempted = false;
+            m_dmabufAllocationDeviceFailureReason.clear();
+            m_dmabufAllocationDevicePath.clear();
+            for (auto &entry : m_outputs) {
+                entry.second->resetGpuResources();
+            }
+        }
+
         const bool gpuSelectionChanged =
             m_effectiveCompositorDevicePath != compositorPath ||
             m_effectiveRenderDevicePath != renderDevicePath ||
+            m_effectivePresentDevicePath != presentDevicePath ||
             m_effectiveDecodeDevicePath != decodeDevicePath ||
             m_effectiveDecodeBackendOrder != decodeBackendOrder;
 
         m_effectiveCompositorDevicePath = compositorPath;
         m_effectiveRenderDevicePath = renderDevicePath;
+        m_effectivePresentDevicePath = presentDevicePath;
         m_effectiveDecodeDevicePath = decodeDevicePath;
         m_effectiveDecodeBackendOrder = decodeBackendOrder;
 
@@ -1675,6 +1736,7 @@ public:
                               << "allow_cross_gpu =" << snapshot.allowCrossGpu
                               << "compositor =" << describeGpuPath(devices, compositorPath)
                               << "render =" << describeGpuPath(devices, renderDevicePath)
+                              << "present =" << describeGpuPath(devices, presentDevicePath)
                               << "decode =" << describeGpuPath(devices, decodeDevicePath)
                               << "candidates =" << describeGpuDevices(devices)
                               << "decode_backends =" << decodeBackendOrder.join(QLatin1Char(','));
@@ -1868,6 +1930,106 @@ public:
         return m_gbmDevice;
     }
 
+    [[nodiscard]] bool ensureDmabufAllocationDevice(QString *reason) {
+        if (!m_hasSnapshot) {
+            if (reason != nullptr) {
+                *reason = QStringLiteral("snapshot_not_ready");
+            }
+            return false;
+        }
+
+        if (!m_dmabufAdvertised || m_linuxDmabuf == nullptr) {
+            if (reason != nullptr) {
+                *reason = QStringLiteral("dmabuf_not_advertised");
+            }
+            return false;
+        }
+
+        const QVector<GpuDeviceInfo> devices = gpuDevices();
+        const QString renderPath = resolveRenderDevicePath(devices);
+        const QString selectedPath = resolvePresentDevicePath(devices, renderPath);
+
+        if (m_dmabufAllocationDevice != nullptr && m_dmabufAllocationDevicePath == selectedPath) {
+            if (reason != nullptr) {
+                reason->clear();
+            }
+            return true;
+        }
+
+        if (m_dmabufAllocationDevice != nullptr && m_dmabufAllocationDevicePath != selectedPath) {
+            if (m_dmabufAllocationDevice != nullptr) {
+                gbm_device_destroy(m_dmabufAllocationDevice);
+                m_dmabufAllocationDevice = nullptr;
+            }
+            if (m_dmabufAllocationDeviceFd >= 0) {
+                ::close(m_dmabufAllocationDeviceFd);
+                m_dmabufAllocationDeviceFd = -1;
+            }
+            m_dmabufAllocationDeviceAttempted = false;
+            m_dmabufAllocationDeviceFailureReason.clear();
+            m_dmabufAllocationDevicePath.clear();
+        }
+
+        if (m_dmabufAllocationDeviceAttempted) {
+            if (reason != nullptr) {
+                *reason = m_dmabufAllocationDeviceFailureReason;
+            }
+            return false;
+        }
+
+        m_dmabufAllocationDeviceAttempted = true;
+
+        QString path = selectedPath;
+        if (path.isEmpty()) {
+            path = firstExistingDrmNode(QStringList{QStringLiteral("renderD*"), QStringLiteral("card*")});
+        }
+        if (path.isEmpty()) {
+            m_dmabufAllocationDeviceFailureReason = QStringLiteral("drm_node_missing");
+            if (reason != nullptr) {
+                *reason = m_dmabufAllocationDeviceFailureReason;
+            }
+            return false;
+        }
+
+        const int fd = ::open(path.toUtf8().constData(), O_RDWR | O_CLOEXEC);
+        if (fd < 0) {
+            m_dmabufAllocationDeviceFailureReason = QStringLiteral("drm_node_open_failed");
+            qWarning().noquote() << kLogPrefix << "failed to open dmabuf allocation DRM node"
+                                 << path << std::strerror(errno);
+            if (reason != nullptr) {
+                *reason = m_dmabufAllocationDeviceFailureReason;
+            }
+            return false;
+        }
+
+        gbm_device *device = gbm_create_device(fd);
+        if (device == nullptr) {
+            ::close(fd);
+            m_dmabufAllocationDeviceFailureReason = QStringLiteral("gbm_device_create_failed");
+            if (reason != nullptr) {
+                *reason = m_dmabufAllocationDeviceFailureReason;
+            }
+            return false;
+        }
+
+        m_dmabufAllocationDevice = device;
+        m_dmabufAllocationDeviceFd = fd;
+        m_dmabufAllocationDevicePath = path;
+        m_dmabufAllocationDeviceFailureReason.clear();
+        qInfo().noquote() << kLogPrefix << "dmabuf allocation device initialized"
+                          << "path =" << m_dmabufAllocationDevicePath
+                          << "backend =" << QString::fromUtf8(gbm_device_get_backend_name(m_dmabufAllocationDevice));
+
+        if (reason != nullptr) {
+            reason->clear();
+        }
+        return true;
+    }
+
+    gbm_device *dmabufAllocationDevice() const {
+        return m_dmabufAllocationDevice;
+    }
+
     [[nodiscard]] PresentBackendSelection resolvePresentBackend(const QString &requested) const {
         const QString normalizedRequested = normalizePresentBackend(requested);
         if (normalizedRequested == QLatin1String("shm")) {
@@ -1877,12 +2039,26 @@ public:
             };
         }
 
+        const QVector<GpuDeviceInfo> devices = gpuDevices();
+        const QString compositorPath = compositorDevicePath();
+        const QString renderPath = resolveRenderDevicePath(devices);
+        const QString presentPath = resolvePresentDevicePath(devices, renderPath);
+        const bool unsafeCrossGpuDmabuf =
+            !compositorPath.isEmpty() &&
+            !presentPath.isEmpty() &&
+            compositorPath != presentPath &&
+            gpuInfoForPath(devices, presentPath).has_value() &&
+            gpuInfoForPath(devices, presentPath)->vendor == GpuVendor::Nvidia;
+        const QString unsafeCrossGpuReason = QStringLiteral("cross_gpu_nvidia_dmabuf_unsafe");
+
         if (normalizedRequested == QLatin1String("dmabuf")) {
-            if (!m_dmabufAdvertised) {
+            if (!m_dmabufAdvertised || unsafeCrossGpuDmabuf) {
                 return PresentBackendSelection{
                     .requested = normalizedRequested,
                     .resolved = QStringLiteral("shm"),
-                    .fallbackReason = QStringLiteral("dmabuf_not_advertised"),
+                    .fallbackReason = !m_dmabufAdvertised
+                        ? QStringLiteral("dmabuf_not_advertised")
+                        : unsafeCrossGpuReason,
                 };
             }
             return PresentBackendSelection{
@@ -1891,7 +2067,7 @@ public:
             };
         }
 
-        if (m_dmabufAdvertised) {
+        if (m_dmabufAdvertised && !unsafeCrossGpuDmabuf) {
             return PresentBackendSelection{
                 .requested = normalizedRequested,
                 .resolved = QStringLiteral("dmabuf"),
@@ -1901,7 +2077,9 @@ public:
         return PresentBackendSelection{
             .requested = normalizedRequested,
             .resolved = QStringLiteral("shm"),
-            .fallbackReason = QStringLiteral("dmabuf_not_advertised"),
+            .fallbackReason = !m_dmabufAdvertised
+                ? QStringLiteral("dmabuf_not_advertised")
+                : unsafeCrossGpuReason,
         };
     }
 
@@ -1919,6 +2097,28 @@ public:
 
     [[nodiscard]] quint64 dmabufModifierCount() const {
         return m_dmabufModifierCount;
+    }
+
+    [[nodiscard]] std::optional<dev_t> dmabufMainDevice() const {
+        return m_dmabufMainDevice;
+    }
+
+    [[nodiscard]] QString gbmDevicePath() const {
+        return m_gbmDevicePath;
+    }
+
+    [[nodiscard]] QString dmabufAllocationDevicePath() const {
+        return m_dmabufAllocationDevicePath;
+    }
+
+    [[nodiscard]] bool conservativeDmabufSyncEnabled() const {
+        const QVector<GpuDeviceInfo> devices = gpuDevices();
+        const auto renderGpu = gpuInfoForPath(devices, m_effectiveRenderDevicePath);
+        return !m_effectivePresentDevicePath.isEmpty() &&
+               !m_effectiveRenderDevicePath.isEmpty() &&
+               m_effectivePresentDevicePath != m_effectiveRenderDevicePath &&
+               renderGpu.has_value() &&
+               renderGpu->vendor == GpuVendor::Nvidia;
     }
 
     zwlr_layer_shell_v1 *layerShell() const {
@@ -1972,6 +2172,25 @@ private:
         }
 
         return compositorPath;
+    }
+
+    [[nodiscard]] QString resolvePresentDevicePath(
+        const QVector<GpuDeviceInfo> &,
+        const QString &renderDevicePath
+    ) const {
+        const QString compositorPath = compositorDevicePath();
+        if (renderDevicePath.isEmpty()) {
+            return compositorPath;
+        }
+        if (compositorPath.isEmpty() || compositorPath == renderDevicePath) {
+            return renderDevicePath;
+        }
+
+        if (!compositorPath.isEmpty()) {
+            return compositorPath;
+        }
+
+        return renderDevicePath;
     }
 
     [[nodiscard]] QString resolveDecodeDevicePath(
@@ -2052,12 +2271,25 @@ private:
         m_gbmDeviceAttempted = false;
         m_gbmDeviceFailureReason.clear();
         m_gbmDevicePath.clear();
+
+        if (m_dmabufAllocationDevice != nullptr) {
+            gbm_device_destroy(m_dmabufAllocationDevice);
+            m_dmabufAllocationDevice = nullptr;
+        }
+        if (m_dmabufAllocationDeviceFd >= 0) {
+            ::close(m_dmabufAllocationDeviceFd);
+            m_dmabufAllocationDeviceFd = -1;
+        }
+        m_dmabufAllocationDeviceAttempted = false;
+        m_dmabufAllocationDeviceFailureReason.clear();
+        m_dmabufAllocationDevicePath.clear();
     }
 
     void logTelemetry() {
         const QVector<GpuDeviceInfo> devices = gpuDevices();
         const QString compositorPath = compositorDevicePath();
         const QString renderPath = resolveRenderDevicePath(devices);
+        const QString presentPath = resolvePresentDevicePath(devices, renderPath);
         const QString decodePath = resolveDecodeDevicePath(devices, renderPath);
         const QStringList decodeBackendOrder = resolveDecodeBackendOrder(devices, decodePath);
 
@@ -2071,6 +2303,7 @@ private:
                           << "allow_cross_gpu =" << m_snapshot.allowCrossGpu
                           << "compositor_device =" << describeGpuPath(devices, compositorPath)
                           << "render_device =" << describeGpuPath(devices, renderPath)
+                          << "present_device =" << describeGpuPath(devices, presentPath)
                           << "decode_device =" << describeGpuPath(devices, decodePath)
                           << "decode_backends =" << decodeBackendOrder.join(QLatin1Char(','))
                           << "dmabuf_advertised =" << m_dmabufAdvertised
@@ -2323,11 +2556,17 @@ private:
     bool m_gbmDeviceAttempted = false;
     QString m_gbmDevicePath;
     QString m_gbmDeviceFailureReason;
+    gbm_device *m_dmabufAllocationDevice = nullptr;
+    int m_dmabufAllocationDeviceFd = -1;
+    bool m_dmabufAllocationDeviceAttempted = false;
+    QString m_dmabufAllocationDevicePath;
+    QString m_dmabufAllocationDeviceFailureReason;
     std::unique_ptr<GpuCompositor> m_gpuCompositor;
     bool m_gpuCompositorAttempted = false;
     QString m_gpuCompositorFailureReason;
     QString m_effectiveCompositorDevicePath;
     QString m_effectiveRenderDevicePath;
+    QString m_effectivePresentDevicePath;
     QString m_effectiveDecodeDevicePath;
     QStringList m_effectiveDecodeBackendOrder;
 };
@@ -2374,7 +2613,7 @@ OutputSurface::StatsSnapshot OutputSurface::statsSnapshot() const {
         .outputName = m_outputName,
         .sourceId = (m_source != nullptr) ? m_source->spec().id : QString(),
         .requestedPresentBackend = m_requestedPresentBackend,
-        .resolvedPresentBackend = m_resolvedPresentBackend,
+        .resolvedPresentBackend = m_activePresentBackend,
         .presentBackendFallbackReason = m_presentBackendFallbackReason,
         .logicalSize = m_logicalSize,
         .pixelSize = m_pixelSize,
@@ -2490,6 +2729,8 @@ void OutputSurface::destroySurface() {
     }
     m_dmabufFormatTable.clear();
     m_surfaceDmabufFormats.clear();
+    m_surfaceDmabufTranches.clear();
+    m_pendingDmabufTranche = DmabufTranche{};
     m_dmabufFeedbackReady = false;
     m_dmabufDisabled = false;
     if (m_layerSurface != nullptr) {
@@ -2510,9 +2751,10 @@ void OutputSurface::applySnapshot(
 ) {
     const auto presentBackend = m_renderer->resolvePresentBackend(snapshot.presentBackend);
     m_requestedPresentBackend = presentBackend.requested;
-    m_resolvedPresentBackend = presentBackend.resolved;
+    m_targetPresentBackend = presentBackend.resolved;
     m_presentBackendFallbackReason = presentBackend.fallbackReason;
-    if (m_requestedPresentBackend == QLatin1String("shm")) {
+    if (m_targetPresentBackend == QLatin1String("shm")) {
+        m_activePresentBackend = QStringLiteral("shm");
         destroyDmabufBuffers();
         m_dmabufDisabled = false;
     }
@@ -2627,7 +2869,7 @@ void OutputSurface::setBinding(std::shared_ptr<SourceSession> source, std::optio
     }
 
     m_crop = crop;
-    if (sourceChanged && transitionMs > 0) {
+    if (sourceChanged && transitionMs > 0 && !m_previousImage.isNull()) {
         startTransition(transitionMs);
     } else if (sourceChanged) {
         stopTransition();
@@ -2754,9 +2996,89 @@ std::vector<uint64_t> OutputSurface::supportedDmabufModifiers(uint32_t format) c
     return modifiers;
 }
 
+std::vector<uint64_t> OutputSurface::supportedDmabufModifiersForDevice(uint32_t format, dev_t targetDevice) const {
+    std::vector<uint64_t> modifiers;
+    for (const auto &tranche : m_surfaceDmabufTranches) {
+        if (!tranche.targetDevice.has_value() || *tranche.targetDevice != targetDevice) {
+            continue;
+        }
+
+        for (const auto &entry : tranche.formats) {
+            if (entry.format != format) {
+                continue;
+            }
+            if (std::find(modifiers.cbegin(), modifiers.cend(), entry.modifier) == modifiers.cend()) {
+                modifiers.push_back(entry.modifier);
+            }
+        }
+    }
+
+    std::sort(modifiers.begin(), modifiers.end(), [](uint64_t left, uint64_t right) {
+        auto rank = [](uint64_t modifier) {
+            if (modifier == DRM_FORMAT_MOD_LINEAR) {
+                return 0;
+            }
+            if (modifier == DRM_FORMAT_MOD_INVALID) {
+                return 1;
+            }
+            return 2;
+        };
+        if (rank(left) != rank(right)) {
+            return rank(left) < rank(right);
+        }
+        return left < right;
+    });
+
+    return modifiers;
+}
+
+std::vector<uint64_t> OutputSurface::dmabufModifierCandidates(uint32_t format) const {
+    auto appendUnique = [](std::vector<uint64_t> &dst, const std::vector<uint64_t> &src) {
+        for (const uint64_t value : src) {
+            if (std::find(dst.cbegin(), dst.cend(), value) == dst.cend()) {
+                dst.push_back(value);
+            }
+        }
+    };
+
+    std::vector<uint64_t> modifiers;
+    const QString allocationDevicePath = m_renderer->dmabufAllocationDevicePath();
+    const auto allocationDevice = deviceNumberForPath(allocationDevicePath);
+
+    if (allocationDevicePath.isEmpty()) {
+        modifiers = supportedDmabufModifiers(format);
+    } else if (allocationDevice.has_value()) {
+        modifiers = supportedDmabufModifiersForDevice(format, *allocationDevice);
+        appendUnique(modifiers, supportedDmabufModifiers(format));
+    } else {
+        modifiers = supportedDmabufModifiers(format);
+    }
+
+    const bool crossGpu =
+        m_renderer->dmabufMainDevice().has_value() &&
+        allocationDevice.has_value() &&
+        *m_renderer->dmabufMainDevice() != *allocationDevice;
+    const auto allocationGpu = gpuInfoForPath(discoverGpuDevices(), allocationDevicePath);
+    const bool allocateOnNvidia =
+        allocationGpu.has_value() && allocationGpu->vendor == GpuVendor::Nvidia;
+
+    if (crossGpu || allocateOnNvidia) {
+        if (std::find(modifiers.cbegin(), modifiers.cend(), DRM_FORMAT_MOD_LINEAR) == modifiers.cend()) {
+            modifiers.push_back(DRM_FORMAT_MOD_LINEAR);
+        }
+        if (std::find(modifiers.cbegin(), modifiers.cend(), DRM_FORMAT_MOD_INVALID) == modifiers.cend()) {
+            modifiers.push_back(DRM_FORMAT_MOD_INVALID);
+        }
+    } else if (modifiers.empty()) {
+        modifiers = {DRM_FORMAT_MOD_LINEAR, DRM_FORMAT_MOD_INVALID};
+    }
+
+    return modifiers;
+}
+
 bool OutputSurface::createDmabufBuffer(DmaBuffer &buffer) {
     QString reason;
-    if (!m_renderer->ensureGbmDevice(&reason) || m_renderer->gbmDevice() == nullptr) {
+    if (!m_renderer->ensureDmabufAllocationDevice(&reason) || m_renderer->dmabufAllocationDevice() == nullptr) {
         m_presentBackendFallbackReason = reason.isEmpty()
             ? QStringLiteral("gbm_device_unavailable")
             : reason;
@@ -2768,68 +3090,174 @@ bool OutputSurface::createDmabufBuffer(DmaBuffer &buffer) {
         return false;
     }
 
-    std::vector<uint64_t> modifiers = supportedDmabufModifiers(kDmabufDrmFormat);
-    if (m_renderer->dmabufVersion() >= 4 && modifiers.empty()) {
-        m_presentBackendFallbackReason = QStringLiteral("dmabuf_format_unsupported");
-        return false;
-    }
-    if (modifiers.empty()) {
-        modifiers = {DRM_FORMAT_MOD_LINEAR, DRM_FORMAT_MOD_INVALID};
-    }
+    const auto allocationGpu =
+        gpuInfoForPath(discoverGpuDevices(), m_renderer->dmabufAllocationDevicePath());
+    const bool allocateOnNvidia =
+        allocationGpu.has_value() && allocationGpu->vendor == GpuVendor::Nvidia;
+
+    std::vector<uint32_t> usageCandidates = allocateOnNvidia
+        ? std::vector<uint32_t>{
+            GBM_BO_USE_RENDERING | GBM_BO_USE_SCANOUT,
+            GBM_BO_USE_RENDERING | GBM_BO_USE_SCANOUT | GBM_BO_USE_FRONT_RENDERING,
+            GBM_BO_USE_RENDERING,
+            GBM_BO_USE_SCANOUT,
+        }
+        : std::vector<uint32_t>{
+            GBM_BO_USE_RENDERING,
+            GBM_BO_USE_RENDERING | GBM_BO_USE_SCANOUT,
+            GBM_BO_USE_SCANOUT,
+        };
+
+    auto appendUsageCandidate = [&](uint32_t usage) {
+        if (std::find(usageCandidates.cbegin(), usageCandidates.cend(), usage) == usageCandidates.cend()) {
+            usageCandidates.push_back(usage);
+        }
+    };
+    appendUsageCandidate(GBM_BO_USE_RENDERING | GBM_BO_USE_LINEAR);
+    appendUsageCandidate(GBM_BO_USE_RENDERING | GBM_BO_USE_SCANOUT | GBM_BO_USE_LINEAR);
+    appendUsageCandidate(GBM_BO_USE_SCANOUT | GBM_BO_USE_LINEAR);
 
     gbm_bo *bo = nullptr;
     uint64_t protocolModifier = DRM_FORMAT_MOD_INVALID;
-    for (const uint64_t advertisedModifier : modifiers) {
-        if (advertisedModifier == DRM_FORMAT_MOD_INVALID) {
-            bo = gbm_bo_create(
-                m_renderer->gbmDevice(),
-                static_cast<uint32_t>(m_pixelSize.width()),
-                static_cast<uint32_t>(m_pixelSize.height()),
-                kDmabufDrmFormat,
-                GBM_BO_USE_RENDERING | GBM_BO_USE_LINEAR
-            );
-            protocolModifier = DRM_FORMAT_MOD_INVALID;
-        } else {
-            const uint64_t modifier = advertisedModifier;
-            bo = gbm_bo_create_with_modifiers2(
-                m_renderer->gbmDevice(),
-                static_cast<uint32_t>(m_pixelSize.width()),
-                static_cast<uint32_t>(m_pixelSize.height()),
-                kDmabufDrmFormat,
-                &modifier,
-                1,
-                GBM_BO_USE_RENDERING
-            );
-            protocolModifier = modifier;
-        }
+    uint32_t selectedFormat = kDmabufDrmFormat;
+    QStringList attemptLabels;
+    const bool preferOpaqueFormat =
+        allocateOnNvidia;
+    const std::vector<uint32_t> formatCandidates = preferOpaqueFormat
+        ? std::vector<uint32_t>{DRM_FORMAT_XRGB8888, DRM_FORMAT_ARGB8888}
+        : std::vector<uint32_t>{DRM_FORMAT_ARGB8888, DRM_FORMAT_XRGB8888};
 
-        if (bo == nullptr) {
+    auto usageLabelFor = [](uint32_t usage) {
+        QStringList parts;
+        if ((usage & GBM_BO_USE_RENDERING) != 0) {
+            parts.push_back(QStringLiteral("rendering"));
+        }
+#ifdef GBM_BO_USE_TEXTURING
+        if ((usage & GBM_BO_USE_TEXTURING) != 0) {
+            parts.push_back(QStringLiteral("texturing"));
+        }
+#endif
+        if ((usage & GBM_BO_USE_SCANOUT) != 0) {
+            parts.push_back(QStringLiteral("scanout"));
+        }
+        if ((usage & GBM_BO_USE_FRONT_RENDERING) != 0) {
+            parts.push_back(QStringLiteral("front"));
+        }
+        if ((usage & GBM_BO_USE_LINEAR) != 0) {
+            parts.push_back(QStringLiteral("linear"));
+        }
+        return parts.join(QLatin1Char('+'));
+    };
+
+    for (const uint32_t drmFormat : formatCandidates) {
+        std::vector<uint64_t> modifiers = dmabufModifierCandidates(drmFormat);
+        if (m_renderer->dmabufVersion() >= 4 && modifiers.empty()) {
             continue;
         }
-
-        if (gbm_bo_get_plane_count(bo) != 1) {
-            gbm_bo_destroy(bo);
-            bo = nullptr;
-            continue;
+        if (modifiers.empty()) {
+            modifiers = {DRM_FORMAT_MOD_LINEAR, DRM_FORMAT_MOD_INVALID};
         }
 
-        if (protocolModifier != DRM_FORMAT_MOD_INVALID) {
-            const uint64_t actualModifier = gbm_bo_get_modifier(bo);
-            if (!supportsDmabufModifier(kDmabufDrmFormat, actualModifier)) {
-                gbm_bo_destroy(bo);
-                bo = nullptr;
-                continue;
+        for (const uint64_t advertisedModifier : modifiers) {
+            for (const uint32_t usage : usageCandidates) {
+                if ((usage & GBM_BO_USE_LINEAR) != 0 &&
+                    advertisedModifier != DRM_FORMAT_MOD_LINEAR &&
+                    advertisedModifier != DRM_FORMAT_MOD_INVALID) {
+                    continue;
+                }
+
+                const bool modifierWasAdvertised =
+                    advertisedModifier == DRM_FORMAT_MOD_INVALID ||
+                    supportsDmabufModifier(drmFormat, advertisedModifier);
+                const QString usageLabel = usageLabelFor(usage);
+
+                if (advertisedModifier == DRM_FORMAT_MOD_INVALID) {
+                    bo = gbm_bo_create(
+                        m_renderer->dmabufAllocationDevice(),
+                        static_cast<uint32_t>(m_pixelSize.width()),
+                        static_cast<uint32_t>(m_pixelSize.height()),
+                        drmFormat,
+                        usage
+                    );
+                    protocolModifier = DRM_FORMAT_MOD_INVALID;
+                } else {
+                    const uint64_t modifier = advertisedModifier;
+                    bo = gbm_bo_create_with_modifiers2(
+                        m_renderer->dmabufAllocationDevice(),
+                        static_cast<uint32_t>(m_pixelSize.width()),
+                        static_cast<uint32_t>(m_pixelSize.height()),
+                        drmFormat,
+                        &modifier,
+                        1,
+                        usage
+                    );
+                    protocolModifier = modifier;
+                }
+
+                if (bo == nullptr) {
+                    attemptLabels.push_back(
+                        QStringLiteral("%1/%2@%3")
+                            .arg(drmFormatString(drmFormat), dmabufModifierString(advertisedModifier), usageLabel)
+                    );
+                    continue;
+                }
+
+                if (gbm_bo_get_plane_count(bo) != 1) {
+                    gbm_bo_destroy(bo);
+                    bo = nullptr;
+                    continue;
+                }
+
+                const uint64_t actualModifier = gbm_bo_get_modifier(bo);
+                if (actualModifier != DRM_FORMAT_MOD_INVALID) {
+                    protocolModifier = actualModifier;
+                }
+
+                if (protocolModifier != DRM_FORMAT_MOD_INVALID) {
+                    if (modifierWasAdvertised && !supportsDmabufModifier(drmFormat, actualModifier)) {
+                        gbm_bo_destroy(bo);
+                        bo = nullptr;
+                        continue;
+                    }
+                }
+
+                selectedFormat = drmFormat;
+                break;
             }
-            protocolModifier = actualModifier;
+
+            if (bo != nullptr) {
+                break;
+            }
         }
 
-        break;
+        if (bo != nullptr) {
+            break;
+        }
     }
 
     if (bo == nullptr) {
         m_presentBackendFallbackReason = QStringLiteral("gbm_bo_create_failed");
+        const QString attempts = attemptLabels.join(QStringLiteral(", "));
+        const QString signature =
+            QStringLiteral("%1|%2|%3").arg(m_outputName, m_renderer->dmabufAllocationDevicePath(), attempts);
+        if (signature != m_lastDmabufAllocFailureSignature) {
+            m_lastDmabufAllocFailureSignature = signature;
+            m_dmabufAllocFailureRepeats = 0;
+        }
+        if (m_dmabufAllocFailureRepeats == 0 || m_dmabufAllocFailureRepeats % 120 == 0) {
+            qWarning().noquote() << kLogPrefix
+                                 << "dmabuf GBM allocation failed"
+                                 << m_outputName
+                                 << "device =" << m_renderer->dmabufAllocationDevicePath()
+                                 << "repeats =" << m_dmabufAllocFailureRepeats
+                                 << "attempts =" << attempts;
+        }
+        m_dmabufAllocFailureRepeats += 1;
         return false;
     }
+
+    m_lastDmabufAllocFailureSignature.clear();
+    m_dmabufAllocFailureRepeats = 0;
 
     uint32_t planeStride = gbm_bo_get_stride_for_plane(bo, 0);
     if (planeStride == 0) {
@@ -2865,12 +3293,6 @@ bool OutputSurface::createDmabufBuffer(DmaBuffer &buffer) {
         m_presentBackendFallbackReason = QStringLiteral("dmabuf_params_create_failed");
         return false;
     }
-
-    static constexpr zwp_linux_buffer_params_v1_listener paramsListener = {
-        .created = &OutputSurface::dmabufParamsCreated,
-        .failed = &OutputSurface::dmabufParamsFailed,
-    };
-    zwp_linux_buffer_params_v1_add_listener(params, &paramsListener, &buffer);
     zwp_linux_buffer_params_v1_add(
         params,
         fd,
@@ -2881,13 +3303,6 @@ bool OutputSurface::createDmabufBuffer(DmaBuffer &buffer) {
         modifierLo(protocolModifier)
     );
     ::close(fd);
-    zwp_linux_buffer_params_v1_create(
-        params,
-        m_pixelSize.width(),
-        m_pixelSize.height(),
-        kDmabufDrmFormat,
-        0
-    );
 
     buffer.owner = this;
     buffer.params = params;
@@ -2898,10 +3313,49 @@ bool OutputSurface::createDmabufBuffer(DmaBuffer &buffer) {
     buffer.width = m_pixelSize.width();
     buffer.height = m_pixelSize.height();
     buffer.stride = static_cast<int>(planeStride);
-    buffer.format = kDmabufDrmFormat;
+    buffer.offset = static_cast<int>(planeOffset);
+    buffer.format = selectedFormat;
     buffer.modifier = protocolModifier;
-    buffer.pending = true;
+    buffer.pending = false;
     buffer.busy = false;
+
+    if (m_renderer->dmabufVersion() >= 4) {
+        wl_buffer *wlBuffer = zwp_linux_buffer_params_v1_create_immed(
+            params,
+            m_pixelSize.width(),
+            m_pixelSize.height(),
+            selectedFormat,
+            0
+        );
+        zwp_linux_buffer_params_v1_destroy(params);
+        buffer.params = nullptr;
+        if (wlBuffer == nullptr) {
+            releaseDmabufBuffer(buffer);
+            m_presentBackendFallbackReason = QStringLiteral("dmabuf_create_immed_failed");
+            return false;
+        }
+
+        static constexpr wl_buffer_listener bufferListener = {
+            .release = &OutputSurface::dmabufBufferReleased,
+        };
+        buffer.buffer = wlBuffer;
+        wl_buffer_add_listener(buffer.buffer, &bufferListener, &buffer);
+    } else {
+        static constexpr zwp_linux_buffer_params_v1_listener paramsListener = {
+            .created = &OutputSurface::dmabufParamsCreated,
+            .failed = &OutputSurface::dmabufParamsFailed,
+        };
+        zwp_linux_buffer_params_v1_add_listener(params, &paramsListener, &buffer);
+        zwp_linux_buffer_params_v1_create(
+            params,
+            m_pixelSize.width(),
+            m_pixelSize.height(),
+            selectedFormat,
+            0
+        );
+        buffer.pending = true;
+    }
+
     flush();
 
     qInfo().noquote() << kLogPrefix
@@ -2913,7 +3367,7 @@ bool OutputSurface::createDmabufBuffer(DmaBuffer &buffer) {
 }
 
 bool OutputSurface::ensureDmabufBuffers() {
-    if (m_requestedPresentBackend == QLatin1String("shm") ||
+    if (m_targetPresentBackend == QLatin1String("shm") ||
         m_pixelSize.isEmpty() ||
         m_renderer->linuxDmabuf() == nullptr ||
         m_dmabufDisabled) {
@@ -3032,7 +3486,7 @@ OutputSurface::DmaBuffer *OutputSurface::nextFreeDmabufBuffer() {
 void OutputSurface::disableDmabuf(const QString &reason) {
     m_dmabufDisabled = true;
     m_presentBackendFallbackReason = reason;
-    m_resolvedPresentBackend = QStringLiteral("shm");
+    m_activePresentBackend = QStringLiteral("shm");
     destroyDmabufBuffers();
 }
 
@@ -3110,8 +3564,10 @@ void OutputSurface::render() {
             usedDmabuf->width,
             usedDmabuf->height,
             usedDmabuf->stride,
+            usedDmabuf->offset,
             usedDmabuf->format,
             usedDmabuf->modifier,
+            m_renderer->conservativeDmabufSyncEnabled(),
             &gpuError
         );
         if (!renderedWithGpu && !gpuError.isEmpty()) {
@@ -3143,7 +3599,7 @@ void OutputSurface::render() {
         );
         if (mapped == nullptr || mapped == MAP_FAILED) {
             usedDmabuf->busy = false;
-            disableDmabuf(QStringLiteral("gbm_bo_map_failed"));
+            m_presentBackendFallbackReason = QStringLiteral("gbm_bo_map_failed");
             wlBuffer = nullptr;
             usedDmabuf = nullptr;
             usedBackend = QStringLiteral("shm");
@@ -3244,7 +3700,7 @@ void OutputSurface::render() {
     m_committedFrames += 1;
     m_lastPresentedIndex = bufferIndex;
     m_lastPresentedBackend = usedBackend;
-    m_resolvedPresentBackend = usedBackend;
+    m_activePresentBackend = usedBackend;
     if (usedBackend == QLatin1String("dmabuf")) {
         m_presentBackendFallbackReason.clear();
     } else if (m_requestedPresentBackend != QLatin1String("shm") &&
@@ -3396,6 +3852,8 @@ void OutputSurface::dmabufFeedbackFormatTable(
     auto *self = static_cast<OutputSurface *>(data);
     self->m_dmabufFormatTable.clear();
     self->m_surfaceDmabufFormats.clear();
+    self->m_surfaceDmabufTranches.clear();
+    self->m_pendingDmabufTranche = DmabufTranche{};
 
     if (fd < 0 || size == 0) {
         if (fd >= 0) {
@@ -3418,13 +3876,22 @@ void OutputSurface::dmabufFeedbackMainDevice(
     wl_array *
 ) {}
 
-void OutputSurface::dmabufFeedbackTrancheDone(void *, zwp_linux_dmabuf_feedback_v1 *) {}
+void OutputSurface::dmabufFeedbackTrancheDone(void *data, zwp_linux_dmabuf_feedback_v1 *) {
+    auto *self = static_cast<OutputSurface *>(data);
+    if (!self->m_pendingDmabufTranche.formats.empty()) {
+        self->m_surfaceDmabufTranches.push_back(std::move(self->m_pendingDmabufTranche));
+    }
+    self->m_pendingDmabufTranche = DmabufTranche{};
+}
 
 void OutputSurface::dmabufFeedbackTrancheTargetDevice(
-    void *,
+    void *data,
     zwp_linux_dmabuf_feedback_v1 *,
-    wl_array *
-) {}
+    wl_array *device
+) {
+    auto *self = static_cast<OutputSurface *>(data);
+    self->m_pendingDmabufTranche.targetDevice = parseDeviceNumber(device);
+}
 
 void OutputSurface::dmabufFeedbackTrancheFormats(
     void *data,
@@ -3463,14 +3930,24 @@ void OutputSurface::dmabufFeedbackTrancheFormats(
             ) == self->m_surfaceDmabufFormats.cend()) {
             self->m_surfaceDmabufFormats.push_back(entry);
         }
+        if (std::find(
+                self->m_pendingDmabufTranche.formats.cbegin(),
+                self->m_pendingDmabufTranche.formats.cend(),
+                entry
+            ) == self->m_pendingDmabufTranche.formats.cend()) {
+            self->m_pendingDmabufTranche.formats.push_back(entry);
+        }
     }
 }
 
 void OutputSurface::dmabufFeedbackTrancheFlags(
-    void *,
+    void *data,
     zwp_linux_dmabuf_feedback_v1 *,
-    uint32_t
-) {}
+    uint32_t flags
+) {
+    auto *self = static_cast<OutputSurface *>(data);
+    self->m_pendingDmabufTranche.flags = flags;
+}
 
 void OutputSurface::onDmabufBufferCreated() {
     scheduleRender();

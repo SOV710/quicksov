@@ -367,6 +367,9 @@ vsync = true
 
 # `cuda` hwdec 会将选中的 NVIDIA DRM render node 通过 PCI bus id
 # 映射到精确 CUDA device ordinal；若映射失败则跳过 cuda，避免误绑到默认 GPU。
+# 当 `allow_cross_gpu = true` 且 `render_device_policy` 选择了非 compositor GPU 时，
+# native wallpaper renderer 会默认拆分 render 与 present：FFmpeg hwdec / libplacebo
+# 继续跑在 render GPU，dmabuf 的 GBM 分配与 Wayland present 回到 compositor 主 GPU。
 
 [services.wallpaper.sources.hero]
 path = "hero.mp4"

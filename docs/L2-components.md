@@ -45,6 +45,7 @@
 - wallpaper 正确路径是 layer-shell `background` layer，而不是普通窗口
 - output 生命周期由 renderer 的 `wl_registry` / `wl_output` 驱动
 - wallpaper 状态由 daemon 统一归约，renderer 只消费 `wallpaper` topic
+- 当 `render_device_policy` 选择独显而 compositor 主设备是另一块 GPU 时，native renderer 默认会把视频解码 / libplacebo 渲染继续放在 render GPU 上，但把 dmabuf 的 GBM 分配与 Wayland present 放回 compositor 主 GPU，避免直接向 niri 提交跨 GPU 的 NVIDIA 分配 buffer
 - renderer 每 5s 打印一次 source/output telemetry，用于观察实际 `hwdec`、GPU 设备选择、present backend 选择、decode fps、commit/present fps、buffer starvation
 - 若希望 wallpaper 固定在 overview/backdrop 中而非随 workspace 缩放，可在 niri config 中手动添加：
 

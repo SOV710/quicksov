@@ -733,7 +733,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 - 不同 output 也可绑定不同 source，用于多视频并行
 - `renderer.process` / `renderer.status` 反映专用 wallpaper renderer 进程的运行态
 - `renderer.render_device_policy` / `renderer.decode_device_policy` / `renderer.allow_cross_gpu` 暴露 GPU 选择策略；默认安全值分别是 `same-as-compositor` / `same-as-render` / `false`
-- 当前 native renderer 会把 `render_device_policy` 用于 GBM/libplacebo 渲染设备选择，把 `decode_device_policy` 用于 FFmpeg hwdec 设备偏好与 backend 排序
+- 当前 native renderer 会把 `render_device_policy` 用于 GBM/libplacebo 渲染设备选择，把 `decode_device_policy` 用于 FFmpeg hwdec 设备偏好与 backend 排序；当 render GPU 与 compositor 主 GPU 不同，present 路径会默认改为“render on render GPU, allocate/present on compositor GPU”
 - `renderer.present_backend` 是用户偏好；当前 native renderer 会优先尝试 `dmabuf`，若 feedback / GBM / import 任一步失败则在运行时自动 fallback 到 `shm`
 - 当前实现使用 `qsov-wallpaperd -> qsov-wallpaper-native` 原生 renderer 承载渲染热路径；state/action 面保持不变
 
