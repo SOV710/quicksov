@@ -8,6 +8,10 @@
 
 本文档定义 quicksov 项目的技术架构，是 L0 上下文、L1 设计语言、L2 组件清单之后的实现层规格。所有技术决策在此收口，后续的 ADR 只补充单点决策的详细论证，不覆盖本文档的整体结构。
 
+子系统级事实文档按需拆分，避免本文继续膨胀。当前已拆分：
+
+- `docs/L3-wallpaper-engine.md`：wallpaper engine 的当前真实实现、进程边界、数据链路与运行时约束
+
 ---
 
 ## 1. 项目命名与产物
@@ -509,6 +513,7 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
 │   ├── L1-design-language.md
 │   ├── L2-components.md
 │   ├── L3-architecture.md          # 本文档
+│   ├── L3-wallpaper-engine.md      # wallpaper engine 当前真实实现
 │   └── adr/
 │       ├── 001-rust-daemon.md
 │       ├── 002-uds-msgpack-framing.md  # superseded by ADR-008
