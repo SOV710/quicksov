@@ -5,8 +5,11 @@
 import Quickshell
 import "./bars"
 import "./desktop"
+import "./services"
 
 Scope {
+    readonly property bool _themeServiceBoot: ThemeService.ready || ThemeService.connected
+
     MainBar {}
     AuxBar {}
     PowerDock {}

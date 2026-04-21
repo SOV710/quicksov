@@ -111,39 +111,39 @@ Singleton {
     readonly property int clockWeatherIconSize: 40
 
     // --- Dynamic color tokens (updated from daemon theme topic) ---
-    property string bgCanvas: "#1a1b26"
-    property string bgSurface: "#1a1b26"
-    property string bgSurfaceRaised: "#16161e"
+    property color bgCanvas: "#1a1b26"
+    property color bgSurface: "#1a1b26"
+    property color bgSurfaceRaised: "#16161e"
 
-    property string fgPrimary: "#c0caf5"
-    property string fgSecondary: "#a9b1d6"
-    property string fgMuted: "#565f89"
-    property string fgDisabled: "#495175"
+    property color fgPrimary: "#c0caf5"
+    property color fgSecondary: "#a9b1d6"
+    property color fgMuted: "#565f89"
+    property color fgDisabled: "#495175"
 
-    property string borderDefault: "#3b4261"
-    property string borderSubtle: "#15161e"
-    property string borderAccent: "#7aa2f7"
+    property color borderDefault: "#3b4261"
+    property color borderSubtle: "#15161e"
+    property color borderAccent: "#7aa2f7"
 
-    property string accentBlue: "#7aa2f7"
-    property string accentRed: "#f7768e"
-    property string accentGreen: "#9ece6a"
-    property string accentYellow: "#e0af68"
-    property string accentPurple: "#9d7cd8"
-    property string accentOrange: "#ff9e64"
-    property string accentTeal: "#1abc9c"
-    property string accentCyan: "#7dcfff"
+    property color accentBlue: "#7aa2f7"
+    property color accentRed: "#f7768e"
+    property color accentGreen: "#9ece6a"
+    property color accentYellow: "#e0af68"
+    property color accentPurple: "#9d7cd8"
+    property color accentOrange: "#ff9e64"
+    property color accentTeal: "#1abc9c"
+    property color accentCyan: "#7dcfff"
 
-    property string colorSuccess: "#9ece6a"
-    property string colorWarning: "#e0af68"
-    property string colorError: "#db4b4b"
-    property string colorInfo: "#0db9d7"
+    property color colorSuccess: "#9ece6a"
+    property color colorWarning: "#e0af68"
+    property color colorError: "#db4b4b"
+    property color colorInfo: "#0db9d7"
 
-    property string surfaceHover: "#1f2230"
-    property string surfaceActive: "#283250"
-    property string overlayScrim: "#11121a"
-    property string overlayScrimStrong: "#13151c"
-    property string shadowBase: "#0C0E14"
-    property string shadowAlt: "#15161e"
+    property color surfaceHover: "#1f2230"
+    property color surfaceActive: "#283250"
+    property color overlayScrim: "#11121a"
+    property color overlayScrimStrong: "#13151c"
+    property color shadowBase: "#0C0E14"
+    property color shadowAlt: "#15161e"
 
     property real opacityPanel: 0.9
     property real opacityPopup: 0.94
@@ -151,12 +151,19 @@ Singleton {
     property int blurPanel: 28
     property int blurPopup: 22
 
+    function normalizeColor(value) {
+        if (value && value.r !== undefined && value.g !== undefined && value.b !== undefined)
+            return value;
+        return Qt.color(String(value));
+    }
+
     function withAlpha(color, alpha) {
-        return Qt.rgba(color.r, color.g, color.b, alpha);
+        var c = normalizeColor(color);
+        return Qt.rgba(c.r, c.g, c.b, alpha);
     }
 
     function overlay(base, tint, alpha) {
-        return Qt.tint(base, withAlpha(tint, alpha));
+        return Qt.tint(normalizeColor(base), withAlpha(tint, alpha));
     }
 
     readonly property color barShadowColor: withAlpha(shadowBase, 0.09)
