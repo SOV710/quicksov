@@ -51,11 +51,12 @@ private:
     QRectF sourceRectFor(const QSize &frameSize) const;
     void clearTexture();
 
-    WallpaperVideo *m_controller = nullptr;
+    QPointer<WallpaperVideo> m_controller;
     QRectF m_cropRect;
     QMetaObject::Connection m_frameConnection;
     QMetaObject::Connection m_readyConnection;
     QMetaObject::Connection m_statusConnection;
+    QMetaObject::Connection m_destroyedConnection;
     QSGTexture *m_texture = nullptr;
     GLuint m_textureId = 0;
     QSize m_textureSize;

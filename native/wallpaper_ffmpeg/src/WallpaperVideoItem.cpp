@@ -23,14 +23,14 @@ WallpaperVideoItem::WallpaperVideoItem(QQuickItem *parent)
 }
 
 WallpaperVideoItem::~WallpaperVideoItem() {
-    if (m_controller != nullptr) {
-        m_controller->removeRenderTargetHint(this);
+    if (WallpaperVideo *controller = m_controller.data(); controller != nullptr) {
+        controller->removeRenderTargetHint(this);
     }
     clearTexture();
 }
 
 WallpaperVideo *WallpaperVideoItem::controller() const {
-    return m_controller;
+    return m_controller.data();
 }
 
 void WallpaperVideoItem::setController(WallpaperVideo *controller) {
@@ -38,8 +38,8 @@ void WallpaperVideoItem::setController(WallpaperVideo *controller) {
         return;
     }
 
-    if (m_controller != nullptr) {
-        m_controller->removeRenderTargetHint(this);
+    if (WallpaperVideo *previous = m_controller.data(); previous != nullptr) {
+        previous->removeRenderTargetHint(this);
     }
 
     m_controller = controller;
@@ -77,13 +77,14 @@ void WallpaperVideoItem::geometryChange(const QRectF &newGeometry, const QRectF 
 QSGNode *WallpaperVideoItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *data) {
     Q_UNUSED(data)
 
-    if (m_controller == nullptr || window() == nullptr) {
+    WallpaperVideo *controller = m_controller.data();
+    if (controller == nullptr || window() == nullptr) {
         clearTexture();
         delete oldNode;
         return nullptr;
     }
 
-    const WallpaperVideo::FrameSnapshot snapshot = m_controller->frameSnapshot();
+    const WallpaperVideo::FrameSnapshot snapshot = controller->frameSnapshot();
     if (!snapshot.hasFrame || snapshot.image.isNull() || !snapshot.size.isValid()) {
         clearTexture();
         delete oldNode;
@@ -128,6 +129,9 @@ void WallpaperVideoItem::reconnectController() {
     if (m_statusConnection) {
         disconnect(m_statusConnection);
     }
+    if (m_destroyedConnection) {
+        disconnect(m_destroyedConnection);
+    }
 
     if (m_controller == nullptr) {
         return;
@@ -143,15 +147,23 @@ void WallpaperVideoItem::reconnectController() {
     m_statusConnection = connect(m_controller, &WallpaperVideo::statusChanged, this, [this]() {
         update();
     });
+    m_destroyedConnection = connect(m_controller, &QObject::destroyed, this, [this]() {
+        m_controller = nullptr;
+        emit controllerChanged();
+        emit readyChanged();
+        clearTexture();
+        update();
+    });
 }
 
 void WallpaperVideoItem::syncHint() {
-    if (m_controller == nullptr) {
+    WallpaperVideo *controller = m_controller.data();
+    if (controller == nullptr) {
         return;
     }
 
-    m_controller->updateRenderTargetHint(this, pixelSizeHint());
-    m_controller->ensureInitialized();
+    controller->updateRenderTargetHint(this, pixelSizeHint());
+    controller->ensureInitialized();
 }
 
 QSize WallpaperVideoItem::pixelSizeHint() const {

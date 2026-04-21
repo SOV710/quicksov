@@ -27,7 +27,7 @@ Singleton {
     property int transitionDurationMs: 320
 
     property string rendererProcess: "qsov-wallpaperd"
-    property string rendererBackend: "quickshell-ffmpeg"
+    property string rendererBackend: "native-wayland-ffmpeg"
     property string rendererStatus: "starting"
     property int rendererPid: 0
     property string rendererLastError: ""
@@ -49,7 +49,7 @@ Singleton {
         root.transitionType = "fade";
         root.transitionDurationMs = 320;
         root.rendererProcess = "qsov-wallpaperd";
-        root.rendererBackend = "quickshell-ffmpeg";
+        root.rendererBackend = "native-wayland-ffmpeg";
         root.rendererStatus = "starting";
         root.rendererPid = 0;
         root.rendererLastError = "";
@@ -168,7 +168,7 @@ Singleton {
             ? transition.duration_ms
             : 320;
         root.rendererProcess = renderer.process || "qsov-wallpaperd";
-        root.rendererBackend = renderer.backend || "quickshell-ffmpeg";
+        root.rendererBackend = renderer.backend || "native-wayland-ffmpeg";
         root.rendererStatus = renderer.status || "starting";
         root.rendererPid = typeof renderer.pid === "number" ? renderer.pid : 0;
         root.rendererLastError = renderer.last_error || "";

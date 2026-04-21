@@ -3734,37 +3734,78 @@ void OutputSurface::stopTransition() {
 }
 
 void OutputSurface::capturePreviousImage() {
-    if (m_lastPresentedIndex < 0 || m_lastPresentedIndex >= static_cast<int>(m_shmBuffers.size())) {
+    if (m_lastPresentedIndex < 0) {
         m_previousImage = QImage();
         return;
     }
 
-    const uchar *data = nullptr;
-    int width = 0;
-    int height = 0;
-    int stride = 0;
+    auto copyImage = [](const uchar *data, int width, int height, int stride, QImage::Format format) {
+        if (data == nullptr || width <= 0 || height <= 0 || stride <= 0) {
+            return QImage();
+        }
+
+        const QImage current(data, width, height, stride, format);
+        return current.copy();
+    };
 
     if (m_lastPresentedBackend == QLatin1String("dmabuf")) {
+        if (m_lastPresentedIndex >= static_cast<int>(m_dmabufBuffers.size())) {
+            m_previousImage = QImage();
+            return;
+        }
+
         const DmaBuffer &buffer = m_dmabufBuffers[static_cast<size_t>(m_lastPresentedIndex)];
-        data = static_cast<const uchar *>(buffer.data);
-        width = buffer.width;
-        height = buffer.height;
-        stride = buffer.stride;
-    } else {
-        const ShmBuffer &buffer = m_shmBuffers[static_cast<size_t>(m_lastPresentedIndex)];
-        data = static_cast<const uchar *>(buffer.data);
-        width = buffer.width;
-        height = buffer.height;
-        stride = buffer.stride;
+        if (buffer.bo == nullptr || buffer.width <= 0 || buffer.height <= 0) {
+            m_previousImage = QImage();
+            return;
+        }
+
+        uint32_t mappedStride = 0;
+        void *mapData = nullptr;
+        void *mapped = gbm_bo_map(
+            buffer.bo,
+            0,
+            0,
+            static_cast<uint32_t>(buffer.width),
+            static_cast<uint32_t>(buffer.height),
+            GBM_BO_TRANSFER_READ,
+            &mappedStride,
+            &mapData
+        );
+        if (mapped == nullptr || mapped == MAP_FAILED) {
+            m_previousImage = QImage();
+            return;
+        }
+
+        const QImage::Format format = buffer.format == DRM_FORMAT_XRGB8888
+            ? QImage::Format_RGB32
+            : QImage::Format_ARGB32_Premultiplied;
+        m_previousImage = copyImage(
+            static_cast<const uchar *>(mapped),
+            buffer.width,
+            buffer.height,
+            static_cast<int>(mappedStride),
+            format
+        );
+        gbm_bo_unmap(buffer.bo, mapData);
+        return;
     }
 
-    if (data == nullptr || width <= 0 || height <= 0) {
+    if (m_lastPresentedIndex >= static_cast<int>(m_shmBuffers.size())) {
         m_previousImage = QImage();
         return;
     }
 
-    const QImage current(data, width, height, stride, QImage::Format_ARGB32_Premultiplied);
-    m_previousImage = current.copy();
+    {
+        const ShmBuffer &buffer = m_shmBuffers[static_cast<size_t>(m_lastPresentedIndex)];
+        m_previousImage = copyImage(
+            static_cast<const uchar *>(buffer.data),
+            buffer.width,
+            buffer.height,
+            buffer.stride,
+            QImage::Format_ARGB32_Premultiplied
+        );
+    }
 }
 
 void OutputSurface::flush() {

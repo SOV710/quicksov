@@ -13,6 +13,30 @@
 
 namespace {
 
+class ScopedNumericLocale final {
+public:
+    ScopedNumericLocale() {
+        if (const char *current = std::setlocale(LC_NUMERIC, nullptr); current != nullptr) {
+            m_previous = QByteArray(current);
+        }
+        m_changed = std::setlocale(LC_NUMERIC, "C") != nullptr;
+    }
+
+    ~ScopedNumericLocale() {
+        if (!m_previous.isEmpty()) {
+            std::setlocale(LC_NUMERIC, m_previous.constData());
+        }
+    }
+
+    [[nodiscard]] bool changed() const {
+        return m_changed;
+    }
+
+private:
+    QByteArray m_previous;
+    bool m_changed = false;
+};
+
 QString mpvErrorString(int code) {
     const char *message = mpv_error_string(code);
     if (message == nullptr || *message == '\0') {
@@ -49,8 +73,7 @@ bool MpvCore::initialize(QString *error) {
         return true;
     }
 
-    std::setlocale(LC_NUMERIC, "C");
-    qInfo().noquote() << "[wallpaper-video] forced LC_NUMERIC=C before mpv_create";
+    const ScopedNumericLocale numericLocaleGuard;
 
     m_handle = mpv_create();
     if (m_handle == nullptr) {

@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
@@ -162,7 +163,7 @@ private:
     QHash<quintptr, RenderTargetHint> m_renderTargetHints;
     QUrl m_source;
     bool m_muted = true;
-    bool m_loopEnabled = true;
+    std::atomic_bool m_loopEnabled{true};
     qreal m_volume = 100.0;
     QString m_debugName;
     bool m_ready = false;

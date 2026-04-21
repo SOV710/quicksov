@@ -450,15 +450,15 @@ void WallpaperVideo::setMuted(bool muted) {
 }
 
 bool WallpaperVideo::loopEnabled() const {
-    return m_loopEnabled;
+    return m_loopEnabled.load(std::memory_order_relaxed);
 }
 
 void WallpaperVideo::setLoopEnabled(bool loopEnabled) {
-    if (m_loopEnabled == loopEnabled) {
+    if (m_loopEnabled.load(std::memory_order_relaxed) == loopEnabled) {
         return;
     }
 
-    m_loopEnabled = loopEnabled;
+    m_loopEnabled.store(loopEnabled, std::memory_order_relaxed);
     emit loopEnabledChanged();
 }
 
@@ -964,7 +964,7 @@ void WallpaperVideo::decoderMain(
     while (!shouldStop(generation)) {
         rc = av_read_frame(formatContext, packet.get());
         if (rc == AVERROR_EOF) {
-            if (m_loopEnabled) {
+            if (m_loopEnabled.load(std::memory_order_relaxed)) {
                 av_seek_frame(formatContext, streamIndex, 0, AVSEEK_FLAG_BACKWARD);
                 avcodec_flush_buffers(codecContext.get());
                 lastPts.reset();

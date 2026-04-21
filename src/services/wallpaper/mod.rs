@@ -98,10 +98,9 @@ impl WallpaperCfg {
         };
 
         let renderer_backend = match wallpaper.and_then(|entry| entry.renderer.as_deref()) {
-            Some("native-wayland-ffmpeg")
-            | Some("quickshell-ffmpeg")
-            | Some("quickshell-mpv")
-            | None => DEFAULT_RENDERER_BACKEND.to_string(),
+            Some("native-wayland-ffmpeg") | Some("quickshell-ffmpeg") | None => {
+                DEFAULT_RENDERER_BACKEND.to_string()
+            }
             Some(other) => {
                 warn!(
                     renderer = %other,
@@ -124,19 +123,17 @@ impl WallpaperCfg {
             }
         };
 
-        let decode_device_policy =
-            normalize_gpu_policy(
-                wallpaper.and_then(|entry| entry.decode_device_policy.as_deref()),
-                DEFAULT_DECODE_DEVICE_POLICY,
-                "decode_device_policy",
-            );
+        let decode_device_policy = normalize_gpu_policy(
+            wallpaper.and_then(|entry| entry.decode_device_policy.as_deref()),
+            DEFAULT_DECODE_DEVICE_POLICY,
+            "decode_device_policy",
+        );
 
-        let render_device_policy =
-            normalize_gpu_policy(
-                wallpaper.and_then(|entry| entry.render_device_policy.as_deref()),
-                DEFAULT_RENDER_DEVICE_POLICY,
-                "render_device_policy",
-            );
+        let render_device_policy = normalize_gpu_policy(
+            wallpaper.and_then(|entry| entry.render_device_policy.as_deref()),
+            DEFAULT_RENDER_DEVICE_POLICY,
+            "render_device_policy",
+        );
 
         Self {
             socket_path: cfg.daemon.socket_path.clone(),
@@ -183,14 +180,8 @@ fn normalize_gpu_policy(value: Option<&str>, default: &str, field: &str) -> Stri
     };
 
     match value {
-        "auto"
-        | "same-as-compositor"
-        | "same-as-render"
-        | "prefer-discrete"
-        | "prefer-integrated"
-        | "nvidia"
-        | "amdgpu"
-        | "intel" => value.to_string(),
+        "auto" | "same-as-compositor" | "same-as-render" | "prefer-discrete"
+        | "prefer-integrated" | "nvidia" | "amdgpu" | "intel" => value.to_string(),
         other => {
             warn!(
                 policy_field = field,
