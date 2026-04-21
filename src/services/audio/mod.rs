@@ -20,13 +20,18 @@ use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
 use crate::config::Config;
 use crate::util::{json_map, prettify_label};
 
+const DEFAULT_AUDIO_BACKEND: &str = "pipewire";
+const AUDIO_POLL_INTERVAL_MS: u64 = 1000;
+const MAX_VOLUME_PERCENT: u64 = 150;
+
 /// Spawn the `audio` service and return its [`ServiceHandle`].
-pub fn spawn(_cfg: &Config) -> ServiceHandle {
+pub fn spawn(cfg: &Config) -> ServiceHandle {
     let initial = unavailable_snapshot();
     let (state_tx, state_rx) = watch::channel(initial);
     let (request_tx, request_rx) = mpsc::channel(16);
+    let audio_cfg = AudioCfg::from_config(cfg);
 
-    tokio::spawn(run(request_rx, state_tx));
+    tokio::spawn(run(request_rx, state_tx, audio_cfg));
 
     ServiceHandle {
         request_tx,
@@ -79,10 +84,43 @@ struct NodeState {
     muted: bool,
 }
 
-async fn run(mut request_rx: mpsc::Receiver<ServiceRequest>, state_tx: watch::Sender<Value>) {
-    info!("audio service started");
+#[derive(Clone, Debug)]
+struct AudioCfg {
+    backend: String,
+}
 
-    let mut ticker = tokio::time::interval(Duration::from_millis(1000));
+impl AudioCfg {
+    fn from_config(cfg: &Config) -> Self {
+        let configured = cfg
+            .services
+            .audio
+            .as_ref()
+            .and_then(|entry| entry.backend.as_deref())
+            .unwrap_or(DEFAULT_AUDIO_BACKEND);
+
+        let backend = if configured == DEFAULT_AUDIO_BACKEND {
+            DEFAULT_AUDIO_BACKEND.to_string()
+        } else {
+            warn!(
+                backend = %configured,
+                fallback = DEFAULT_AUDIO_BACKEND,
+                "unsupported audio backend configured; falling back to pipewire"
+            );
+            DEFAULT_AUDIO_BACKEND.to_string()
+        };
+
+        Self { backend }
+    }
+}
+
+async fn run(
+    mut request_rx: mpsc::Receiver<ServiceRequest>,
+    state_tx: watch::Sender<Value>,
+    audio_cfg: AudioCfg,
+) {
+    info!(backend = %audio_cfg.backend, "audio service started");
+
+    let mut ticker = tokio::time::interval(Duration::from_millis(AUDIO_POLL_INTERVAL_MS));
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
     let mut last_snapshot = unavailable_snapshot();
@@ -373,7 +411,7 @@ fn max_channel_volume(values: &[Value]) -> Option<f64> {
 }
 
 fn volume_pct(volume: f64) -> i64 {
-    (volume.clamp(0.0, 1.5) * 100.0).round() as i64
+    (volume.clamp(0.0, max_volume_ratio()) * 100.0).round() as i64
 }
 
 async fn handle_request(req: ServiceRequest) {
@@ -402,7 +440,7 @@ async fn handle_set_volume(payload: &Value) -> Result<Value, ServiceError> {
     run_wpctl(vec![
         "set-volume".to_string(),
         sink_id.to_string(),
-        format!("{:.2}", (volume_pct.min(150) as f64) / 100.0),
+        format!("{:.2}", volume_ratio_from_pct(volume_pct)),
     ])
     .await?;
 
@@ -422,7 +460,7 @@ async fn handle_set_stream_volume(payload: &Value) -> Result<Value, ServiceError
     run_wpctl(vec![
         "set-volume".to_string(),
         stream_id.to_string(),
-        format!("{:.2}", (volume_pct.min(150) as f64) / 100.0),
+        format!("{:.2}", volume_ratio_from_pct(volume_pct)),
     ])
     .await?;
 
@@ -527,6 +565,14 @@ fn extract_bool(value: &Value, key: &str) -> Option<bool> {
     value.as_object()?.get(key)?.as_bool()
 }
 
+fn max_volume_ratio() -> f64 {
+    (MAX_VOLUME_PERCENT as f64) / 100.0
+}
+
+fn volume_ratio_from_pct(volume_pct: u64) -> f64 {
+    (volume_pct.min(MAX_VOLUME_PERCENT) as f64) / 100.0
+}
+
 #[derive(Debug, thiserror::Error)]
 enum AudioError {
     #[error("command `{program}` failed to start: {detail}")]
@@ -537,4 +583,41 @@ enum AudioError {
     Json(String),
     #[error("blocking task failed: {0}")]
     Task(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::config::{AudioConfig, Config, ServicesConfig};
+
+    use super::{volume_ratio_from_pct, AudioCfg, DEFAULT_AUDIO_BACKEND, MAX_VOLUME_PERCENT};
+
+    #[test]
+    fn unsupported_backend_falls_back_to_pipewire() {
+        let cfg = Config {
+            daemon: Default::default(),
+            screens: Default::default(),
+            power: Default::default(),
+            services: ServicesConfig {
+                enabled: Vec::new(),
+                weather: None,
+                wallpaper: None,
+                network: None,
+                audio: Some(AudioConfig {
+                    backend: Some("alsa".to_string()),
+                }),
+                niri: None,
+            },
+        };
+
+        let audio_cfg = AudioCfg::from_config(&cfg);
+        assert_eq!(audio_cfg.backend, DEFAULT_AUDIO_BACKEND);
+    }
+
+    #[test]
+    fn volume_ratio_clamps_to_maximum() {
+        assert_eq!(
+            volume_ratio_from_pct(MAX_VOLUME_PERCENT + 25),
+            (MAX_VOLUME_PERCENT as f64) / 100.0
+        );
+    }
 }
