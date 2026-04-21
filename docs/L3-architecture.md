@@ -426,7 +426,6 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
 ├── daemon.toml
 ├── design-tokens.toml
 ├── shell.qml                       # qs 入口
-├── wallpaper-shell.qml             # legacy QML wallpaper entry, native path 不再使用
 ├── Theme.qml                       # singleton, 从 daemon 拉 tokens
 ├── ipc/
 │   ├── Client.qml                  # IPC client, 管理连接
@@ -440,13 +439,9 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
 │   ├── Notification.qml
 │   ├── Tray.qml
 │   ├── Niri.qml
-│   ├── Wallpaper.qml
-│   ├── WallpaperSessions.qml
 │   └── Weather.qml
 ├── desktop/                        # 非 bar 的桌面 layer-shell surface
-│   ├── WallpaperLayer.qml
 │   └── PowerDock.qml
-├── Quicksov/                       # legacy QML native module install target
 ├── bars/
 │   ├── MainBar.qml                 # 主屏 top bar
 │   └── AuxBar.qml                  # 副屏 auto-hide left bar
@@ -487,7 +482,6 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
 │       └── qsov-wallpaperd.rs      # native wallpaper renderer launcher
 ├── shell/                          # QML 源码, 对应运行时的 qs 部分
 │   ├── shell.qml
-│   ├── wallpaper-shell.qml
 │   ├── Theme.qml
 │   ├── ipc/
 │   ├── services/
@@ -497,7 +491,7 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
 │   ├── widgets/
 │   └── overlays/
 ├── native/
-│   ├── wallpaper_ffmpeg/           # reusable Qt6 C++ / FFmpeg decoder
+│   ├── wallpaper_ffmpeg/           # shared C++ / FFmpeg decoder sources, linked into native renderer
 │   └── wallpaper_native/           # Wayland layer-shell native renderer
 ├── config/                         # 配置模板
 │   ├── daemon.toml.example

@@ -24,11 +24,19 @@ link_item() {
     echo "  $dst -> $src"
 }
 
+remove_stale_link() {
+    local path="$1"
+    if [[ -L "$path" ]]; then
+        rm "$path"
+        echo "  removed stale link $path"
+    fi
+}
+
+remove_stale_link "$CONFIG_DIR/wallpaper-shell.qml"
+remove_stale_link "$CONFIG_DIR/Quicksov"
+
 echo "Linking shell/ into $CONFIG_DIR ..."
 for item in "$SHELL_DIR"/*; do
-    if [[ "$(basename "$item")" == "Quicksov" ]]; then
-        continue
-    fi
     link_item "$item"
 done
 
@@ -47,21 +55,6 @@ done
 # Link icons/ if present
 if [[ -d "$REPO_ROOT/icons" ]]; then
     link_item "$REPO_ROOT/icons"
-fi
-
-PLUGIN_SRC="$REPO_ROOT/.build/qml/Quicksov"
-PLUGIN_DST="$CONFIG_DIR/Quicksov"
-if [[ -d "$PLUGIN_SRC" ]]; then
-    if [[ -L "$PLUGIN_DST" ]]; then
-        rm "$PLUGIN_DST"
-    elif [[ -e "$PLUGIN_DST" ]]; then
-        echo "warn: $PLUGIN_DST exists and is not a symlink — skipping plugin link" >&2
-    else
-        ln -s "$PLUGIN_SRC" "$PLUGIN_DST"
-        echo "  $PLUGIN_DST -> $PLUGIN_SRC"
-    fi
-else
-    echo "warn: native wallpaper plugin not built yet; run scripts/build-wallpaper-plugin.sh" >&2
 fi
 
 echo "Done. Start daemon: cargo run --manifest-path $REPO_ROOT/Cargo.toml"

@@ -31,7 +31,7 @@ daemon.toml
 - `AuxBar`
 - `PowerDock`
 
-QML 的 `wallpaper-shell.qml` / `desktop/WallpaperLayer.qml` 仍保留在仓库中，但属于 legacy 路径，不是当前默认运行路径。
+旧的 QML wallpaper 路径已经从仓库中移除。当前默认运行路径只有 daemon -> native renderer 这一条主链路。
 
 ## 2. 进程与职责边界
 
@@ -318,22 +318,19 @@ GPU fast-path 当前使用：
 
 当前不支持“每个 workspace 使用不同动态壁纸”这一模型；当前模型是 output 级 wallpaper，而不是 workspace 级 wallpaper。
 
-## 12. legacy / 非主链路状态
+## 12. 已删除的旧路径
 
-以下路径当前不属于默认 wallpaper 主链路：
+以下旧路径已从仓库中删除，不再属于当前 codebase：
 
 - `shell/wallpaper-shell.qml`
 - `shell/desktop/WallpaperLayer.qml`
 - `shell/services/Wallpaper.qml`
 - `shell/services/WallpaperSessions.qml`
+- `native/wallpaper_mpv/`
+- `native/wallpaper_ffmpeg` 中仅用于 QML plugin 的 `WallpaperVideoItem.*`
+- 旧的 plugin 构建/安装脚本
 
-它们仍保留在仓库中，主要用于：
-
-- 历史实现保留
-- 调试/对照
-- 尚未完全删除的兼容层
-
-但当前默认 Niri 会话中的 wallpaper 渲染，不依赖这些 QML 组件。
+当前默认 Niri 会话中的 wallpaper 渲染完全不依赖这些组件。
 
 ## 13. 当前已暴露但未完全接通的字段
 
@@ -362,7 +359,7 @@ GPU fast-path 当前使用：
 - decode/render/present GPU 策略变化
 - present backend 优先级变化
 - transition 机制变化
-- legacy QML 路径是否仍保留
+- 是否重新引入非主链路的 wallpaper 前端/renderer
 
 相关协议变化还必须同时更新：
 
