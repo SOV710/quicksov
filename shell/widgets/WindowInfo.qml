@@ -51,13 +51,14 @@ Item {
         Row {
             id: content
             width: root.width - Theme.groupContainerPadX * 2
-            height: root.implicitHeight
+            height: parent.height
             anchors.centerIn: parent
             spacing: Theme.spaceXs
 
             Text {
                 id: appLabel
                 width: root._appWidth
+                height: parent.height
                 text: root._appName
                 color: root._hasWindow ? Theme.fgPrimary : Theme.fgMuted
                 font.family: Theme.fontFamily
@@ -69,6 +70,7 @@ Item {
 
             Text {
                 id: separator
+                height: parent.height
                 text: "•"
                 color: Theme.fgMuted
                 font.family: Theme.fontFamily
@@ -80,6 +82,7 @@ Item {
             Text {
                 id: titleLabel
                 width: root._titleWidth
+                height: parent.height
                 text: root._title
                 color: root._hasWindow ? Theme.fgSecondary : Theme.fgMuted
                 font.family: Theme.fontFamily

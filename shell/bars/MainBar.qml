@@ -75,33 +75,14 @@ Scope {
             }
 
             Rectangle {
-                id: barShadowWide
-                z: 0
-                anchors {
-                    left: parent.left
-                    right: parent.right
-                    top: parent.top
-                    leftMargin: 4
-                    rightMargin: 4
-                    topMargin: 10
-                }
-                height: Theme.barHeight + 10
-                radius: Theme.barRadius + 6
-                color: Theme.withAlpha(Theme.barShadowColor, 0.32)
-            }
-
-            Rectangle {
                 id: barShadow
                 z: 0
-                anchors {
-                    left: parent.left
-                    right: parent.right
-                    top: parent.top
-                    topMargin: 6
-                }
-                height: Theme.barHeight + 6
-                radius: Theme.barRadius + 4
-                color: Theme.withAlpha(Theme.barShadowColor, 0.68)
+                x: barRect.x
+                y: barRect.y + 3
+                width: barRect.width
+                height: barRect.height
+                radius: barRect.radius + 1
+                color: Theme.barShadowColor
             }
 
             Rectangle {
@@ -114,8 +95,8 @@ Scope {
                 }
                 height: Theme.barHeight
                 radius: Theme.barRadius
-                color: Theme.withAlpha(Theme.bgSurface, Theme.opacityPanel)
-                border.color: Theme.withAlpha(Theme.borderDefault, 0.82)
+                color: Theme.barShellFill
+                border.color: Theme.barShellBorder
                 border.width: 1
 
                 Row {

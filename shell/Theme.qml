@@ -49,18 +49,24 @@ Singleton {
     readonly property int barRadius: 20
     readonly property int popupGap: 12
     readonly property int panelEdgeInset: 24
-    readonly property int groupContainerHeight: 32
+    readonly property int groupContainerHeight: 33
     readonly property int groupContainerPadX: 8
     readonly property int groupContainerRadius: 16
     readonly property int leafChipHeight: 24
     readonly property int leafChipRadius: 12
-    readonly property int statusCapsuleHeight: 40
+    readonly property int statusCapsuleHeight: 39
     readonly property int statusCapsuleRadius: 20
     readonly property int statusCapsulePadX: 10
     readonly property int statusCapsuleSlotWidth: 28
     readonly property int trayChipHeight: 28
     readonly property int trayChipPad: 6
     readonly property int trayChipRadius: 12
+    readonly property int clockSegmentHeight: 32
+    readonly property int clockSegmentRadius: 16
+    readonly property int clockSegmentMinWidth: 54
+    readonly property int clockSegmentPadX: 12
+    readonly property int workspaceSpotSize: 16
+    readonly property int workspaceActiveSpotWidth: 40
 
     // Unified icon size for bar widgets and tray items (scales with barHeight)
     function barIconSize(scale) {
@@ -145,20 +151,32 @@ Singleton {
         return Qt.rgba(color.r, color.g, color.b, alpha);
     }
 
-    readonly property color barShadowColor: Qt.rgba(0, 0, 0, 0.18)
+    function overlay(base, tint, alpha) {
+        return Qt.tint(base, withAlpha(tint, alpha));
+    }
+
+    readonly property color barShadowColor: Qt.rgba(0, 0, 0, 0.09)
     readonly property color panelShadowColor: Qt.rgba(0, 0, 0, 0.22)
-    readonly property color groupContainerFill: withAlpha(bgSurfaceRaised, 0.86)
-    readonly property color groupContainerBorder: withAlpha(borderDefault, 0.72)
-    readonly property color workspaceContainerFill: withAlpha(accentTeal, 0.16)
+    readonly property color barShellFill: overlay(bgSurface, fgSecondary, 0.60)
+    readonly property color barShellBorder: withAlpha(borderDefault, 0.18)
+    readonly property color groupContainerFill: overlay(barShellFill, bgSurfaceRaised, 0.10)
+    readonly property color groupContainerBorder: withAlpha(borderDefault, 0.14)
+    readonly property color workspaceContainerFill: overlay(barShellFill, accentTeal, 0.20)
     readonly property color workspaceContainerBorder: withAlpha(accentTeal, 0.24)
-    readonly property color trayChipFill: withAlpha(bgSurfaceRaised, 0.82)
-    readonly property color trayChipHover: withAlpha(surfaceHover, 0.92)
-    readonly property color trayChipBorder: withAlpha(borderDefault, 0.68)
-    readonly property color clockDateFill: withAlpha(bgSurfaceRaised, 0.88)
-    readonly property color clockTimeFill: withAlpha(surfaceActive, 0.88)
-    readonly property color clockDayFill: withAlpha(accentOrange, 0.36)
-    readonly property color statusCapsuleFill: withAlpha(accentTeal, 0.18)
-    readonly property color statusCapsuleBorder: withAlpha(accentTeal, 0.30)
+    readonly property color workspaceSpotActive: withAlpha(accentTeal, 0.96)
+    readonly property color workspaceSpotFilled: withAlpha(accentTeal, 0.60)
+    readonly property color workspaceSpotEmpty: withAlpha(accentTeal, 0.40)
+    readonly property color trayChipFill: overlay(barShellFill, fgSecondary, 0.06)
+    readonly property color trayChipHover: overlay(barShellFill, accentBlue, 0.10)
+    readonly property color trayChipBorder: withAlpha(borderDefault, 0.14)
+    readonly property color clockDateFill: overlay(barShellFill, accentTeal, 0.44)
+    readonly property color clockDateText: fgPrimary
+    readonly property color clockTimeFill: overlay(barShellFill, fgPrimary, 0.10)
+    readonly property color clockTimeText: bgSurface
+    readonly property color clockDayFill: overlay(barShellFill, accentOrange, 0.32)
+    readonly property color clockDayText: fgPrimary
+    readonly property color statusCapsuleFill: overlay(barShellFill, accentTeal, 0.24)
+    readonly property color statusCapsuleBorder: withAlpha(accentTeal, 0.22)
 
     readonly property string iconBatteryStatus: "material/battery_android_6_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
     readonly property string iconBatteryFullStatus: "material/battery_android_full_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"

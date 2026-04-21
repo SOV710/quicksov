@@ -1,6 +1,6 @@
 # ADR-009: Frontend Visual Refresh — nested containers, Material status icons, oversized status panels
 
-**Status**: Proposed  
+**Status**: Accepted
 **Date**: 2026-04-21
 
 ## Context
@@ -20,6 +20,7 @@
 4. **右上角系统状态区过碎**：battery / network / bluetooth / volume / notification 仍像五个独立按钮，不像一个统一的系统状态胶囊  
 5. **popup panel 过小**：状态类面板的尺度不足，不符合主屏高分辨率桌面使用场景  
 6. **景深不足**：bar 与 panel 的浮层感不够，阴影语言缺位
+7. **当前实现偏离设计稿**：bar 被做得过暗、阴影被画成“有体积的实体层”、workspace 的 inactive spot 过暗、window info 文本没有稳定竖直居中、clock 被做成三颗分离小药丸而不是连续分段胶囊
 
 本 ADR 记录下一轮 QML 大规模重构的**目标设计方向**。它先定义目标，不要求在本次提交立即实现。
 
@@ -51,7 +52,7 @@ top bar 与状态类 popup 的 shell-owned icons，默认迁移到本仓库的 `
 - **shell 自己的视觉语言**不再以 Lucide 作为默认 glyph vocabulary
 - **应用自己的图标**仍尊重应用自身（尤其是 tray）
 
-### 3. 顶栏改为明显的三层包络
+### 3. 顶栏改为明显的三层包络，但保持轻量几何
 
 主屏 top bar 的视觉层级固定为：
 
@@ -64,15 +65,18 @@ top bar 与状态类 popup 的 shell-owned icons，默认迁移到本仓库的 `
 - `window-info` 不直接贴 bar，而是放进独立 group container
 - `tray` 的每个 item 有自己的半透明 chip container
 - `battery/network/bluetooth/volume/notification` 不再分散，而是进入一个**统一的 status capsule**
+- **bar 总高度不放大**，继续维持原先轻量高度；层级感通过颜色、描边、内层容器与阴影解决，而不是靠把 bar 做厚
 
 颜色与圆角都必须递进：
 
-- 越外层，面积越大、圆角越大、颜色越接近基础 surface
+- 越外层，面积越大、圆角越大、颜色越接近**更浅的**基础 surface
 - 越内层，面积越小、圆角越小、颜色越更实、更明确
+- 整体方向是“浅灰 / 浅色容器 + 局部实色高亮”，而不是整条深色玻璃条
+- `workspace-strip` 的 inactive spot 必须仍清晰可见，不能暗到接近背景融掉
 
-### 4. CENTER 时钟重构为三段式胶囊
+### 4. CENTER 时钟重构为连续分段胶囊
 
-当前单段 clock 重构为三段并列小胶囊：
+当前单段 clock 重构为三段并列的**连续 segmented capsule**：
 
 - 左段：`MM/DD`
 - 中段：`HH:MM`
@@ -81,9 +85,10 @@ top bar 与状态类 popup 的 shell-owned icons，默认迁移到本仓库的 `
 规则：
 
 - 三段必须**整体绝对居中**，不能受 left/right 内容挤压
+- 三段之间**不留物理间隙**，它们共享一个连续胶囊轮廓，只是内部被分段着色
+- 左右两端继承外层圆角，中段是纯矩形切分，不再做三颗彼此独立的小药丸
 - 三段允许使用并列但不同语义的表面色
-- 中段时间是主阅读对象，视觉权重最高
-- 左段日期与右段星期是辅助语义
+- 日期 / 时间 / 星期三段的高度必须一致，文本在各自 segment 内严格水平、竖直居中
 - 星期段允许使用 warm accent surface，但颜色仍必须来自 `theme_tokyonight.json`
 
 ### 5. 右上角状态区重构为统一胶囊
@@ -142,16 +147,23 @@ tray 不进入统一 status capsule，因为它表示的是**应用外来状态*
 - 宽面板优先，不再沿用“窄高抽屉”观感
 - panel 打开后仍必须保持对屏幕边界敏感，不允许超出可点击区域
 
-### 8. bar 与 panel 需要显式景深
+### 8. bar 与 panel 需要显式景深，但阴影不参与占位
 
 bar 与 popup panel 都引入 soft shadow。
 
 此处“要不要阴影”不是开放问题，决策已经确定为：
 
 - **视觉结果必须有阴影**
+- 阴影必须是 bar / panel 外部的视觉投影，**不能把 bar 本体做厚，也不能改变内容区高度或挤占窗口空间**
 - 具体用 Qt Graphical Effects、MultiEffect、shader、或 compositor-friendly 等价方案，由实现阶段决定
 
-### 9. 动效本轮冻结，不在本 ADR 收口
+### 9. 文本与内部元素对齐规则补充
+
+- `window-info` 的文字必须以容器几何中心为基准做竖直居中，不能出现“视觉上贴上缘”的情况
+- `workspace-strip` 的外层容器、spot、window-info、clock、status capsule 都必须优先保证可读性，再谈氛围感
+- 如 mockup 与先前文档存在冲突，以根目录 `temp.svg` 所表达的关系为准：浅 bar、浅容器、连续三段钟、轻量阴影
+
+### 10. 动效本轮冻结，不在本 ADR 收口
 
 本轮只定义静态视觉和结构语义。
 

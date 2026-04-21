@@ -62,19 +62,25 @@ layer-rule {
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│ [workspace-container [strip]] [window-container [app | title]] [04/21][16:29][Tue]  │
-│                                              [tray-chip][tray-chip] [bat][wifi][bt][vol][bell] │
+│ [workspace-container [•][━━][•][•][•]] [window-container [app | title]]
+│                             [ 04/21 | 16:29 | Tue ] [tray-chip][tray-chip] [status-capsule]
 └────────────────────────────────────────────────────────────────────────────────────────┘
-  LEFT ─ WM 语境                          CENTER                                RIGHT ─ 系统语境
+  LEFT ─ WM 语境                           CENTER                                 RIGHT ─ 系统语境
 ```
 
 - **LEFT**：`workspace-strip` 与 `window-info` 都不再直接贴 bar，而是各自有一层 group container
-- **CENTER**：clock 重构为三段式胶囊，**整体绝对居中于整个 bar**
+- **CENTER**：clock 重构为连续分段胶囊，**整体绝对居中于整个 bar**
 - **RIGHT**：分成两组
   - `tray chip group`：应用图标，各自带独立半透明容器
   - `status capsule`：battery / network / bluetooth / volume / notification 五个系统状态 icon 收敛为一个统一胶囊
 
 **为什么 CENTER 必须绝对居中**：保证三段时钟位置恒定，形成肌肉记忆。flex-center 会在 left/right 内容变化时漂移，破坏 glance 效率。
+
+**mockup 对齐要求**：
+
+- bar 必须是浅表面色，能明显从 wallpaper 上分离出来
+- 阴影只作为外部投影存在，不得让 bar 看起来多出一层实体厚度
+- clock 必须是一个共享轮廓的 segmented capsule，而不是三颗分离胶囊
 
 ### 2.2 交互层次
 
@@ -104,11 +110,11 @@ layer-rule {
 | 更新频率 | 事件驱动 |
 | 外层结构 | 必须包在独立 `workspace-container` 中，不直接贴 bar |
 | 视觉 | `bar shell -> workspace-container -> strip leaf` 三层；leaf 默认是小圆点，当前 focus 展开为短胶囊 |
-| 状态颜色 | 当前 focus 用同源 accent surface；非 focus 且有窗口用较实的 surface/fg mix；空工作区用 muted |
+| 状态颜色 | 当前 focus 用同源 accent 实色；非 focus 且有窗口用**较浅的中等不透明 spot**；空工作区用更淡但仍清晰可见的 muted spot |
 | 数据过滤 | 前端按当前输出设备名过滤，仅显示对应 output 的工作区 |
 | 交互 | 点击工作区指示器 → daemon 执行 `focus_workspace { idx }`，切换到对应工作区 |
 | 命中区 | 命中区按 `leaf chip` 而不是裸圆点计算，至少覆盖 24px 高度 |
-| 实现要求 | container 与 strip spot 之间必须形成肉眼可见的 radius / color 递进；不能再是单层平铺 |
+| 实现要求 | container 与 strip spot 之间必须形成肉眼可见的 radius / color 递进；不能再是单层平铺；inactive spot 不得暗到与外层容器融为一体 |
 
 ### 3.2 window-info
 
@@ -122,7 +128,7 @@ layer-rule {
 | 颜色 | `color.on-surface-muted` |
 | AppName 映射 | daemon 维护 `app_id → display_name`（`vivaldi-stable → Vivaldi`、`emacs → GNU Emacs`、`nvim → Neovim`），未知用原 app_id |
 | 截断 | 超出可用宽度时 `…` 省略 |
-| 视觉要求 | container 必须比 workspace 容器更适合承载文本，不允许直接把文字裸放在 bar surface 上 |
+| 视觉要求 | container 必须比 workspace 容器更适合承载文本，不允许直接把文字裸放在 bar surface 上；文本需严格竖直居中，不能视觉上上飘 |
 
 ### 3.3 clock
 
@@ -130,11 +136,17 @@ layer-rule {
 |---|---|
 | 位置 | CENTER 绝对居中 |
 | 数据源 | QML 本地 `Timer { interval: 1000 }`，无需 daemon |
-| 结构 | 三段式小胶囊：`MM/DD` / `HH:MM` / `Tue` |
-| 字号 | `small` (11px)，`tabular-nums`；中段时间权重最高 |
-| 视觉语义 | 三段并列但颜色不必完全相同；weekday 段允许使用 warm accent surface |
+| 结构 | 连续 segmented capsule：`MM/DD` / `HH:MM` / `Tue` |
+| 字号 | `small` (11px)，`tabular-nums` |
+| 视觉语义 | 三段并列但共享外轮廓；默认无缝拼接；weekday 段允许使用 warm accent surface |
 | 文本规则 | bar 上不再显示完整日期与时区；时区信息若需要，进入 popup 展示 |
 | 交互 | click → 展开 Clock Popup |
+
+**实现要求**：
+
+- 三段高度一致
+- 三段文本在各自 segment 内双轴居中
+- 不能再用三个彼此分离的 `Rectangle { radius: ... }` 直接排开代替 segmented capsule
 
 ### 3.4 clock-popup
 
@@ -192,7 +204,7 @@ layer-rule {
 |---|---|
 | 位置 | RIGHT，位于 status capsule 左侧 |
 | 数据源 | `Quickshell.Services.SystemTray` (StatusNotifierItem) |
-| 视觉 | 每 item 不是裸 icon，而是 `tray chip container + native app icon`；chip 自身半透明、低对比、大圆角 |
+| 视觉 | 每 item 不是裸 icon，而是 `tray chip container + native app icon`；chip 自身半透明、低对比、大圆角，但整体明度应明显高于 wallpaper |
 | 交互 | 左键 → `item.activate()`；右键 → `item.menu`（通过 Quickshell `SystemTrayItem.menu` 句柄展示原生菜单；具体弹出由 `item.display(parentWindow, relX, relY)` 触发） |
 | 统一策略 | 统一的是命中区、container、hover/pressed 反馈；不统一应用 icon 的绘制风格 |
 
@@ -208,6 +220,11 @@ layer-rule {
 | 默认颜色 | 日常 idle 时 5 个 icon 使用统一前景色 |
 | 例外状态 | 充电时 battery 允许绿色；Wi-Fi / 蓝牙扫描时允许蓝色呼吸语义；通知使用红点 badge |
 | 目标语义 | 把右侧从“五个孤立工具”变成“一个系统状态对象” |
+
+**几何要求**：
+
+- status capsule 的高度可以略高于普通 group container，但只能通过 bar 内部 inset 悬浮
+- 不能把 status capsule 做成导致 bar 整体显著增厚的结构
 
 ### 3.7 battery
 

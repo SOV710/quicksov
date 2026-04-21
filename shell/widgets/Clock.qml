@@ -9,8 +9,19 @@ import "../services"
 Item {
     id: root
 
-    implicitWidth: row.implicitWidth
-    implicitHeight: row.implicitHeight
+    readonly property int _segmentWidth: Math.max(
+        Theme.clockSegmentMinWidth,
+        Math.ceil(
+            Math.max(
+                dateMetrics.width,
+                timeMetrics.width,
+                weekdayMetrics.width
+            ) + Theme.clockSegmentPadX * 2
+        )
+    )
+
+    implicitWidth: _segmentWidth * 3
+    implicitHeight: Theme.clockSegmentHeight
 
     signal openPopup()
 
@@ -22,6 +33,30 @@ Item {
         return Qt.formatDate(d, "MM/dd");
     }
 
+    TextMetrics {
+        id: dateMetrics
+        text: root._dateText
+        font.family: Theme.fontFamily
+        font.pixelSize: Theme.fontSmall
+        font.weight: Theme.weightMedium
+    }
+
+    TextMetrics {
+        id: timeMetrics
+        text: root._timeText
+        font.family: Theme.fontFamily
+        font.pixelSize: Theme.fontBody
+        font.weight: Theme.weightSemibold
+    }
+
+    TextMetrics {
+        id: weekdayMetrics
+        text: root._weekdayText
+        font.family: Theme.fontFamily
+        font.pixelSize: Theme.fontSmall
+        font.weight: Theme.weightMedium
+    }
+
     Connections {
         target: Time
         function onNowChanged() {
@@ -31,33 +66,50 @@ Item {
         }
     }
 
-    Row {
-        id: row
-        spacing: Theme.spaceXs
-        anchors.centerIn: parent
+    Item {
+        id: shell
+        anchors.fill: parent
+        clip: true
 
-        ClockSegment {
-            text: root._dateText
-            fillColor: Theme.clockDateFill
-            textColor: Theme.fgSecondary
-            weight: Theme.weightMedium
-            pixelSize: Theme.fontSmall
+        Row {
+            id: row
+            anchors.fill: parent
+            spacing: 0
+
+            ClockSegment {
+                width: root._segmentWidth
+                text: root._dateText
+                fillColor: Theme.clockDateFill
+                textColor: Theme.clockDateText
+                weight: Theme.weightMedium
+                pixelSize: Theme.fontSmall
+            }
+
+            ClockSegment {
+                width: root._segmentWidth
+                text: root._timeText
+                fillColor: Theme.clockTimeFill
+                textColor: Theme.clockTimeText
+                weight: Theme.weightSemibold
+                pixelSize: Theme.fontBody
+            }
+
+            ClockSegment {
+                width: root._segmentWidth
+                text: root._weekdayText
+                fillColor: Theme.clockDayFill
+                textColor: Theme.clockDayText
+                weight: Theme.weightMedium
+                pixelSize: Theme.fontSmall
+            }
         }
 
-        ClockSegment {
-            text: root._timeText
-            fillColor: Theme.clockTimeFill
-            textColor: Theme.fgPrimary
-            weight: Theme.weightSemibold
-            pixelSize: Theme.fontBody
-        }
-
-        ClockSegment {
-            text: root._weekdayText
-            fillColor: Theme.clockDayFill
-            textColor: Theme.fgPrimary
-            weight: Theme.weightMedium
-            pixelSize: Theme.fontSmall
+        Rectangle {
+            anchors.fill: parent
+            radius: Theme.clockSegmentRadius
+            color: "transparent"
+            border.color: Theme.withAlpha(Theme.borderDefault, 0.16)
+            border.width: 1
         }
     }
 
@@ -77,12 +129,10 @@ Item {
         property int weight: Theme.weightRegular
         property int pixelSize: Theme.fontSmall
 
-        implicitWidth: label.implicitWidth + Theme.groupContainerPadX * 2
-        implicitHeight: Theme.groupContainerHeight
-        radius: Theme.groupContainerRadius
+        implicitWidth: root._segmentWidth
+        implicitHeight: Theme.clockSegmentHeight
+        radius: 0
         color: fillColor
-        border.color: Theme.withAlpha(textColor, 0.12)
-        border.width: 1
 
         Text {
             id: label
@@ -93,6 +143,8 @@ Item {
             font.pixelSize: segment.pixelSize
             font.weight: segment.weight
             font.features: { "tnum": 1 }
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
         }
     }
 }

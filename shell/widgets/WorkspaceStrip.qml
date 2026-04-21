@@ -28,7 +28,7 @@ Item {
         Row {
             id: row
             anchors.centerIn: parent
-            spacing: Theme.spaceXs
+            spacing: Theme.spaceSm
 
             Repeater {
                 model: Niri.ready ? Niri.workspacesForOutput(root.outputName) : []
@@ -42,18 +42,18 @@ Item {
 
     component WorkspaceDot: Item {
         property var wsData: null
-        width: dotRect.width + Theme.spaceXs * 2
-        height: Theme.leafChipHeight
+        width: dotRect.width
+        height: Theme.workspaceSpotSize
 
         Rectangle {
             id: dotRect
             anchors.verticalCenter: parent.verticalCenter
-            width: wsData && wsData.focused ? 28 : 10
-            height: 10
-            radius: 5
-            color: wsData && wsData.focused ? Theme.accentTeal
-                 : wsData && wsData.windows > 0 ? Theme.withAlpha(Theme.accentTeal, 0.54)
-                 : Theme.withAlpha(Theme.accentTeal, 0.22)
+            width: wsData && wsData.focused ? Theme.workspaceActiveSpotWidth : Theme.workspaceSpotSize
+            height: Theme.workspaceSpotSize
+            radius: Theme.workspaceSpotSize / 2
+            color: wsData && wsData.focused ? Theme.workspaceSpotActive
+                 : wsData && wsData.windows > 0 ? Theme.workspaceSpotFilled
+                 : Theme.workspaceSpotEmpty
 
             Behavior on width { NumberAnimation { duration: Theme.motionFast; easing.type: Easing.OutCubic } }
             Behavior on color { ColorAnimation { duration: Theme.motionFast } }
