@@ -9,18 +9,14 @@ import "../services"
 Item {
     id: root
 
-    readonly property int _segmentWidth: Math.max(
-        Theme.clockSegmentMinWidth,
-        Math.ceil(
-            Math.max(
-                dateMetrics.width,
-                timeMetrics.width,
-                weekdayMetrics.width
-            ) + Theme.clockSegmentPadX * 2
-        )
+    readonly property int _contentWidth: Math.ceil(
+        dateMetrics.width
+        + timeMetrics.width
+        + weekdayMetrics.width
+        + Theme.clockCapsuleGap * 2
     )
 
-    implicitWidth: _segmentWidth * 3
+    implicitWidth: _contentWidth + Theme.clockCapsulePadX * 2
     implicitHeight: Theme.clockSegmentHeight
 
     signal openPopup()
@@ -70,46 +66,48 @@ Item {
         id: shell
         anchors.fill: parent
         radius: Theme.clockSegmentRadius
-        color: "transparent"
+        color: Theme.clockCapsuleFill
         border.color: Theme.withAlpha(Theme.borderDefault, 0.16)
         border.width: 1
         antialiasing: true
 
         Row {
-            id: row
-            anchors.fill: parent
-            spacing: 0
+            anchors.centerIn: parent
+            spacing: Theme.clockCapsuleGap
 
-            ClockSegment {
-                width: root._segmentWidth
+            Text {
                 text: root._dateText
-                fillColor: Theme.clockDateFill
-                textColor: Theme.clockDateText
-                weight: Theme.weightMedium
-                pixelSize: Theme.fontSmall
-                capLeft: true
+                color: Theme.clockCapsuleText
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSmall
+                font.weight: Theme.weightMedium
+                font.features: { "tnum": 1 }
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
             }
 
-            ClockSegment {
-                width: root._segmentWidth
+            Text {
                 text: root._timeText
-                fillColor: Theme.clockTimeFill
-                textColor: Theme.clockTimeText
-                weight: Theme.weightSemibold
-                pixelSize: Theme.fontBody
+                color: Theme.clockCapsuleText
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontBody
+                font.weight: Theme.weightSemibold
+                font.features: { "tnum": 1 }
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
             }
 
-            ClockSegment {
-                width: root._segmentWidth
+            Text {
                 text: root._weekdayText
-                fillColor: Theme.clockDayFill
-                textColor: Theme.clockDayText
-                weight: Theme.weightMedium
-                pixelSize: Theme.fontSmall
-                capRight: true
+                color: Theme.clockCapsuleText
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSmall
+                font.weight: Theme.weightMedium
+                font.features: { "tnum": 1 }
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
             }
         }
-
     }
 
     MouseArea {
@@ -117,48 +115,5 @@ Item {
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         onClicked: root.openPopup()
-    }
-
-    component ClockSegment: Rectangle {
-        id: segment
-
-        property string text: ""
-        property color fillColor: Theme.clockDateFill
-        property color textColor: Theme.fgPrimary
-        property int weight: Theme.weightRegular
-        property int pixelSize: Theme.fontSmall
-        property bool capLeft: false
-        property bool capRight: false
-
-        implicitWidth: root._segmentWidth
-        implicitHeight: Theme.clockSegmentHeight
-        radius: capLeft || capRight ? Theme.clockSegmentRadius : 0
-        color: fillColor
-        antialiasing: true
-
-        Rectangle {
-            anchors {
-                top: parent.top
-                bottom: parent.bottom
-                left: capLeft ? undefined : parent.left
-                right: capLeft ? parent.right : undefined
-            }
-            width: parent.width - Theme.clockSegmentRadius
-            visible: capLeft || capRight
-            color: segment.fillColor
-        }
-
-        Text {
-            id: label
-            anchors.centerIn: parent
-            text: segment.text
-            color: segment.textColor
-            font.family: Theme.fontFamily
-            font.pixelSize: segment.pixelSize
-            font.weight: segment.weight
-            font.features: { "tnum": 1 }
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-        }
     }
 }
