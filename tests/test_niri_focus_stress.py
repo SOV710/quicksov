@@ -279,6 +279,22 @@ def run() -> int:
         help="comma-separated workspace indices to alternate, e.g. 3,4",
     )
     parser.add_argument(
+        "--warmup-seq",
+        default=None,
+        help="comma-separated warmup focus sequence to establish previous-workspace state, e.g. 1,3",
+    )
+    parser.add_argument(
+        "--sequence",
+        default=None,
+        help="explicit stress sequence, e.g. 4,3,4,3; overrides --rounds pattern construction",
+    )
+    parser.add_argument(
+        "--repeat-sequence",
+        type=int,
+        default=1,
+        help="repeat count for --sequence",
+    )
+    parser.add_argument(
         "--output",
         default=None,
         help="target output name; defaults to currently focused output",
@@ -323,7 +339,7 @@ def run() -> int:
         )
 
         allowed = set(indices)
-        warm_idx = indices[0]
+        warmup_seq = parse_indices(args.warmup_seq) or [indices[0]]
         send_delay = args.send_delay_ms / 1000.0
         settle_delay = args.settle_ms / 1000.0
         niri_socket = default_niri_socket(args.niri_socket)
@@ -333,7 +349,8 @@ def run() -> int:
 
         warm_errors: list[str] = []
         warm_queue: queue.Queue[int] = queue.Queue()
-        warm_queue.put(warm_idx)
+        for idx in warmup_seq:
+            warm_queue.put(idx)
         stress_sender(
             socket_path=socket_path,
             timeout=args.timeout,
@@ -348,15 +365,21 @@ def run() -> int:
                 h.error(err)
             return h.finish()
 
+        warm_idx = warmup_seq[-1]
         snap = wait_for_focus(out_queue, target_output, warm_idx, args.timeout)
         if snap is None or focused_idx_for_output(snap, target_output) != warm_idx:
             h.error(
-                f"warmup failed to focus output={target_output} idx={warm_idx}; last={snap!r}"
+                f"warmup failed to focus output={target_output} idx={warm_idx}; seq={warmup_seq}; last={snap!r}"
             )
             return h.finish()
-        h.ok(f"warmup focused {target_output}:{warm_idx}")
+        h.ok(f"warmup focused {target_output}:{warm_idx} via seq={warmup_seq}")
 
-        sequence = [indices[(i + 1) % len(indices)] for i in range(args.rounds)]
+        scripted_sequence = parse_indices(args.sequence)
+        if scripted_sequence:
+            sequence = scripted_sequence * max(1, args.repeat_sequence)
+            allowed.update(scripted_sequence)
+        else:
+            sequence = [indices[(i + 1) % len(indices)] for i in range(args.rounds)]
         send_queue: queue.Queue[int] = queue.Queue()
         for idx in sequence:
             send_queue.put(idx)
@@ -432,7 +455,8 @@ def run() -> int:
 
         h.ok(
             f"observed {seen_snaps} niri snapshots during stress run "
-            f"(mode={args.mode}, parallel={args.parallel}, rounds={args.rounds})"
+            f"(mode={args.mode}, parallel={args.parallel}, rounds={args.rounds}, "
+            f"warmup_seq={warmup_seq}, sequence_len={len(sequence)})"
         )
 
         if anomalies:
