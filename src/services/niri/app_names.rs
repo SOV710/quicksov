@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 
 use tracing::debug;
 
+use crate::util::prettify_app_id;
+
 pub struct AppNameResolver {
     exact: HashMap<String, String>,
     normalized: HashMap<String, String>,
@@ -206,54 +208,4 @@ fn normalize_lookup_key(input: &str) -> String {
         .trim()
         .trim_end_matches(".desktop")
         .to_ascii_lowercase()
-}
-
-fn prettify_app_id(app_id: &str) -> String {
-    let mut base = app_id.trim().trim_end_matches(".desktop");
-    if let Some(last) = base.rsplit('.').next() {
-        if base.contains('.') {
-            base = last;
-        }
-    }
-
-    for suffix in ["-bin", "-stable", "-git", "_bin", "_stable", "_git"] {
-        if let Some(stripped) = base.strip_suffix(suffix) {
-            base = stripped;
-            break;
-        }
-    }
-
-    let words: Vec<String> = base
-        .split(['.', '-', '_'])
-        .filter(|segment| !segment.is_empty())
-        .map(prettify_word)
-        .collect();
-
-    if words.is_empty() {
-        return app_id.to_string();
-    }
-
-    words.join(" ")
-}
-
-fn prettify_word(word: &str) -> String {
-    let lower = word.to_ascii_lowercase();
-    match lower.as_str() {
-        "ghostty" => "Ghostty".to_string(),
-        "wezterm" => "WezTerm".to_string(),
-        "vivaldi" => "Vivaldi".to_string(),
-        "firefox" => "Firefox".to_string(),
-        "thunderbird" => "Thunderbird".to_string(),
-        "emacs" => "GNU Emacs".to_string(),
-        "nvim" => "Neovim".to_string(),
-        _ => {
-            let mut chars = lower.chars();
-            let Some(first) = chars.next() else {
-                return String::new();
-            };
-            let mut result = first.to_uppercase().collect::<String>();
-            result.push_str(chars.as_str());
-            result
-        }
-    }
 }

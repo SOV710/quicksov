@@ -18,7 +18,7 @@ use tracing::{info, warn};
 
 use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
 use crate::config::Config;
-use crate::util::json_map;
+use crate::util::{json_map, prettify_label};
 
 /// Spawn the `audio` service and return its [`ServiceHandle`].
 pub fn spawn(_cfg: &Config) -> ServiceHandle {
@@ -316,65 +316,6 @@ fn preferred_stream_name(props: &serde_json::Map<String, Value>) -> String {
     }
 
     "Unknown app".to_string()
-}
-
-fn prettify_label(input: &str) -> String {
-    let trimmed = input.trim();
-    if trimmed.is_empty() {
-        return String::new();
-    }
-
-    if trimmed.contains(' ') || trimmed.chars().any(|ch| ch.is_uppercase()) {
-        return trimmed.to_string();
-    }
-
-    let mut base = trimmed.trim_end_matches(".desktop");
-    if base.contains('.') {
-        if let Some(last) = base.rsplit('.').next() {
-            base = last;
-        }
-    }
-
-    for suffix in ["-bin", "-stable", "-git", "_bin", "_stable", "_git"] {
-        if let Some(stripped) = base.strip_suffix(suffix) {
-            base = stripped;
-            break;
-        }
-    }
-
-    let words: Vec<String> = base
-        .split(['.', '-', '_'])
-        .filter(|segment| !segment.is_empty())
-        .map(prettify_word)
-        .collect();
-
-    if words.is_empty() {
-        trimmed.to_string()
-    } else {
-        words.join(" ")
-    }
-}
-
-fn prettify_word(word: &str) -> String {
-    let lower = word.to_ascii_lowercase();
-    match lower.as_str() {
-        "ghostty" => "Ghostty".to_string(),
-        "wezterm" => "WezTerm".to_string(),
-        "vivaldi" => "Vivaldi".to_string(),
-        "firefox" => "Firefox".to_string(),
-        "thunderbird" => "Thunderbird".to_string(),
-        "emacs" => "GNU Emacs".to_string(),
-        "nvim" => "Neovim".to_string(),
-        _ => {
-            let mut chars = lower.chars();
-            let Some(first) = chars.next() else {
-                return String::new();
-            };
-            let mut result = first.to_uppercase().collect::<String>();
-            result.push_str(chars.as_str());
-            result
-        }
-    }
 }
 
 fn sort_nodes(nodes: &mut [AudioNode], default_name: &str) {
