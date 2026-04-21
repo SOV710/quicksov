@@ -61,6 +61,25 @@ def focus_workspace_via_niri(socket_path: str, idx: int, timeout: float) -> Any:
     return request_niri(socket_path, cmd, timeout)
 
 
+def direct_workspaces_from_niri(socket_path: str, timeout: float) -> list[dict[str, Any]]:
+    payload = request_niri(socket_path, '"Workspaces"', timeout)
+    workspaces = (
+        payload.get("Ok", {}).get("Workspaces")
+        if isinstance(payload, dict)
+        else None
+    )
+    if not isinstance(workspaces, list):
+        return []
+    return [ws for ws in workspaces if isinstance(ws, dict)]
+
+
+def direct_focused_idx_for_output(socket_path: str, output: str, timeout: float) -> int | None:
+    for ws in direct_workspaces_from_niri(socket_path, timeout):
+        if ws.get("output") == output and ws.get("is_focused") is True and isinstance(ws.get("idx"), int):
+            return ws["idx"]
+    return None
+
+
 def parse_indices(raw: str | None) -> list[int]:
     if not raw:
         return []
@@ -192,13 +211,17 @@ def stress_sender(
     timeout: float,
     mode: str,
     niri_socket: str,
-    sequence: list[int],
+    send_queue: queue.Queue[int],
     send_delay: float,
     errors: list[str],
 ) -> None:
     try:
         if mode == "direct-niri":
-            for idx in sequence:
+            while True:
+                try:
+                    idx = send_queue.get_nowait()
+                except queue.Empty:
+                    break
                 reply = focus_workspace_via_niri(niri_socket, idx, timeout)
                 if not isinstance(reply, dict) or "Ok" not in reply:
                     errors.append(f"direct-niri focus_workspace {idx} failed: {reply!r}")
@@ -210,7 +233,11 @@ def stress_sender(
         client.connect()
         try:
             client.hello(client_name="niri-focus-stress", client_version="0.1")
-            for idx in sequence:
+            while True:
+                try:
+                    idx = send_queue.get_nowait()
+                except queue.Empty:
+                    break
                 if mode == "oneshot":
                     client.oneshot("niri", "focus_workspace", {"idx": idx})
                 else:
@@ -305,12 +332,14 @@ def run() -> int:
         observer.start()
 
         warm_errors: list[str] = []
+        warm_queue: queue.Queue[int] = queue.Queue()
+        warm_queue.put(warm_idx)
         stress_sender(
             socket_path=socket_path,
             timeout=args.timeout,
             mode=args.mode,
             niri_socket=niri_socket,
-            sequence=[warm_idx],
+            send_queue=warm_queue,
             send_delay=0.0,
             errors=warm_errors,
         )
@@ -327,12 +356,14 @@ def run() -> int:
             return h.finish()
         h.ok(f"warmup focused {target_output}:{warm_idx}")
 
-        sequence = [indices[i % len(indices)] for i in range(args.rounds)]
+        sequence = [indices[(i + 1) % len(indices)] for i in range(args.rounds)]
+        send_queue: queue.Queue[int] = queue.Queue()
+        for idx in sequence:
+            send_queue.put(idx)
         errors: list[str] = []
         threads: list[threading.Thread] = []
         start_ts = time.monotonic()
         for worker in range(args.parallel):
-            worker_seq = sequence[worker::args.parallel] if args.parallel > 1 else sequence
             thread = threading.Thread(
                 target=stress_sender,
                 kwargs={
@@ -340,7 +371,7 @@ def run() -> int:
                     "timeout": args.timeout,
                     "mode": args.mode,
                     "niri_socket": niri_socket,
-                    "sequence": worker_seq,
+                    "send_queue": send_queue,
                     "send_delay": send_delay,
                     "errors": errors,
                 },
@@ -381,8 +412,10 @@ def run() -> int:
                 continue
 
             if focused_idx not in allowed:
+                direct_idx = direct_focused_idx_for_output(niri_socket, target_output, args.timeout)
                 anomalies.append(
-                    f"{ts - start_ts:8.3f}s unexpected focused idx={focused_idx} on output={target_output}; allowed={sorted(allowed)}"
+                    f"{ts - start_ts:8.3f}s unexpected focused idx={focused_idx} on output={target_output}; "
+                    f"allowed={sorted(allowed)}; direct_niri_idx={direct_idx}"
                 )
 
         for thread in threads:
