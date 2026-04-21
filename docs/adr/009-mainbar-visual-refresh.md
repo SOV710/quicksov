@@ -31,6 +31,7 @@
 以下三套系统在本轮重构中视为**锁定约束**：
 
 - 色彩系统：唯一来源仍是 `config/theme_tokyonight.json`
+- 组件层不得继续散落 `rgba(1,1,1,...)` / `rgba(0,0,0,...)` 一类匿名颜色，所有 subtle fill / shadow 都先收口到 `Theme.qml`
 - 排版系统：字体、字号梯度、数字排版规则继续沿用
 - 间距系统：4px base unit 与现有 spacing scale 继续沿用
 
@@ -65,7 +66,7 @@ top bar 与状态类 popup 的 shell-owned icons，默认迁移到本仓库的 `
 - `window-info` 不直接贴 bar，而是放进独立 group container
 - `tray` 的每个 item 有自己的半透明 chip container
 - `battery/network/bluetooth/volume/notification` 不再分散，而是进入一个**统一的 status capsule**
-- **bar 总高度不放大**，继续维持原先轻量高度；层级感通过颜色、描边、内层容器与阴影解决，而不是靠把 bar 做厚
+- **bar 总高度固定为 32px**，恢复轻量高度；层级感通过颜色、描边、内层容器与阴影解决，而不是靠把 bar 做厚
 
 颜色与圆角都必须递进：
 

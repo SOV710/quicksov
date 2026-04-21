@@ -79,6 +79,7 @@ layer-rule {
 **mockup 对齐要求**：
 
 - bar 必须是浅表面色，能明显从 wallpaper 上分离出来
+- bar 高度固定为 32px，保持紧凑，不再使用放大的厚条形态
 - 阴影只作为外部投影存在，不得让 bar 看起来多出一层实体厚度
 - clock 必须是一个共享轮廓的 segmented capsule，而不是三颗分离胶囊
 
