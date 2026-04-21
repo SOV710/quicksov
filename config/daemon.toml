@@ -48,7 +48,7 @@ log_level = "info"
 
 # ---------------------------------------------------------------------------
 # Wallpaper — source/view wallpaper renderer config
-# The daemon indexes images/videos, supervises qsov-wallpaperd, and exposes
+# The daemon indexes images/videos, directly supervises qsov-wallpaper-native, and exposes
 # per-output view bindings. If no sources/views are configured, every output
 # falls back to the first indexed entry in the wallpaper directory.
 # ---------------------------------------------------------------------------

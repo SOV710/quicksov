@@ -9,7 +9,7 @@
 //! - source and per-output view selection
 //! - process supervision for the dedicated wallpaper renderer
 //!
-//! The renderer is isolated in a separate process (`qsov-wallpaperd`) so the
+//! The renderer is isolated in a separate process (`qsov-wallpaper-native`) so the
 //! main shell no longer carries wallpaper video decode / render load.
 
 mod actions;

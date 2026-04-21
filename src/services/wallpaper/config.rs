@@ -23,7 +23,7 @@ pub(super) const DEFAULT_VIDEO_AUDIO: bool = false;
 pub(super) const DEFAULT_SOURCE_LOOP: bool = true;
 pub(super) const DEFAULT_SOURCE_MUTE: bool = true;
 pub(super) const DEFAULT_VIEW_FIT: &str = "cover";
-pub(super) const DEFAULT_RENDERER_PROCESS: &str = "qsov-wallpaperd";
+pub(super) const DEFAULT_RENDERER_BINARY: &str = "qsov-wallpaper-native";
 
 #[derive(Clone, Debug)]
 pub(super) struct WallpaperCfg {

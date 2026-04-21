@@ -20,7 +20,6 @@
 daemon.toml
   -> qsovd wallpaper service
   -> wallpaper snapshot
-  -> qsov-wallpaperd
   -> qsov-wallpaper-native
   -> Wayland background layer surfaces
 ```
@@ -45,7 +44,10 @@ daemon.toml
 - 将配置归约为 `sources` 与 `views`
 - 维护 `fallback_source`
 - 暴露 `wallpaper` topic snapshot
-- 监督专用 renderer 进程
+- 查找 native renderer binary
+- 监督并直接拉起专用 renderer 进程
+- 透传 `QSOV_SOCKET`
+- 在 child `exec` 前设置 `PR_SET_PDEATHSIG`
 
 它不负责：
 
@@ -54,20 +56,7 @@ daemon.toml
 - 图片/视频最终合成
 - 向 compositor 提交 buffer
 
-### 2.2 `qsov-wallpaperd`
-
-`qsov-wallpaperd` 是 launcher。
-
-它负责：
-
-- 查找 `qsov-wallpaper-native`
-- 透传 `QSOV_SOCKET`
-- `exec` 到 native renderer
-- 通过 `PR_SET_PDEATHSIG` 绑定父进程生命周期
-
-它本身不承担渲染逻辑。
-
-### 2.3 `qsov-wallpaper-native`
+### 2.2 `qsov-wallpaper-native`
 
 这是当前 wallpaper engine 的真实 renderer。
 

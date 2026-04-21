@@ -735,9 +735,9 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 - `renderer.render_device_policy` / `renderer.decode_device_policy` / `renderer.allow_cross_gpu` 暴露 GPU 选择策略；默认安全值分别是 `same-as-compositor` / `same-as-render` / `false`
 - 当前 native renderer 会把 `render_device_policy` 用于 GBM/libplacebo 渲染设备选择，把 `decode_device_policy` 用于 FFmpeg hwdec 设备偏好与 backend 排序；当 render GPU 与 compositor 主 GPU 不同，present 路径会默认改为“render on render GPU, allocate/present on compositor GPU”
 - `renderer.present_backend` 是用户偏好；当前 native renderer 会优先尝试 `dmabuf`，若 feedback / GBM / import 任一步失败则在运行时自动 fallback 到 `shm`
-- 当前实现使用 `qsov-wallpaperd -> qsov-wallpaper-native` 原生 renderer 承载渲染热路径；state/action 面保持不变
+- 当前实现由 `qsovd` 直接监督 `qsov-wallpaper-native` 原生 renderer 承载渲染热路径；state/action 面保持不变
 
-**后端**: daemon 本地目录扫描 + `qsov-wallpaperd` 监督。默认目录 `$HOME/.config/quicksov/wallpapers`，可通过 `daemon.toml.[services.wallpaper].directory` 覆盖。渲染器偏好与默认 source/view 绑定来自 `daemon.toml.[services.wallpaper]`。
+**后端**: daemon 本地目录扫描 + `qsov-wallpaper-native` 直接监督/拉起。默认目录 `$HOME/.config/quicksov/wallpapers`，可通过 `daemon.toml.[services.wallpaper].directory` 覆盖。渲染器偏好与默认 source/view 绑定来自 `daemon.toml.[services.wallpaper]`。
 
 ---
 

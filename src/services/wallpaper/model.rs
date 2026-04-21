@@ -12,7 +12,7 @@ use crate::bus::ServiceError;
 use crate::config::{WallpaperCropConfig, WallpaperSourceConfig, WallpaperViewConfig};
 
 use super::config::{
-    WallpaperCfg, DEFAULT_RENDERER_PROCESS, DEFAULT_SOURCE_LOOP, DEFAULT_SOURCE_MUTE,
+    WallpaperCfg, DEFAULT_RENDERER_BINARY, DEFAULT_SOURCE_LOOP, DEFAULT_SOURCE_MUTE,
     DEFAULT_VIEW_FIT,
 };
 use super::scan::{
@@ -501,7 +501,7 @@ impl WallpaperState {
                 "duration_ms": self.transition_duration_ms,
             },
             "renderer": {
-                "process": DEFAULT_RENDERER_PROCESS,
+                "process": DEFAULT_RENDERER_BINARY,
                 "backend": self.renderer_backend,
                 "status": self.renderer.status.as_str(),
                 "pid": self.renderer.pid,

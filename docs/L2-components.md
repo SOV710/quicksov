@@ -25,7 +25,7 @@
 
 | 属性 | 值 |
 |---|---|
-| 位置 | `qsov-wallpaperd` 原生 renderer 进程中，每个 output 一个独立 background layer-shell surface |
+| 位置 | `qsov-wallpaper-native` 原生 renderer 进程中，每个 output 一个独立 background layer-shell surface |
 | 数据源 | daemon `wallpaper` service（目录扫描 + `source/view` 状态）；renderer 只消费协议快照并呈现 |
 | 默认目录 | `$HOME/.config/quicksov/wallpapers` |
 | 配置覆盖 | `daemon.toml.[services.wallpaper].directory` |

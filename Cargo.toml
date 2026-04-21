@@ -7,10 +7,6 @@ edition = "2021"
 name = "qsovd"
 path = "src/main.rs"
 
-[[bin]]
-name = "qsov-wallpaperd"
-path = "src/bin/qsov-wallpaperd.rs"
-
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }

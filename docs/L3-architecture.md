@@ -470,16 +470,14 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
     └── phosphor/
 ```
 
-开发时主 shell 使用 `quickshell --config quicksov`，qs 从 `~/.config/quickshell/quicksov/` 读 `shell.qml`。wallpaper 由 daemon 启动 `qsov-wallpaperd`，该 binary 会 `exec` 到 `.build/native/wallpaper_native/qsov-wallpaper-native` 或同目录 `qsov-wallpaper-native`，不再启动 Quickshell/QML wallpaper shell。
+开发时主 shell 使用 `quickshell --config quicksov`，qs 从 `~/.config/quickshell/quicksov/` 读 `shell.qml`。wallpaper 由 daemon 直接启动 `qsov-wallpaper-native`，并按 `QSOV_WALLPAPER_NATIVE`、同目录 sibling binary、`.build/native/wallpaper_native/qsov-wallpaper-native`、`PATH` 的顺序查找，不再启动 Quickshell/QML wallpaper shell。
 
 ## 9. 开发仓库目录
 
 ```
 ~/proj/quicksov/
-├── Cargo.toml                      # Rust crate: qsovd + qsov-wallpaperd
-├── src/                            # daemon service 实现与 binary entrypoints
-│   └── bin/
-│       └── qsov-wallpaperd.rs      # native wallpaper renderer launcher
+├── Cargo.toml                      # Rust crate: qsovd
+├── src/                            # daemon service 实现
 ├── shell/                          # QML 源码, 对应运行时的 qs 部分
 │   ├── shell.qml
 │   ├── Theme.qml

@@ -1023,7 +1023,7 @@
           "response": { "type": "null" }
         }
       },
-      "backend": "local directory scan plus qsov-wallpaperd supervision; output binding uses source/view model"
+      "backend": "local directory scan plus direct qsov-wallpaper-native supervision; output binding uses source/view model"
     },
 
     "theme": {
