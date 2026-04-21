@@ -5,10 +5,13 @@
 //! `net.link` service — interface enumeration via rtnetlink.
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use futures::stream::TryStreamExt;
 use futures::StreamExt;
-use rtnetlink::packet_route::link::{LinkAttribute, LinkFlags};
+use rtnetlink::packet_route::link::{
+    InfoKind, LinkAttribute, LinkFlags, LinkInfo, LinkLayerType,
+};
 use serde_json::Value;
 use tokio::sync::{mpsc, watch};
 use tracing::{info, warn};
@@ -155,12 +158,12 @@ async fn initial_scan(handle: &rtnetlink::Handle) -> Result<HashMap<u32, IfaceIn
 fn parse_link_msg(msg: &rtnetlink::packet_route::link::LinkMessage) -> IfaceInfo {
     let mut info = IfaceInfo::default();
     let flags = msg.header.flags;
+    let mut link_info_kind = None;
     info.carrier = flags.contains(LinkFlags::Running);
 
     for attr in &msg.attributes {
         match attr {
             LinkAttribute::IfName(name) => {
-                info.kind = guess_kind(name);
                 info.name = name.clone();
             }
             LinkAttribute::Mtu(mtu) => info.mtu = *mtu,
@@ -174,6 +177,9 @@ fn parse_link_msg(msg: &rtnetlink::packet_route::link::LinkMessage) -> IfaceInfo
                 info.rx_bytes = stats.rx_bytes;
                 info.tx_bytes = stats.tx_bytes;
             }
+            LinkAttribute::LinkInfo(infos) => {
+                link_info_kind = extract_link_info_kind(infos);
+            }
             _ => {}
         }
     }
@@ -181,19 +187,63 @@ fn parse_link_msg(msg: &rtnetlink::packet_route::link::LinkMessage) -> IfaceInfo
     if info.operstate.is_empty() {
         info.operstate = "unknown".to_string();
     }
+    info.kind = classify_link_kind(
+        is_wireless_interface(&info.name),
+        msg.header.link_layer_type,
+        link_info_kind.as_ref(),
+    )
+    .to_string();
     info
 }
 
-fn guess_kind(name: &str) -> String {
-    if name.starts_with("wl") {
-        "wifi".to_string()
-    } else if name.starts_with("en") || name.starts_with("eth") {
-        "ethernet".to_string()
-    } else if name == "lo" {
-        "loopback".to_string()
-    } else {
-        "other".to_string()
+fn extract_link_info_kind(infos: &[LinkInfo]) -> Option<InfoKind> {
+    infos.iter().find_map(|info| match info {
+        LinkInfo::Kind(kind) => Some(kind.clone()),
+        _ => None,
+    })
+}
+
+fn classify_link_kind(
+    is_wireless: bool,
+    layer_type: LinkLayerType,
+    info_kind: Option<&InfoKind>,
+) -> &'static str {
+    if matches!(layer_type, LinkLayerType::Loopback) {
+        return "loopback";
     }
+
+    if is_wireless
+        || matches!(
+            layer_type,
+            LinkLayerType::Ieee80211
+                | LinkLayerType::Ieee80211Prism
+                | LinkLayerType::Ieee80211Radiotap
+        )
+    {
+        return "wifi";
+    }
+
+    if info_kind.is_some() {
+        return "other";
+    }
+
+    if matches!(
+        layer_type,
+        LinkLayerType::Ether | LinkLayerType::Eether | LinkLayerType::Ieee802
+    ) {
+        return "ethernet";
+    }
+
+    "other"
+}
+
+fn is_wireless_interface(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+
+    let base = Path::new("/sys/class/net").join(name);
+    base.join("wireless").exists() || base.join("phy80211").exists()
 }
 
 fn operstate_str(state: rtnetlink::packet_route::link::State) -> &'static str {
@@ -272,4 +322,40 @@ enum LinkError {
     Io(String),
     #[error("rtnetlink error: {0}")]
     Rtnetlink(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use rtnetlink::packet_route::link::{InfoKind, LinkLayerType};
+
+    use super::classify_link_kind;
+
+    #[test]
+    fn loopback_uses_link_layer_type() {
+        assert_eq!(
+            classify_link_kind(false, LinkLayerType::Loopback, None),
+            "loopback"
+        );
+    }
+
+    #[test]
+    fn wireless_uses_capability_not_name() {
+        assert_eq!(classify_link_kind(true, LinkLayerType::Ether, None), "wifi");
+    }
+
+    #[test]
+    fn plain_ethernet_without_link_info_stays_ethernet() {
+        assert_eq!(
+            classify_link_kind(false, LinkLayerType::Ether, None),
+            "ethernet"
+        );
+    }
+
+    #[test]
+    fn virtual_ethernet_kinds_are_not_misclassified_as_physical_ethernet() {
+        assert_eq!(
+            classify_link_kind(false, LinkLayerType::Ether, Some(&InfoKind::Veth)),
+            "other"
+        );
+    }
 }
