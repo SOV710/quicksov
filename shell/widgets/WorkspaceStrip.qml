@@ -36,8 +36,10 @@ Item {
     function _syncFocusedBlob() {
         var target = _focusedDotCenterX();
         if (target < 0) {
-            _gooeyReady = false;
-            gooeyAnimation.stop();
+            if (!Niri.ready || workspaceRepeater.count === 0) {
+                _gooeyReady = false;
+                gooeyAnimation.stop();
+            }
             return;
         }
 
@@ -60,20 +62,31 @@ Item {
         gooeyAnimation.restart();
     }
 
-    onOutputNameChanged: Qt.callLater(root._syncFocusedBlob)
+    function _queueSyncFocusedBlob() {
+        syncTimer.restart();
+    }
 
-    Component.onCompleted: Qt.callLater(root._syncFocusedBlob)
+    onOutputNameChanged: root._queueSyncFocusedBlob()
+
+    Component.onCompleted: root._queueSyncFocusedBlob()
 
     Connections {
         target: Niri
 
         function onReadyChanged() {
-            Qt.callLater(root._syncFocusedBlob);
+            root._queueSyncFocusedBlob();
         }
 
         function onWorkspacesChanged() {
-            Qt.callLater(root._syncFocusedBlob);
+            root._queueSyncFocusedBlob();
         }
+    }
+
+    Timer {
+        id: syncTimer
+        interval: 16
+        repeat: false
+        onTriggered: root._syncFocusedBlob()
     }
 
     NumberAnimation {
@@ -111,9 +124,6 @@ Item {
                 id: workspaceRepeater
                 model: Niri.ready ? Niri.workspacesForOutput(root.outputName) : []
 
-                onItemAdded: Qt.callLater(root._syncFocusedBlob)
-                onItemRemoved: Qt.callLater(root._syncFocusedBlob)
-
                 delegate: WorkspaceDot {
                     required property var modelData
                     wsData: modelData
@@ -131,8 +141,8 @@ Item {
             property real fromCenterX: root._gooeyFromCenterX
             property real toCenterX: root._gooeyToCenterX
             property real progress: root._gooeyProgress
-            property real activeHalfWidth: Theme.workspaceActiveSpotWidth / 2
-            property real activeHalfHeight: Theme.workspaceSpotSize / 2
+            property real activeHalfWidth: Theme.workspaceSpotSize * 0.68
+            property real activeHalfHeight: Theme.workspaceSpotSize * 0.68
             property real mergeStrength: Theme.workspaceGooeyMergeStrength
             property vector4d blobColor: Qt.vector4d(
                 Theme.workspaceSpotActive.r,

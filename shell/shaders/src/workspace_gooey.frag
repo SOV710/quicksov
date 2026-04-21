@@ -21,16 +21,16 @@ float sdCircle(vec2 p, vec2 c, float r) {
     return length(p - c) - r;
 }
 
+float sdEllipse(vec2 p, vec2 c, vec2 radius) {
+    vec2 q = (p - c) / max(radius, vec2(0.001));
+    return (length(q) - 1.0) * min(radius.x, radius.y);
+}
+
 float sdCapsule(vec2 p, vec2 a, vec2 b, float r) {
     vec2 pa = p - a;
     vec2 ba = b - a;
     float h = clamp(dot(pa, ba) / max(dot(ba, ba), 0.0001), 0.0, 1.0);
     return length(pa - ba * h) - r;
-}
-
-float sdRoundBox(vec2 p, vec2 c, vec2 halfSize, float r) {
-    vec2 q = abs(p - c) - halfSize + vec2(r);
-    return length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - r;
 }
 
 float smin(float a, float b, float k) {
@@ -56,11 +56,10 @@ void main() {
     vec2 source = vec2(fromX, cy);
     vec2 target = vec2(toX, cy);
 
-    float d = sdRoundBox(
+    float d = sdEllipse(
         px,
         moving,
-        vec2(ubuf.activeHalfWidth + r * 0.20 * tail, ubuf.activeHalfHeight),
-        r
+        vec2(ubuf.activeHalfWidth + r * 0.12 * tail, ubuf.activeHalfHeight)
     );
 
     float sourceKeep = 1.0 - smoothstep(0.12, 0.78, p);
@@ -71,7 +70,7 @@ void main() {
     float targetHalfWidth = mix(r, ubuf.activeHalfWidth, targetKeep);
     d = smin(
         d,
-        sdRoundBox(px, target, vec2(targetHalfWidth, ubuf.activeHalfHeight), r),
+        sdEllipse(px, target, vec2(targetHalfWidth, ubuf.activeHalfHeight)),
         max(k * targetKeep, 0.001)
     );
 
