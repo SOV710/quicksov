@@ -9,6 +9,7 @@ mod config;
 mod ipc;
 mod platform;
 mod services;
+mod session_env;
 mod util;
 
 use std::path::PathBuf;

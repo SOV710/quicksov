@@ -17,40 +17,30 @@ use tracing::{debug, info, warn};
 
 use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
 use crate::config::Config;
+use crate::session_env;
 use crate::util::json_map;
 use app_names::AppNameResolver;
 
 /// Spawn the `niri` service and return its [`ServiceHandle`].
 pub fn spawn(cfg: &Config) -> ServiceHandle {
-    let socket_path = resolve_socket(cfg);
+    let configured_socket = cfg
+        .services
+        .niri
+        .as_ref()
+        .and_then(|niri| niri.socket.clone())
+        .filter(|socket| !socket.is_empty());
     let app_names = Arc::new(AppNameResolver::load());
     let initial = empty_snapshot();
     let (state_tx, state_rx) = watch::channel(initial);
     let (request_tx, request_rx) = mpsc::channel(16);
 
-    tokio::spawn(run(request_rx, state_tx, socket_path, app_names));
+    tokio::spawn(run(request_rx, state_tx, configured_socket, app_names));
 
     ServiceHandle {
         request_tx,
         state_rx,
         events_tx: None,
     }
-}
-
-fn resolve_socket(cfg: &Config) -> String {
-    if let Some(niri) = cfg.services.niri.as_ref() {
-        if let Some(s) = niri.socket.as_deref() {
-            if !s.is_empty() {
-                return s.to_string();
-            }
-        }
-    }
-    if let Ok(s) = std::env::var("NIRI_SOCKET") {
-        return s;
-    }
-    // Default guess
-    let uid = nix::unistd::getuid();
-    format!("/run/user/{uid}/niri/socket")
 }
 
 fn empty_snapshot() -> Value {
@@ -67,15 +57,27 @@ fn empty_snapshot() -> Value {
 async fn run(
     mut request_rx: mpsc::Receiver<ServiceRequest>,
     state_tx: watch::Sender<Value>,
-    socket_path: String,
+    configured_socket: Option<String>,
     app_names: Arc<AppNameResolver>,
 ) {
-    info!(path = %socket_path, "niri service started");
+    info!("niri service started");
     loop {
-        match connect_and_run(&mut request_rx, &state_tx, &socket_path, &app_names).await {
+        let socket = session_env::resolve_niri_socket(configured_socket.as_deref());
+        debug!(
+            path = %socket.path,
+            source = socket.source,
+            "resolved niri IPC socket candidate"
+        );
+
+        match connect_and_run(&mut request_rx, &state_tx, &socket.path, &app_names).await {
             Ok(()) => break,
             Err(e) => {
-                warn!(error = %e, "niri IPC connection failed; retrying in 5 s");
+                warn!(
+                    error = %e,
+                    path = %socket.path,
+                    source = socket.source,
+                    "niri IPC connection failed; retrying in 5 s"
+                );
                 state_tx.send_replace(empty_snapshot());
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }

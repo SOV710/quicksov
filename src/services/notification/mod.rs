@@ -21,6 +21,7 @@ use tracing::{info, warn};
 
 use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
 use crate::config::Config;
+use crate::session_env;
 use crate::util::{json_map, unix_now_ms};
 
 // ---------------------------------------------------------------------------
@@ -120,6 +121,7 @@ async fn run(
 // D-Bus server
 // ---------------------------------------------------------------------------
 
+#[derive(Clone)]
 struct NotifServer {
     shared: Arc<RwLock<NotifState>>,
     state_tx: watch::Sender<Value>,
@@ -239,12 +241,42 @@ async fn start_dbus_server(
         events_tx,
     };
 
-    let conn = zbus::connection::Builder::session()?
-        .name("org.freedesktop.Notifications")?
-        .serve_at("/org/freedesktop/Notifications", server)?
-        .build()
-        .await?;
-    Ok(conn)
+    let mut last_err = None;
+
+    for candidate in session_env::session_bus_candidates() {
+        match zbus::connection::Builder::address(candidate.value.as_str()) {
+            Ok(builder) => {
+                let builder = builder
+                    .name("org.freedesktop.Notifications")?
+                    .serve_at("/org/freedesktop/Notifications", server.clone())?;
+                match builder.build().await {
+                    Ok(conn) => return Ok(conn),
+                    Err(err) => {
+                        warn!(
+                            source = candidate.source,
+                            address = %candidate.value,
+                            error = %err,
+                            "notification session bus candidate failed"
+                        );
+                        last_err = Some(err);
+                    }
+                }
+            }
+            Err(err) => {
+                warn!(
+                    source = candidate.source,
+                    address = %candidate.value,
+                    error = %err,
+                    "notification session bus candidate could not be parsed"
+                );
+                last_err = Some(err);
+            }
+        }
+    }
+
+    Err(NotifError::from(last_err.unwrap_or_else(|| {
+        zbus::Error::Failure("no usable session bus candidate found".to_string())
+    })))
 }
 
 // ---------------------------------------------------------------------------

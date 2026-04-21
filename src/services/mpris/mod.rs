@@ -10,6 +10,7 @@ use tracing::{debug, info, warn};
 
 use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
 use crate::config::Config;
+use crate::session_env;
 use crate::util::json_map;
 
 use futures::StreamExt;
@@ -80,7 +81,50 @@ async fn connect_and_run(
     request_rx: &mut mpsc::Receiver<ServiceRequest>,
     state_tx: &watch::Sender<Value>,
 ) -> Result<(), MprisError> {
-    let conn = zbus::Connection::session().await?;
+    let mut last_err = None;
+    let mut connected = None;
+    for candidate in session_env::session_bus_candidates() {
+        match zbus::connection::Builder::address(candidate.value.as_str()) {
+            Ok(builder) => match builder.build().await {
+                Ok(conn) => {
+                    debug!(
+                        source = candidate.source,
+                        address = %candidate.value,
+                        "connected mpris service to session bus"
+                    );
+                    connected = Some(conn);
+                    break;
+                }
+                Err(err) => {
+                    debug!(
+                        source = candidate.source,
+                        address = %candidate.value,
+                        error = %err,
+                        "failed mpris session bus candidate"
+                    );
+                    last_err = Some(err);
+                }
+            },
+            Err(err) => {
+                debug!(
+                    source = candidate.source,
+                    address = %candidate.value,
+                    error = %err,
+                    "failed to parse mpris session bus candidate"
+                );
+                last_err = Some(err);
+            }
+        }
+    }
+
+    let conn = match connected {
+        Some(conn) => conn,
+        None => {
+            return Err(MprisError::from(last_err.unwrap_or_else(|| {
+                zbus::Error::Failure("no usable session bus candidate found".to_string())
+            })))
+        }
+    };
 
     let dbus_proxy = zbus::fdo::DBusProxy::new(&conn).await?;
     let mut state = scan_players(&conn, &dbus_proxy).await?;
