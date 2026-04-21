@@ -24,7 +24,7 @@ Item {
     SvgIcon {
         anchors.centerIn: parent
         iconPath: root._iconPath
-        size: Theme.iconSize
+        size: Theme.statusIconSize
         color: root._color
     }
 

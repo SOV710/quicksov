@@ -73,6 +73,8 @@ Singleton {
     readonly property int clockCapsuleGap: 8
     readonly property int workspaceSpotSize: 12
     readonly property int workspaceActiveSpotWidth: 24
+    readonly property int workspaceGooeyDuration: 320
+    readonly property real workspaceGooeyMergeStrength: 7.0
 
     // Unified icon size for bar widgets and tray items (scales with barHeight)
     function barIconSize(scale) {
@@ -80,6 +82,7 @@ Singleton {
         return Math.round(barHeight * 0.44 * s);
     }
     readonly property int iconSize: barIconSize()
+    readonly property int statusIconSize: iconSize + 2
 
     readonly property int auxCollapsedWidth: 0
     readonly property int auxTriggerZone: 3

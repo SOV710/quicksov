@@ -25,7 +25,7 @@ Item {
     SvgIcon {
         anchors.centerIn: parent
         iconPath: Theme.batteryIconForLevel(Battery.percentage, Battery.chargeStatus)
-        size: Theme.iconSize
+        size: Theme.statusIconSize
         color: root._color
     }
 

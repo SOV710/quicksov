@@ -18,7 +18,7 @@ Item {
     SvgIcon {
         anchors.centerIn: parent
         iconPath: Theme.iconNotificationStatus
-        size: Theme.iconSize
+        size: Theme.statusIconSize
         color: Theme.fgPrimary
     }
 

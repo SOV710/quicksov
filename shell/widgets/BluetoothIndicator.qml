@@ -32,13 +32,13 @@ Item {
     Item {
         id: iconWrap
         anchors.centerIn: parent
-        width: Theme.iconSize
-        height: Theme.iconSize
+        width: Theme.statusIconSize
+        height: Theme.statusIconSize
 
         SvgIcon {
             anchors.centerIn: parent
             iconPath: root._iconPath
-            size: Theme.iconSize
+            size: Theme.statusIconSize
             color: root._color
         }
 
