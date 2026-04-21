@@ -72,7 +72,7 @@ Singleton {
     readonly property int clockCapsulePadX: 10
     readonly property int clockCapsuleGap: 8
     readonly property int workspaceSpotSize: 12
-    readonly property int workspaceActiveSpotWidth: 24
+    readonly property real workspaceGooeyBlobScale: 1.36
     readonly property int workspaceGooeyDuration: 320
     readonly property real workspaceGooeyMergeStrength: 7.0
 

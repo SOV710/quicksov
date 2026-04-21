@@ -141,8 +141,8 @@ Item {
             property real fromCenterX: root._gooeyFromCenterX
             property real toCenterX: root._gooeyToCenterX
             property real progress: root._gooeyProgress
-            property real activeHalfWidth: Theme.workspaceSpotSize * 0.68
-            property real activeHalfHeight: Theme.workspaceSpotSize * 0.68
+            property real activeHalfWidth: Theme.workspaceSpotSize * Theme.workspaceGooeyBlobScale / 2
+            property real activeHalfHeight: Theme.workspaceSpotSize * Theme.workspaceGooeyBlobScale / 2
             property real mergeStrength: Theme.workspaceGooeyMergeStrength
             property vector4d blobColor: Qt.vector4d(
                 Theme.workspaceSpotActive.r,
