@@ -17,6 +17,20 @@
 
 具体色值保存在 `theme_tokyonight.json`，daemon 启动时读取并通过 `theme` topic 推送给 qs。
 
+### 1.1 Surface 递进规则
+
+本轮前端重构不改色板来源，但补充**容器递进规则**：
+
+- `bar shell` / `panel shell` 使用最接近基础 `surface` 的表面色
+- `group container` 使用同色系更实一些的 `surface-raised` 或低透明 accent mix
+- `leaf item` 再向内收一层，使用更明确的激活色或 hover 色
+
+要求：
+
+- 不允许为了解决层级感而引入脱离 `theme_tokyonight.json` 的新色
+- 同一层级体系内，优先通过**明度 / 透明度 / 同源 accent 混合**建立层次，而不是换一套 hue
+- bar 内部的层级优先表现为“同一家族的递进”，而不是五颜六色的碎片化组件
+
 ## 2. 排版系统
 
 ### 2.1 字体族
@@ -34,23 +48,30 @@
 
 ### 2.2 图标策略
 
-**主力方案：SVG Icon Set**，不用 Nerd Font 字形图标作为主要 icon 来源。理由：
+**主力方案：本地 SVG Icon Set**，不用 Nerd Font 字形图标作为主要 icon 来源。理由：
 
 - Nerd Font 字形在非整数像素位置渲染模糊（主屏 1.25x DPR 下尤其明显）
 - 字形 icon 的描边粗细与 Editorial New 的细 serif 不协调
 - SVG 可以做部分着色（WiFi 活动条 accent + 未激活条 muted）
 - SVG 可以被 QML `PropertyAnimation` 直接驱动做动画（蓝牙扫描脉冲、WiFi 连接波纹）
 
-**Icon 集选型**：
+**Icon 集边界**：
 
 | 集 | 用途 | 许可 |
 |---|---|---|
-| **Lucide** | 主力。bar 上的 battery/wifi/bt/volume/notification、tray fallback | MIT |
-| **Phosphor** (Duotone) | 展示层。auto-hide 面板里的大图标，视觉重量更强 | MIT |
+| **Material Icons / Material Symbols** | shell chrome 主力。top bar、status indicators、status popup controls | Apache-2.0 |
+| **Application native icons** | tray item 自带图标，不做统一替换 | 各应用自带 |
+| **Lucide / Phosphor** | 过渡或局部展示层。允许留在旧组件中，但不再是 top bar 的默认 vocabulary | MIT |
 
-本地存放路径：`~/.config/quicksov/icons/lucide/` 与 `~/.config/quicksov/icons/phosphor/`。
+本地资源目录以仓库内 `icons/` 为准，本轮 shell chrome 的目标目录是 `icons/material/`。
 
-QML 通过 `Image { source: ...svg; sourceSize: ... }` 加载，改色通过 `ColorOverlay` 或预处理脚本（替换 `stroke="currentColor"` 为 theme token 引用）。
+**使用规则**：
+
+- 右上角状态区的 shell-owned icons 必须优先使用 Material assets
+- tray 继续显示应用原始 icon；shell 只统一其 container，不重绘 icon 风格
+- 旧的 Lucide/Phosphor 资产可在迁移阶段继续存在，但文档上的目标风格不再围绕它们设计
+
+QML 通过 `Image { source: ...svg; sourceSize: ... }` 加载，改色通过 `currentColor` 风格的 SVG 或等价预处理完成。
 
 ### 2.3 字号梯度
 
@@ -99,12 +120,26 @@ QML 通过 `Image { source: ...svg; sourceSize: ... }` 加载，改色通过 `Co
 
 | 参数 | 值 |
 |---|---|
-| `outer_margin` | 8px | bar 距屏幕三边空隙 |
-| `height` | 32px |
-| `inner_pad_x` | 12px |
-| `inner_pad_y` | 6px |
-| `corner_radius` | 14px（= `radius.lg`） |
-| `shadow` | `0 2px 12px rgba(0,0,0,0.25)` |
+| `outer_margin` | 20px | bar 距屏幕三边空隙 |
+| `height` | 48px |
+| `inner_pad_x` | 16px |
+| `inner_pad_y` | 8px |
+| `corner_radius` | 20px（= `radius.lg`） |
+| `shadow` | `0 6px 18px rgba(0,0,0,0.18)` |
+
+### 3.3.1 主屏 top-bar 内层容器规则
+
+| 参数 | 值 |
+|---|---|
+| `group_container_height` | 32px |
+| `group_container_pad_x` | 8px |
+| `group_container_radius` | 16px（= `radius.md`） |
+| `leaf_chip_height` | 24px |
+| `leaf_chip_radius` | 12px（= `radius.sm`） |
+| `status_capsule_height` | 40px |
+| `status_capsule_radius` | 20px（= `radius.lg`） |
+
+这些 token 只定义视觉层级，不强制所有组件做完全相同的内部布局；但必须遵守 `bar shell -> group container -> leaf item` 的层级关系。
 
 ### 3.4 副屏 auto-hide left-bar 几何
 
@@ -116,45 +151,84 @@ QML 通过 `Image { source: ...svg; sourceSize: ... }` 加载，改色通过 `Co
 | `expanded_width` | 320px（为 music panel 设计） |
 | `expanded_margin` | 8px |
 | `corner_radius_collapsed` | 0 |
-| `corner_radius_expanded` | 14px |
+| `corner_radius_expanded` | 20px |
 
 ### 3.5 Popup 几何
 
 | 参数 | 值 |
 |---|---|
-| `gap_from_bar` | 6px |
-| `padding` | 16px |
-| `corner_radius` | 10px（= `radius.md`） |
-| `shadow` | `0 4px 24px rgba(0,0,0,0.35)` |
+| `gap_from_bar` | 12px |
+| `padding` | 24px |
+| `corner_radius` | 28px（= `radius.xl`） |
+| `shadow` | `0 12px 40px rgba(0,0,0,0.24)` |
+
+### 3.5.1 Status Panel family
+
+| 参数 | 值 |
+|---|---|
+| `status_panel_width` | 840px |
+| `status_panel_max_height` | 720px |
+| `panel_edge_inset` | 24px |
+
+适用范围：
+
+- battery popup
+- network popup
+- bluetooth popup
+- volume popup
+- notification center
+
+目标是统一把这些 panel 从“窄抽屉”提升为“宽面板”。
+
+### 3.5.2 Clock Panel family
+
+| 参数 | 值 |
+|---|---|
+| `clock_panel_width` | 1040px |
+| `clock_panel_max_height` | 520px |
+
+clock popup 仍是独立 family，但需要与 status panel 共享同一套圆角与阴影语言。
 
 ## 4. 圆角系统
 
 ### 4.1 Radius scale
 
-**四级嵌套系统**。外层圆角必须大于内层圆角，否则内层元素会"顶出"外层的视觉包络。
+**五级嵌套系统**。本轮重构明确提高圆角，以支持更柔和的 capsule 视觉。
 
 | Token | 值 | 用途 |
 |---|---|---|
-| `xs` | 4px | 最内层：单个 button 内的 hover 高亮、progress bar、tag |
-| `sm` | 6px | 中层：bar 内单个 widget 的 hover 背景、tooltip |
-| `md` | 10px | popup / menu / notification 卡片 |
-| `lg` | 14px | 悬浮 bar 本身、auto-hide 大面板 |
+| `xs` | 8px | 最内层：badge、最小 hover highlight、inline tag |
+| `sm` | 12px | leaf chip：tray item container、workspace active spot、小按钮 |
+| `md` | 16px | group container：workspace strip 外层、window info 外层、clock 单段 |
+| `lg` | 20px | top bar shell、status capsule |
+| `xl` | 28px | popup / menu / notification / large panel 外壳 |
 
 ### 4.2 嵌套规则
 
 **公式**：`外层 radius >= 内层 radius + padding`
 
 校验：
-- bar (14px) 包含 widget hover (6px) with pad 8px → 14 ≥ 6+8 ✓
-- popup (10px) 包含 button (4px) with pad 6px → 10 ≥ 4+6 ✓
+- bar shell (20px) 包含 group container (16px) with pad 4px → 20 ≥ 16+4 ✓
+- group container (16px) 包含 leaf chip (12px) with pad 4px → 16 ≥ 12+4 ✓
+- popup shell (28px) 包含 inner card (16px) with pad 12px → 28 ≥ 16+12 ✓
 
-### 4.3 为什么 bar 用 14 而不是 12/16
+### 4.3 为什么 bar 用 20 而不是更小
 
-- 12px 在 32px 高的 bar 上显得偏硬、偏"tab 按钮感"
-- 16px 让 32px 高的 bar 显得过于药丸形
-- 14px 是经过微调的中间值，既柔软又保留 bar 的矩形识别度
+- 旧的 14px 在更大的 panel 语言下显得不够柔和
+- 当前目标不是“按钮感 bar”，而是更接近悬浮器物感的顶栏
+- 20px 能让 48px 高的 bar 拿到足够的 capsule 气质，同时保留横向长条识别度
+
+### 4.4 圆角递进原则
+
+- 外层 radius 必须大于内层 radius
+- 越接近“整组容器”，radius 越大
+- 越接近“单点交互或状态叶子”，radius 越小
+- 不允许出现外层 16px、内层 20px 这种倒挂
+- 同一个组件家族内，radius 的变化应该形成肉眼可识别的层级，而不是 1-2px 的无意义抖动
 
 ## 5. 动效规则
+
+**注**：本轮前端大规模重构暂不重新定义动效系统。以下 motion token 继续作为现行默认值，真正的动画语言收口留待后续 ADR。
 
 ### 5.1 时长 token
 

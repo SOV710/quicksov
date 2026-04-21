@@ -61,34 +61,37 @@ layer-rule {
 ### 2.1 三区域划分
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│ [workspace-strip] [window-info]   [clock]    [tray] [battery]│
-│                                                [net] [bt][vol]│
-│                                                  [notif-btn] │
-└──────────────────────────────────────────────────────────────┘
-  LEFT ─ WM 语境                CENTER      RIGHT ─ 系统语境
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ [workspace-container [strip]] [window-container [app | title]] [04/21][16:29][Tue]  │
+│                                              [tray-chip][tray-chip] [bat][wifi][bt][vol][bell] │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+  LEFT ─ WM 语境                          CENTER                                RIGHT ─ 系统语境
 ```
 
-- **LEFT**：workspace-strip（固定）+ window-info（弹性、超长省略号）
-- **CENTER**：clock，**绝对居中于整个 bar**（x = barWidth/2 - clockWidth/2，不受 left 区域宽度影响）
-- **RIGHT**：从右到左重要度递增，notification 按钮最右
+- **LEFT**：`workspace-strip` 与 `window-info` 都不再直接贴 bar，而是各自有一层 group container
+- **CENTER**：clock 重构为三段式胶囊，**整体绝对居中于整个 bar**
+- **RIGHT**：分成两组
+  - `tray chip group`：应用图标，各自带独立半透明容器
+  - `status capsule`：battery / network / bluetooth / volume / notification 五个系统状态 icon 收敛为一个统一胶囊
 
-**为什么 CENTER 必须绝对居中**：保证时钟位置恒定，形成肌肉记忆。flex-center 会在 left 内容变化时漂移，破坏 glance 效率。
+**为什么 CENTER 必须绝对居中**：保证三段时钟位置恒定，形成肌肉记忆。flex-center 会在 left/right 内容变化时漂移，破坏 glance 效率。
 
 ### 2.2 交互层次
 
 | 层 | 类别 | 示例 |
 |---|---|---|
-| 纯展示型 | 无交互或仅 hover 高亮 | workspace-strip 视觉、window-info |
-| 触发型 | hover 显示 tooltip，click 展开 popup | clock、battery、net、bt、vol、notif、tray item |
+| 纯展示型 | 无交互或仅 hover 高亮 | workspace-strip、window-info |
+| 触发型 | hover 显示 tooltip，click 展开 popup | clock、tray item、battery、net、bt、vol、notif |
 
 **Popup 通用规则**：
-- 从 bar 下方 `popup.gap_from_bar`（6px）处滑出
-- x 对齐触发 widget 中心，超出屏幕时向内偏移至贴边 8px
+- 从 bar 下方 `popup.gap_from_bar`（12px）处滑出
+- x 对齐触发 widget 中心，超出屏幕时向内偏移，至少保留 `panel_edge_inset`（24px）
 - 同时最多一个 popup 打开；打开新的自动关闭旧的
 - Esc 或点击外部关闭
 - 展开：`popup_enter` (normal + decelerate)
 - 收起：`popup_exit` (fast + accelerate)
+- `battery` / `network` / `bluetooth` / `volume` / `notification` 统一使用 `status panel family`
+- `clock` 使用更宽的 `clock panel family`
 
 ## 3. 主屏组件清单
 
@@ -99,12 +102,13 @@ layer-rule {
 | 位置 | LEFT 最左 |
 | 数据源 | daemon `niri` service：订阅 `niri msg --json event-stream` |
 | 更新频率 | 事件驱动 |
-| 视觉 | 水平圆角胶囊条；默认 `8×8`，当前 focus 展开为 `22×8`，圆角 `4`，间距 `spacing.xs` |
-| 状态颜色 | 当前 focus 用 `color.accentBlue`；非 focus 且有窗口用 `color.fgSecondary`；空工作区用 `color.fgMuted` |
+| 外层结构 | 必须包在独立 `workspace-container` 中，不直接贴 bar |
+| 视觉 | `bar shell -> workspace-container -> strip leaf` 三层；leaf 默认是小圆点，当前 focus 展开为短胶囊 |
+| 状态颜色 | 当前 focus 用同源 accent surface；非 focus 且有窗口用较实的 surface/fg mix；空工作区用 muted |
 | 数据过滤 | 前端按当前输出设备名过滤，仅显示对应 output 的工作区 |
 | 交互 | 点击工作区指示器 → daemon 执行 `focus_workspace { idx }`，切换到对应工作区 |
-| 命中区 | 每个指示器高度 `24px`，宽度为视觉圆点/胶囊宽度加 `spacing.xs` |
-| 过渡 | `width` 与 `color` 使用 `Theme.motionFast`(120ms) 过渡；当前无 hover/pressed 视觉反馈 |
+| 命中区 | 命中区按 `leaf chip` 而不是裸圆点计算，至少覆盖 24px 高度 |
+| 实现要求 | container 与 strip spot 之间必须形成肉眼可见的 radius / color 递进；不能再是单层平铺 |
 
 ### 3.2 window-info
 
@@ -112,11 +116,13 @@ layer-rule {
 |---|---|
 | 位置 | LEFT，workspace-strip 右侧，`spacing.lg` 间距 |
 | 数据源 | daemon `niri` service 的 focused-window 事件（`app_id` + `title`） |
+| 外层结构 | 必须包在独立 `window-info-container` 中，不直接贴 bar |
 | 格式 | `<AppName> | <WindowTitle>`，AppName 用 `weight.medium` |
 | 字号 | `small` (11px) |
 | 颜色 | `color.on-surface-muted` |
 | AppName 映射 | daemon 维护 `app_id → display_name`（`vivaldi-stable → Vivaldi`、`emacs → GNU Emacs`、`nvim → Neovim`），未知用原 app_id |
 | 截断 | 超出可用宽度时 `…` 省略 |
+| 视觉要求 | container 必须比 workspace 容器更适合承载文本，不允许直接把文字裸放在 bar surface 上 |
 
 ### 3.3 clock
 
@@ -124,17 +130,17 @@ layer-rule {
 |---|---|
 | 位置 | CENTER 绝对居中 |
 | 数据源 | QML 本地 `Timer { interval: 1000 }`，无需 daemon |
-| 格式 | `2026-04-12 · 19:38 CST · Sun` |
-| 字号 | `small` (11px)，`tabular-nums`，`weight.regular` |
-| 分隔符 | middle dot `·`，不用 `|` |
-| 时区显示 | 显式 UTC 缩写，减少跨时区切换成本（VPS 分布多时区） |
+| 结构 | 三段式小胶囊：`MM/DD` / `HH:MM` / `Tue` |
+| 字号 | `small` (11px)，`tabular-nums`；中段时间权重最高 |
+| 视觉语义 | 三段并列但颜色不必完全相同；weekday 段允许使用 warm accent surface |
+| 文本规则 | bar 上不再显示完整日期与时区；时区信息若需要，进入 popup 展示 |
 | 交互 | click → 展开 Clock Popup |
 
 ### 3.4 clock-popup
 
 **几何**：
-- 宽度目标 920px；实际为 `min(920, screen.width - 48)`
-- 高度目标 440px；实际为 `min(440, screen.height - barHeight - 64)`
+- 宽度目标 1040px；实际为 `min(1040, screen.width - 64)`
+- 高度目标 520px；实际为 `min(520, screen.height - barHeight - 96)`
 - 不再是轻量小 popup，而是从主屏顶部 bar 下方展开的**大 panel**
 
 **结构**：
@@ -164,7 +170,7 @@ layer-rule {
   - 轮询间隔 600s（配置项）
   - 成功快照 canonical cache 持久化到 `~/.cache/quicksov/weather/current.json`
   - State snapshot 额外下发 `provider` / `status` / `ttl_sec` / `last_success_at` / `error`
-- **WMO code → Lucide icon 映射**由 daemon 维护，但必须只使用本仓库实际存在的图标子集（如 `sun` / `cloud-sun` / `cloud-fog` / `cloud-drizzle` / `cloud-rain` / `cloud-snow` / `cloud-lightning` / `cloud`）
+- **WMO code → weather icon 映射**由 daemon 维护，但不与 top bar status icon 体系强耦合；天气卡可使用专门的 weather glyph 子集
 - 刷新失败不直接清空上一份成功数据；前端根据 `last_success_at + ttl_sec` 自行决定何时将旧数据视为过期
 
 **weather 曲线规则**：
@@ -184,21 +190,33 @@ layer-rule {
 
 | 属性 | 值 |
 |---|---|
-| 位置 | RIGHT 最左 |
+| 位置 | RIGHT，位于 status capsule 左侧 |
 | 数据源 | `Quickshell.Services.SystemTray` (StatusNotifierItem) |
-| 视觉 | 每 item 16×16 原生 icon，间距 `spacing.sm` |
+| 视觉 | 每 item 不是裸 icon，而是 `tray chip container + native app icon`；chip 自身半透明、低对比、大圆角 |
 | 交互 | 左键 → `item.activate()`；右键 → `item.menu`（通过 Quickshell `SystemTrayItem.menu` 句柄展示原生菜单；具体弹出由 `item.display(parentWindow, relX, relY)` 触发） |
-| Hover 背景 | `radius.xs` 统一包裹（无法统一 item 风格，只能统一容器） |
+| 统一策略 | 统一的是命中区、container、hover/pressed 反馈；不统一应用 icon 的绘制风格 |
 
-### 3.6 battery
+### 3.6 status-capsule
+
+| 属性 | 值 |
+|---|---|
+| 位置 | RIGHT 最右 |
+| 结构 | 单一大胶囊，内部排列 5 个系统状态 slot |
+| 顺序 | `battery -> network -> bluetooth -> volume -> notification` |
+| icon 体系 | 全部使用 `icons/material/` 下的 Material assets |
+| 文本规则 | bar 内不显示电量百分比、音量百分比、通知数量 |
+| 默认颜色 | 日常 idle 时 5 个 icon 使用统一前景色 |
+| 例外状态 | 充电时 battery 允许绿色；Wi-Fi / 蓝牙扫描时允许蓝色呼吸语义；通知使用红点 badge |
+| 目标语义 | 把右侧从“五个孤立工具”变成“一个系统状态对象” |
+
+### 3.7 battery
 
 | 属性 | 值 |
 |---|---|
 | 数据源 | daemon `battery` service via UPower D-Bus |
-| 显示逻辑 | `OnBattery=true` → icon + `87%`；充电中 → charging icon + `%`；充满插电 → plug icon |
-| Icon | Lucide `battery` / `battery-low` / `battery-charging` / `plug` |
-| 低电量 | < 20% icon 染 `color.danger` |
-| 几何 | click popup；宽 420px；最大高 460px；锚定 MainBar battery icon，下方 `gap_from_bar` |
+| bar 显示逻辑 | status capsule 内只显示 icon，不显示 `%`；充电时进入绿色语义 |
+| Icon | Material battery glyph family |
+| 几何 | click popup；使用 `status panel family`，锚定 MainBar battery slot，下方 `gap_from_bar` |
 | popup 头部 | 左侧大号 battery icon；右侧主读数 `87%` + 状态词 `Charging/Discharging/Fully charged` |
 | popup 次级信息 | 第二行显示 `3h 12m remaining` / `54m until full` / `Time estimate unavailable` |
 | popup 指标卡 | `Power Source`、`Battery Health`、`Charge Rate`、`Capacity` 四张信息卡 |
@@ -211,14 +229,14 @@ layer-rule {
 - Power Profile 仅在 daemon 报告 `power_profile_available=true` 时允许交互
 - 台式机 / 无电池设备仍允许展示 power profile 区，但必须弱化主状态区
 
-### 3.7 network
+### 3.8 network
 
 | 属性 | 值 |
 |---|---|
 | 数据源 | daemon `net.link`（netlink，接口/IP/路由） + `net.wifi`（wpa_supplicant ctrl socket） |
 | 监听接口 | `wlo1`、`enp109s0` |
-| 视觉 | WiFi 4 格信号 icon（按 RSSI 填充）；离线 `wifi-off`；以太网 `ethernet` |
-| 几何 | click popup；宽 420px；最大高 560px；锚定 MainBar network icon，下方 `gap_from_bar` |
+| bar 视觉 | status capsule 内 icon-only；Wi-Fi 状态优先用 Material Wi-Fi glyph family；有线连接时允许切换为 ethernet glyph；扫描时允许蓝色呼吸语义 |
+| 几何 | click popup；使用 `status panel family`，锚定 MainBar network slot，下方 `gap_from_bar` |
 | 头部 | 左侧 `Network` 标题 + 副标题；右侧 `Refresh`、`Wi-Fi On/Off`、`Flight` 三个 chip |
 | 状态归约 | daemon 额外提供 `availability` / `availability_reason` / `rfkill_*` / `airplane_mode`，区分 ready / disabled / unavailable |
 | 列表分组 | `Current` → `Saved` → `Available`；每行显示 SSID、状态副标题（Connected / Saved / Open / WPA2 / 频段 / 信号） |
@@ -230,34 +248,36 @@ layer-rule {
 - 链路状态（载体、IP、路由）全部通过 netlink，不依赖 NetworkManager
 - dhcpcd 的租约变化通过 netlink ADDR 消息观察
 
-### 3.8 bluetooth
+### 3.9 bluetooth
 
 | 属性 | 值 |
 |---|---|
 | 数据源 | daemon `bluetooth` service via BlueZ D-Bus |
-| 几何 | click popup；宽 420px；最大高 560px；锚定 MainBar 蓝牙 icon，下方 `gap_from_bar` |
-| 视觉状态 | unavailable：`bluetooth-off` + muted + "No Bluetooth adapter"；disabled：`bluetooth-off` + muted + "Bluetooth is off"；enabled idle：`bluetooth`；已连：`bluetooth` + accent；扫描中：icon 脉冲/refresh loading（周期 1200ms） |
+| bar 几何 | status capsule 内 icon-only；popup 使用 `status panel family` |
+| 视觉状态 | unavailable：`bluetooth-off`；disabled：`bluetooth-off`；enabled idle：`bluetooth`；已连：保持统一色但切到 connected glyph/state；扫描中：蓝色呼吸语义 |
 | 头部 | 左侧 `Bluetooth` 标题 + 状态副标题；右侧 `Refresh/Stop` 与 `On/Off` 控件 |
 | 列表分组 | `Connected` → `Paired` → `Available`；每行显示 name/address、状态文案、电量（若有） |
 | 交互 | click bar icon → 打开/关闭 popup；`Refresh` 开始扫描、扫描中切为 `Stop`；不在打开时自动扫描；点击 popup 外关闭 |
 
-### 3.9 volume
+### 3.10 volume
 
 | 属性 | 值 |
 |---|---|
 | 数据源 | daemon `audio` service via PipeWire |
-| 视觉 | icon (按音量分档 `volume-2/1/x/muted`) + 百分比 |
-| 几何 | click popup；宽 420px；最大高 560px；Applications 列表区上限 260px |
+| bar 视觉 | status capsule 内 icon-only，不显示百分比 |
+| Icon | Material volume glyph family |
+| 几何 | click popup；使用 `status panel family`；Applications 列表区上限提升到 420px |
 | 交互 | click → popup：大音量 slider、默认 sink 切换、per-app 音量列表；hover 滚轮 → ±5% |
 
-### 3.10 notification-center
+### 3.11 notification-center
 
 | 属性 | 值 |
 |---|---|
-| 位置 | RIGHT 最右 |
+| 位置 | status capsule 最右 slot |
 | 数据源 | daemon `notification` service（实现 `org.freedesktop.Notifications` D-Bus server，完全取代 mako/dunst） |
-| 视觉 | `bell` icon；有未读时右上角 6px `color.danger` 红点 |
-| 几何 | click popup；宽 420px；最大高 560px；通知列表区上限 480px |
+| bar 视觉 | `bell` icon；有未读时右上角小红点；不显示数量 |
+| Icon | Material notifications glyph family |
+| 几何 | click popup；使用 `status panel family`；通知列表区上限 600px |
 | 交互 | click → 展开 NotificationCenter popup；长按或右键 → 清空全部 |
 
 **Toast 行为**：新 notification 到达时主屏右上角滑入 toast 卡片（`notification_in`），stay 5s 自动滑出，hover 暂停。最多堆叠 3 条。
@@ -318,7 +338,7 @@ layer-rule {
 
 ```
                   ┌──────────────────────────────────┐
-                  │ [主屏 top bar, 悬浮 outer=8px]    │
+                  │ [主屏 top bar, 悬浮 outer=20px]   │
                   │                                  │
 ┌───────────────┐ │                                  │
 │               │ │                                  │
