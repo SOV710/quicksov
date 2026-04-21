@@ -125,14 +125,10 @@ async fn connect_and_run(
             req = request_rx.recv() => {
                 let Some(req) = req else { break };
                 handle_request(req, socket_path).await;
-                // Refresh state after action
-                if let Ok(ws_json) = niri_request(socket_path, r#""Workspaces""#).await {
-                    ws_state = parse_workspaces(&ws_json);
-                }
-                if let Ok(fw_json) = niri_request(socket_path, r#""FocusedWindow""#).await {
-                    fw_state = parse_focused_window(&fw_json, app_names);
-                }
-                state_tx.send_replace(build_snapshot(&ws_state, &fw_state, &win_map));
+                // Let niri's event stream publish the resulting state. A one-shot query
+                // immediately after an action can observe a transient focus state and
+                // make the UI animate to the wrong workspace before the event stream
+                // corrects it.
             }
             line = lines.next_line() => {
                 match line {
@@ -293,6 +289,12 @@ fn process_event(
             let mut list: Vec<WorkspaceInfo> =
                 arr.iter().filter_map(parse_single_workspace).collect();
             list.sort_by(|a, b| a.output.cmp(&b.output).then_with(|| a.idx.cmp(&b.idx)));
+            let focused: Vec<String> = list
+                .iter()
+                .filter(|ws| ws.focused)
+                .map(|ws| format!("{}:{}", ws.output, ws.idx))
+                .collect();
+            debug!(?focused, "niri WorkspacesChanged");
             *ws_state = list;
         }
         refresh_focus = true;
@@ -314,9 +316,10 @@ fn process_event(
     if let Some(wa) = val.get("WorkspaceActivated") {
         let ws_id = wa.get("id").and_then(|i| i.as_i64());
         let focused = wa.get("focused").and_then(|b| b.as_bool()).unwrap_or(false);
-        if let Some(event_id) = ws_id {
+        debug!(?ws_id, focused, "niri WorkspaceActivated");
+        if let Some(event_id) = ws_id.filter(|_| focused) {
             for ws in ws_state.iter_mut() {
-                ws.focused = ws.id == event_id && focused;
+                ws.focused = ws.id == event_id;
             }
         }
         refresh_focus = true;
@@ -470,6 +473,81 @@ async fn niri_action(socket_path: &str, cmd: &str) -> Result<Value, ServiceError
     }
 
     Ok(Value::Null)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn workspace_activated_unfocused_does_not_clear_global_focus() {
+        let app_names = AppNameResolver::load();
+        let mut workspaces = vec![
+            WorkspaceInfo {
+                id: 1,
+                idx: 1,
+                name: None,
+                output: "HDMI-A-3".to_string(),
+                focused: true,
+            },
+            WorkspaceInfo {
+                id: 2,
+                idx: 2,
+                name: None,
+                output: "HDMI-A-3".to_string(),
+                focused: false,
+            },
+        ];
+        let mut focused_window = None;
+        let mut win_map = HashMap::new();
+
+        let refresh = process_event(
+            r#"{"WorkspaceActivated":{"id":2,"focused":false}}"#,
+            &mut workspaces,
+            &mut focused_window,
+            &mut win_map,
+            &app_names,
+        );
+
+        assert!(refresh);
+        assert!(workspaces[0].focused);
+        assert!(!workspaces[1].focused);
+    }
+
+    #[test]
+    fn workspace_activated_focused_switches_global_focus() {
+        let app_names = AppNameResolver::load();
+        let mut workspaces = vec![
+            WorkspaceInfo {
+                id: 1,
+                idx: 1,
+                name: None,
+                output: "HDMI-A-3".to_string(),
+                focused: true,
+            },
+            WorkspaceInfo {
+                id: 2,
+                idx: 2,
+                name: None,
+                output: "HDMI-A-3".to_string(),
+                focused: false,
+            },
+        ];
+        let mut focused_window = None;
+        let mut win_map = HashMap::new();
+
+        let refresh = process_event(
+            r#"{"WorkspaceActivated":{"id":2,"focused":true}}"#,
+            &mut workspaces,
+            &mut focused_window,
+            &mut win_map,
+            &app_names,
+        );
+
+        assert!(refresh);
+        assert!(!workspaces[0].focused);
+        assert!(workspaces[1].focused);
+    }
 }
 
 // ---------------------------------------------------------------------------
