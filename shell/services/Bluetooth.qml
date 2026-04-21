@@ -80,13 +80,21 @@ Singleton {
             errorClearTimer.stop();
     }
 
+    function _displayError(message) {
+        var text = String(message || "");
+        var internalPrefix = "internal service error: ";
+        if (text.indexOf(internalPrefix) === 0)
+            return text.slice(internalPrefix.length);
+        return text;
+    }
+
     function _handleReply(msg, pendingKey) {
         if (pendingKey) root._setPending(pendingKey, null);
 
         if (!msg) return;
         if (msg.kind === Protocol.Kind.ERR) {
             var body = msg.payload || {};
-            root._setError(body.message || body.code || "Bluetooth request failed");
+            root._setError(root._displayError(body.message || body.code || "Bluetooth request failed"));
             return;
         }
 

@@ -533,14 +533,26 @@ async fn handle_power(
     let on = extract_bool(payload, "on").ok_or_else(|| ServiceError::ActionPayload {
         msg: "missing 'on' bool field".to_string(),
     })?;
-    let path = adapter_path(state)?;
+    let (path, adapter) = active_adapter(state)?;
+    if adapter.powered == on {
+        return Ok(Value::Null);
+    }
     let proxy = adapter_proxy(conn, &path).await?;
     tokio::time::timeout(Duration::from_secs(5), proxy.set_property("Powered", on))
         .await
         .map_err(|_| ServiceError::Internal {
             msg: "bluetooth power request timed out".to_string(),
         })?
-        .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
+        .map_err(|e| {
+            map_bluetooth_action_error(
+                if on {
+                    "turn bluetooth on"
+                } else {
+                    "turn bluetooth off"
+                },
+                e.into(),
+            )
+        })?;
     Ok(Value::Null)
 }
 
@@ -548,26 +560,40 @@ async fn handle_scan_start(
     conn: &zbus::Connection,
     state: &BtState,
 ) -> Result<Value, ServiceError> {
-    let path = adapter_path(state)?;
+    let (path, adapter) = active_adapter(state)?;
+    if !adapter.powered {
+        return Err(ServiceError::Internal {
+            msg: "bluetooth is off".to_string(),
+        });
+    }
+    if adapter.discovering {
+        return Ok(Value::Null);
+    }
     let proxy = adapter_proxy(conn, &path).await?;
     let _: () = tokio::time::timeout(Duration::from_secs(5), proxy.call("StartDiscovery", &()))
         .await
         .map_err(|_| ServiceError::Internal {
             msg: "bluetooth scan start timed out".to_string(),
         })?
-        .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
+        .map_err(|e| map_bluetooth_action_error("start bluetooth scan", e))?;
     Ok(Value::Null)
 }
 
 async fn handle_scan_stop(conn: &zbus::Connection, state: &BtState) -> Result<Value, ServiceError> {
-    let path = adapter_path(state)?;
+    let (path, adapter) = active_adapter(state)?;
+    if !adapter.powered {
+        return Ok(Value::Null);
+    }
+    if !adapter.discovering {
+        return Ok(Value::Null);
+    }
     let proxy = adapter_proxy(conn, &path).await?;
     let _: () = tokio::time::timeout(Duration::from_secs(5), proxy.call("StopDiscovery", &()))
         .await
         .map_err(|_| ServiceError::Internal {
             msg: "bluetooth scan stop timed out".to_string(),
         })?
-        .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
+        .map_err(|e| map_bluetooth_action_error("stop bluetooth scan", e))?;
     Ok(Value::Null)
 }
 
@@ -581,13 +607,37 @@ async fn handle_device_action(
         msg: "missing 'address' field".to_string(),
     })?;
     let dev = find_device(state, address)?;
+    if method != "Disconnect" {
+        let (_, adapter) = active_adapter(state)?;
+        if !adapter.powered {
+            return Err(ServiceError::Internal {
+                msg: "bluetooth is off".to_string(),
+            });
+        }
+    }
+    match method {
+        "Connect" if dev.connected => return Ok(Value::Null),
+        "Disconnect" if !dev.connected => return Ok(Value::Null),
+        "Pair" if dev.paired => return Ok(Value::Null),
+        _ => {}
+    }
     let proxy = device_proxy(conn, &dev.path).await?;
     let _: () = tokio::time::timeout(Duration::from_secs(20), proxy.call(method, &()))
         .await
         .map_err(|_| ServiceError::Internal {
             msg: format!("bluetooth {method} request timed out"),
         })?
-        .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
+        .map_err(|e| {
+            map_bluetooth_action_error(
+                match method {
+                    "Connect" => "connect bluetooth device",
+                    "Disconnect" => "disconnect bluetooth device",
+                    "Pair" => "pair bluetooth device",
+                    _ => "complete bluetooth action",
+                },
+                e,
+            )
+        })?;
     Ok(Value::Null)
 }
 
@@ -612,7 +662,7 @@ async fn handle_forget(
     .map_err(|_| ServiceError::Internal {
         msg: "bluetooth forget request timed out".to_string(),
     })?
-    .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
+    .map_err(|e| map_bluetooth_action_error("forget bluetooth device", e))?;
     Ok(Value::Null)
 }
 
@@ -622,6 +672,12 @@ async fn handle_forget(
 
 fn adapter_path(state: &BtState) -> Result<String, ServiceError> {
     state.adapter_path.clone().ok_or(ServiceError::Unavailable)
+}
+
+fn active_adapter(state: &BtState) -> Result<(String, &BtAdapter), ServiceError> {
+    let path = adapter_path(state)?;
+    let adapter = state.adapters.get(&path).ok_or(ServiceError::Unavailable)?;
+    Ok((path, adapter))
 }
 
 fn find_device<'a>(state: &'a BtState, address: &str) -> Result<&'a BtDevice, ServiceError> {
@@ -662,6 +718,80 @@ fn extract_str<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
 
 fn extract_bool(v: &Value, key: &str) -> Option<bool> {
     v.as_object()?.get(key)?.as_bool()
+}
+
+fn map_bluetooth_action_error(context: &str, err: zbus::Error) -> ServiceError {
+    warn!(context, error = %err, error_debug = ?err, "bluetooth action failed");
+
+    let msg = match &err {
+        zbus::Error::MethodError(name, detail, _) => {
+            method_error_message(context, name.as_str(), detail.as_deref())
+        }
+        zbus::Error::FDO(fdo) => fdo_error_message(context, fdo),
+        zbus::Error::Failure(detail) => generic_bluetooth_error(context, Some(detail.as_str())),
+        _ => format!("{context} failed: {err}"),
+    };
+
+    ServiceError::Internal { msg }
+}
+
+fn fdo_error_message(context: &str, err: &zbus::fdo::Error) -> String {
+    match err {
+        zbus::fdo::Error::Failed(detail) => generic_bluetooth_error(context, Some(detail.as_str())),
+        zbus::fdo::Error::NoReply(_) | zbus::fdo::Error::TimedOut(_) | zbus::fdo::Error::Timeout(_) => {
+            format!("{context} timed out")
+        }
+        zbus::fdo::Error::UnknownObject(_) => "bluetooth device is no longer available".to_string(),
+        zbus::fdo::Error::UnknownInterface(_) => "bluetooth backend interface is unavailable".to_string(),
+        zbus::fdo::Error::NotSupported(detail) => {
+            let detail = clean_bluetooth_error_detail(Some(detail.as_str()));
+            detail.unwrap_or_else(|| format!("{context} is not supported on this system"))
+        }
+        other => generic_bluetooth_error(context, Some(&other.to_string())),
+    }
+}
+
+fn method_error_message(context: &str, name: &str, detail: Option<&str>) -> String {
+    match name {
+        "org.bluez.Error.NotReady" => "bluetooth adapter is not ready".to_string(),
+        "org.bluez.Error.NotAvailable" => "bluetooth adapter is unavailable".to_string(),
+        "org.bluez.Error.NotPowered" => "bluetooth is off".to_string(),
+        "org.bluez.Error.InProgress" => format!("{context} is already in progress"),
+        "org.bluez.Error.AlreadyConnected" => "bluetooth device is already connected".to_string(),
+        "org.bluez.Error.NotConnected" => "bluetooth device is not connected".to_string(),
+        "org.bluez.Error.AlreadyExists" => "bluetooth device is already paired".to_string(),
+        "org.freedesktop.DBus.Error.UnknownObject" => "bluetooth device is no longer available".to_string(),
+        "org.freedesktop.DBus.Error.UnknownInterface" => "bluetooth backend interface is unavailable".to_string(),
+        "org.bluez.Error.Failed" | "org.freedesktop.zbus.Error" => {
+            generic_bluetooth_error(context, detail)
+        }
+        _ => {
+            if let Some(detail) = clean_bluetooth_error_detail(detail) {
+                format!("{context} failed: {detail}")
+            } else {
+                format!("{context} failed ({name})")
+            }
+        }
+    }
+}
+
+fn generic_bluetooth_error(context: &str, detail: Option<&str>) -> String {
+    if let Some(detail) = clean_bluetooth_error_detail(detail) {
+        format!("{context} failed: {detail}")
+    } else {
+        format!("{context} failed")
+    }
+}
+
+fn clean_bluetooth_error_detail(detail: Option<&str>) -> Option<String> {
+    let detail = detail?.trim();
+    if detail.is_empty() {
+        return None;
+    }
+    if matches!(detail, "Failed" | "org.freedesktop.zbus.Error: Failed") {
+        return None;
+    }
+    Some(detail.to_string())
 }
 
 // ---------------------------------------------------------------------------
