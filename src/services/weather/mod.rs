@@ -16,10 +16,12 @@ use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
 use crate::config::{paths, Config};
 use crate::util::{is_empty_object, json_map, unix_now_secs};
 
-const DEFAULT_POLL_SEC: u64 = 600;
-const SUCCESS_TTL_SEC: i64 = 1800;
-const FETCH_TIMEOUT_SEC: u64 = 10;
-const CACHE_VERSION: u32 = 2;
+mod policy;
+
+use self::policy::{
+    wmo_presentation, OPEN_METEO_REQUEST_SPEC, WEATHER_PROVIDER_OPEN_METEO,
+    WEATHER_SERVICE_POLICY,
+};
 
 /// Spawn the `weather` service and return its [`ServiceHandle`].
 pub fn spawn(cfg: &Config) -> ServiceHandle {
@@ -52,7 +54,7 @@ impl WeatherCfg {
         let weather = cfg.services.weather.as_ref();
         let backend = weather
             .and_then(|entry| entry.backend.as_deref())
-            .unwrap_or("open-meteo");
+            .unwrap_or(WEATHER_PROVIDER_OPEN_METEO);
 
         Self {
             provider: WeatherProviderCfg::from_backend(backend),
@@ -63,8 +65,8 @@ impl WeatherCfg {
                 .unwrap_or_default(),
             poll_sec: weather
                 .and_then(|entry| entry.poll_interval_sec)
-                .unwrap_or(DEFAULT_POLL_SEC),
-            ttl_sec: SUCCESS_TTL_SEC,
+                .unwrap_or(WEATHER_SERVICE_POLICY.default_poll_sec),
+            ttl_sec: WEATHER_SERVICE_POLICY.success_ttl_sec,
         }
     }
 
@@ -101,14 +103,14 @@ enum WeatherProviderCfg {
 impl WeatherProviderCfg {
     fn from_backend(name: &str) -> Self {
         match name {
-            "open-meteo" => Self::OpenMeteo,
+            WEATHER_PROVIDER_OPEN_METEO => Self::OpenMeteo,
             other => Self::Unsupported(other.to_string()),
         }
     }
 
     fn name(&self) -> &str {
         match self {
-            Self::OpenMeteo => "open-meteo",
+            Self::OpenMeteo => WEATHER_PROVIDER_OPEN_METEO,
             Self::Unsupported(name) => name.as_str(),
         }
     }
@@ -131,7 +133,7 @@ enum WeatherProvider {
 impl WeatherProvider {
     fn name(&self) -> &'static str {
         match self {
-            Self::OpenMeteo(_) => "open-meteo",
+            Self::OpenMeteo(_) => OPEN_METEO_REQUEST_SPEC.name,
         }
     }
 
@@ -149,20 +151,11 @@ struct OpenMeteoProvider {
 
 impl OpenMeteoProvider {
     async fn fetch(&self, job: &FetchJob) -> Result<WeatherSuccessData, WeatherFailure> {
-        let url = format!(
-            "https://api.open-meteo.com/v1/forecast?\
-             latitude={lat}&longitude={lon}\
-             &current=temperature_2m,apparent_temperature,relative_humidity_2m,\
-             wind_speed_10m,weather_code\
-             &hourly=temperature_2m,weather_code\
-             &forecast_days=1&timezone=auto",
-            lat = job.latitude,
-            lon = job.longitude
-        );
-
         let response = tokio::time::timeout(
-            Duration::from_secs(FETCH_TIMEOUT_SEC),
-            self.client.get(&url).send(),
+            WEATHER_SERVICE_POLICY.fetch_timeout(),
+            self.client
+                .get(OPEN_METEO_REQUEST_SPEC.request_url(job.latitude, job.longitude))
+                .send(),
         )
         .await
         .map_err(|_| WeatherFailure::timeout())?
@@ -193,7 +186,7 @@ impl OpenMeteoProvider {
             })
             .collect();
 
-        let (icon, description) = wmo_to_icon_desc(current.weather_code);
+        let presentation = wmo_presentation(current.weather_code);
         Ok(WeatherSuccessData {
             location: WeatherLocation {
                 name: job.location_name.clone(),
@@ -207,8 +200,8 @@ impl OpenMeteoProvider {
                 humidity_pct: current.relative_humidity_2m,
                 wind_kmh: current.wind_speed_10m,
                 wmo_code: current.weather_code,
-                icon: icon.to_string(),
-                description: description.to_string(),
+                icon: presentation.icon.to_string(),
+                description: presentation.description.to_string(),
                 timezone_abbreviation: payload.timezone_abbreviation.unwrap_or_default(),
             },
             hourly,
@@ -345,7 +338,10 @@ impl WeatherFailure {
     fn timeout() -> Self {
         Self {
             kind: "timeout".to_string(),
-            message: format!("weather fetch timed out after {FETCH_TIMEOUT_SEC}s"),
+            message: format!(
+                "weather fetch timed out after {}s",
+                WEATHER_SERVICE_POLICY.fetch_timeout_sec
+            ),
         }
     }
 
@@ -849,7 +845,9 @@ fn load_cache(weather_cfg: &WeatherCfg) -> Option<WeatherSuccessData> {
     let path = cache_path()?;
     let body = std::fs::read_to_string(path).ok()?;
     let cached: CachedWeatherSnapshot = serde_json::from_str(&body).ok()?;
-    if cached.version != CACHE_VERSION || cached.provider != weather_cfg.provider_name() {
+    if cached.version != WEATHER_SERVICE_POLICY.cache_version
+        || cached.provider != weather_cfg.provider_name()
+    {
         return None;
     }
     let configured_location = weather_cfg.configured_location()?;
@@ -876,7 +874,7 @@ fn save_cache(
             let _ = std::fs::create_dir_all(parent);
         }
         let cached = CachedWeatherSnapshot {
-            version: CACHE_VERSION,
+            version: WEATHER_SERVICE_POLICY.cache_version,
             provider: provider.to_string(),
             ttl_sec,
             success: success.clone(),
@@ -894,23 +892,6 @@ where
     T: Serialize,
 {
     serde_json::to_value(value).unwrap_or(Value::Null)
-}
-
-// ---------------------------------------------------------------------------
-// WMO mapping
-// ---------------------------------------------------------------------------
-
-fn wmo_to_icon_desc(code: i64) -> (&'static str, &'static str) {
-    match code {
-        0 => ("sun", "Clear sky"),
-        1..=3 => ("cloud-sun", "Mainly clear / partly cloudy"),
-        45 | 48 => ("cloud-fog", "Foggy"),
-        51 | 53 | 55 | 56 | 57 => ("cloud-drizzle", "Drizzle"),
-        61 | 63 | 65 | 66 | 67 | 80..=82 => ("cloud-rain", "Rain"),
-        71 | 73 | 75 | 77 | 85 | 86 => ("cloud-snow", "Snow"),
-        95 | 96 | 99 => ("cloud-lightning", "Thunderstorm"),
-        _ => ("cloud", "Unknown"),
-    }
 }
 
 #[cfg(test)]
