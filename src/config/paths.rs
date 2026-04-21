@@ -2,13 +2,65 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use std::path::PathBuf;
+
+use nix::unistd::getuid;
 use thiserror::Error;
+
+pub const APP_DIR_NAME: &str = "quicksov";
+pub const DAEMON_SOCKET_RAW: &str = "$XDG_RUNTIME_DIR/quicksov/daemon.sock";
+pub const DAEMON_CONFIG_FILE_NAME: &str = "daemon.toml";
+pub const DESIGN_TOKENS_FILE_NAME: &str = "design-tokens.toml";
+pub const WEATHER_CACHE_FILE_NAME: &str = "current.json";
+pub const NIRI_SOCKET_RELATIVE_PATH: &str = "niri/socket";
 
 /// Errors encountered while expanding environment variables in path strings.
 #[derive(Debug, Error)]
 pub enum PathsError {
     #[error("environment variable ${0} is not set (required for path expansion)")]
     EnvVarNotSet(String),
+}
+
+pub fn runtime_dir() -> PathBuf {
+    std::env::var("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(format!("/run/user/{}", getuid().as_raw())))
+}
+
+pub fn config_dir() -> Option<PathBuf> {
+    if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
+        return Some(PathBuf::from(xdg_config).join(APP_DIR_NAME));
+    }
+    dirs::home_dir().map(|home| home.join(".config").join(APP_DIR_NAME))
+}
+
+pub fn daemon_config_path() -> Option<PathBuf> {
+    config_dir().map(|dir| dir.join(DAEMON_CONFIG_FILE_NAME))
+}
+
+pub fn design_tokens_path() -> Option<PathBuf> {
+    config_dir().map(|dir| dir.join(DESIGN_TOKENS_FILE_NAME))
+}
+
+pub fn default_wallpaper_directory() -> Option<PathBuf> {
+    config_dir().map(|dir| dir.join("wallpapers"))
+}
+
+pub fn weather_cache_path() -> Option<PathBuf> {
+    dirs::home_dir().map(|home| {
+        home.join(".cache")
+            .join(APP_DIR_NAME)
+            .join("weather")
+            .join(WEATHER_CACHE_FILE_NAME)
+    })
+}
+
+pub fn default_session_bus_address() -> String {
+    format!("unix:path={}", runtime_dir().join("bus").display())
+}
+
+pub fn default_niri_socket_path() -> PathBuf {
+    runtime_dir().join(NIRI_SOCKET_RELATIVE_PATH)
 }
 
 /// Expand `$VAR` references in `s` using the process environment.

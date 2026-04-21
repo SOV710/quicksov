@@ -27,25 +27,6 @@ pub enum ConfigError {
     NoHomeDir,
 }
 
-/// Embedded fallback configuration used when `daemon.toml` is absent.
-const DEFAULT_CONFIG: &str = r#"
-[daemon]
-log_level = "info"
-socket_path = "$XDG_RUNTIME_DIR/quicksov/daemon.sock"
-
-[screens]
-
-[power]
-lock = true
-suspend = true
-logout = true
-reboot = true
-shutdown = true
-
-[services]
-enabled = []
-"#;
-
 /// Load and return the daemon configuration.
 ///
 /// Returns `(Config, used_defaults)`. `used_defaults` is `true` when the
@@ -62,7 +43,7 @@ pub fn load_with_info() -> Result<(Config, bool), ConfigError> {
             })?;
         (text, false)
     } else {
-        (DEFAULT_CONFIG.to_string(), true)
+        (default_config_text(), true)
     };
 
     let mut config: Config = toml::from_str(&raw)?;
@@ -75,14 +56,15 @@ pub fn load_with_info() -> Result<(Config, bool), ConfigError> {
 // Private helpers
 // ---------------------------------------------------------------------------
 
+fn default_config_text() -> String {
+    format!(
+        "[daemon]\nlog_level = \"info\"\nsocket_path = \"{}\"\n\n[screens]\n\n[power]\nlock = true\nsuspend = true\nlogout = true\nreboot = true\nshutdown = true\n\n[services]\nenabled = []\n",
+        paths::DAEMON_SOCKET_RAW
+    )
+}
+
 fn config_file_path() -> Result<PathBuf, ConfigError> {
-    if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
-        return Ok(PathBuf::from(xdg_config)
-            .join("quicksov")
-            .join("daemon.toml"));
-    }
-    let home = dirs::home_dir().ok_or(ConfigError::NoHomeDir)?;
-    Ok(home.join(".config").join("quicksov").join("daemon.toml"))
+    paths::daemon_config_path().ok_or(ConfigError::NoHomeDir)
 }
 
 fn expand_config_paths(config: &mut Config) -> Result<(), ConfigError> {

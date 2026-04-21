@@ -9,7 +9,7 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use nix::unistd::getuid;
+use crate::config::paths;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Candidate {
@@ -126,23 +126,18 @@ fn push_candidate(
 }
 
 fn default_niri_socket() -> NiriSocket {
-    let uid = getuid();
     NiriSocket {
-        path: format!("/run/user/{uid}/niri/socket"),
+        path: paths::default_niri_socket_path().display().to_string(),
         source: "default",
     }
 }
 
 fn default_session_bus_address() -> String {
-    let runtime_dir = std::env::var("XDG_RUNTIME_DIR")
-        .unwrap_or_else(|_| format!("/run/user/{}", getuid().as_raw()));
-    format!("unix:path={runtime_dir}/bus")
+    paths::default_session_bus_address()
 }
 
 fn scan_runtime_niri_sockets() -> Vec<PathBuf> {
-    let runtime_dir = std::env::var("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(format!("/run/user/{}", getuid().as_raw())));
+    let runtime_dir = paths::runtime_dir();
 
     let mut entries = Vec::<(SystemTime, PathBuf)>::new();
     let Ok(read_dir) = fs::read_dir(runtime_dir) else {

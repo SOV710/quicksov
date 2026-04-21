@@ -13,7 +13,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tracing::{debug, info, warn};
 
 use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
-use crate::config::Config;
+use crate::config::{paths, Config};
 use crate::util::{is_empty_object, json_map, unix_now_secs};
 
 const DEFAULT_POLL_SEC: u64 = 600;
@@ -842,13 +842,7 @@ fn build_snapshot(state: &WeatherState) -> Value {
 }
 
 fn cache_path() -> Option<std::path::PathBuf> {
-    let home = dirs::home_dir()?;
-    Some(
-        home.join(".cache")
-            .join("quicksov")
-            .join("weather")
-            .join("current.json"),
-    )
+    paths::weather_cache_path()
 }
 
 fn load_cache(weather_cfg: &WeatherCfg) -> Option<WeatherSuccessData> {

@@ -6,6 +6,8 @@ use std::collections::HashMap;
 
 use serde::Deserialize;
 
+use crate::config::paths::DAEMON_SOCKET_RAW;
+
 /// Top-level daemon configuration, sourced from `daemon.toml`.
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -45,7 +47,7 @@ fn default_log_level() -> String {
 }
 
 fn default_socket_path_raw() -> String {
-    "$XDG_RUNTIME_DIR/quicksov/daemon.sock".to_string()
+    DAEMON_SOCKET_RAW.to_string()
 }
 
 /// Screen-to-role mapping configuration.

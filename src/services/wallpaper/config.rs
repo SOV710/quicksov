@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use tracing::warn;
 
-use crate::config::{Config, WallpaperConfig};
+use crate::config::{paths, Config, WallpaperConfig};
 
 use super::model::{SourceSpec, ViewState};
 
@@ -233,10 +233,8 @@ fn configured_views(wallpaper: Option<&WallpaperConfig>) -> BTreeMap<String, Vie
 }
 
 fn default_wallpaper_directory() -> PathBuf {
-    if let Some(home) = dirs::home_dir() {
-        return home.join(".config").join("quicksov").join("wallpapers");
-    }
-    PathBuf::from("$HOME/.config/quicksov/wallpapers")
+    paths::default_wallpaper_directory()
+        .unwrap_or_else(|| PathBuf::from("$HOME/.config/quicksov/wallpapers"))
 }
 
 #[cfg(test)]

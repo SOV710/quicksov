@@ -12,7 +12,7 @@ use tokio::sync::{mpsc, watch};
 use tracing::{debug, info, warn};
 
 use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
-use crate::config::Config;
+use crate::config::{paths, Config};
 use crate::util::toml_to_json;
 
 /// Embedded fallback theme (Tokyo Night).
@@ -35,11 +35,7 @@ pub fn spawn(_cfg: &Config) -> ServiceHandle {
 
 fn load_theme() -> Value {
     // Try user config file first
-    if let Some(home) = dirs::home_dir() {
-        let path = home
-            .join(".config")
-            .join("quicksov")
-            .join("design-tokens.toml");
+    if let Some(path) = paths::design_tokens_path() {
         if path.exists() {
             match std::fs::read_to_string(&path) {
                 Ok(text) => match text.parse::<toml::Value>() {
