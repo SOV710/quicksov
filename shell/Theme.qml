@@ -178,7 +178,7 @@ Singleton {
     readonly property color chromeSubtleFillMuted: overlay(bgSurface, fgPrimary, 0.03)
     readonly property color hitAreaRevealFill: overlay(bgSurface, fgPrimary, 0.01)
     readonly property color dangerBorderSoft: withAlpha(colorError, 0.50)
-    readonly property color barShellFill: overlay(bgSurface, fgSecondary, 0.60)
+    readonly property color barShellFill: overlay(bgSurface, fgSecondary, 0.20)
     readonly property color barShellBorder: withAlpha(borderDefault, 0.18)
     readonly property color groupContainerFill: overlay(barShellFill, bgSurfaceRaised, 0.10)
     readonly property color groupContainerBorder: withAlpha(borderDefault, 0.14)
@@ -194,7 +194,7 @@ Singleton {
     readonly property color clockDateText: fgPrimary
     readonly property color clockTimeFill: overlay(barShellFill, fgPrimary, 0.10)
     readonly property color clockTimeText: bgSurface
-    readonly property color clockDayFill: overlay(barShellFill, accentOrange, 0.32)
+    readonly property color clockDayFill: overlay(barShellFill, accentBlue, 0.32)
     readonly property color clockDayText: fgPrimary
     readonly property color statusCapsuleFill: overlay(barShellFill, accentTeal, 0.24)
     readonly property color statusCapsuleBorder: withAlpha(accentTeal, 0.22)
