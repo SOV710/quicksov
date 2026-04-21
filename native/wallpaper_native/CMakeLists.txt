@@ -75,8 +75,21 @@ add_custom_command(
 
 add_executable(qsov-wallpaper-native
     src/main.cpp
+    src/WallpaperNativeRuntime.hpp
+    src/WallpaperNativeTypes.cpp
+    src/WallpaperNativeGpu.cpp
+    src/WallpaperNativeSourceSession.cpp
+    src/WallpaperNativeWaylandRenderer.cpp
+    src/WallpaperNativeWaylandRendererEvents.cpp
+    src/WallpaperNativeOutputSurfaceCore.cpp
+    src/WallpaperNativeOutputSurfaceBuffers.cpp
+    src/WallpaperNativeOutputSurfaceRender.cpp
+    src/WallpaperNativeProtocol.cpp
     src/libplacebo_libav_impl.c
-    "${CMAKE_CURRENT_SOURCE_DIR}/../wallpaper_ffmpeg/src/WallpaperVideo.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../wallpaper_ffmpeg/src/WallpaperVideo.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../wallpaper_ffmpeg/src/WallpaperVideoCore.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../wallpaper_ffmpeg/src/WallpaperVideoDecode.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../wallpaper_ffmpeg/src/WallpaperVideoUtils.cpp"
     "${LAYER_SHELL_SOURCE}"
     "${LINUX_DMABUF_SOURCE}"
     "${XDG_SHELL_SOURCE}"

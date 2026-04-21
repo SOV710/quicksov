@@ -27,7 +27,9 @@ qt_add_qml_module(quicksov_wallpaper_ffmpeg
     URI Quicksov.WallpaperFfmpeg
     VERSION 1.0
     SOURCES
-        src/WallpaperVideo.cpp
+        src/WallpaperVideoCore.cpp
+        src/WallpaperVideoDecode.cpp
+        src/WallpaperVideoUtils.cpp
         src/WallpaperVideoItem.cpp
 )
 
