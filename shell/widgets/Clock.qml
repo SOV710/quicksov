@@ -73,39 +73,58 @@ Item {
 
         Row {
             anchors.centerIn: parent
+            height: parent.height
             spacing: Theme.clockCapsuleGap
 
-            Text {
-                text: root._dateText
-                color: Theme.clockCapsuleText
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontSmall
-                font.weight: Theme.weightMedium
-                font.features: { "tnum": 1 }
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
+            Item {
+                width: dateMetrics.width
+                height: parent.height
+
+                Text {
+                    anchors.centerIn: parent
+                    text: root._dateText
+                    color: Theme.clockCapsuleText
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSmall
+                    font.weight: Theme.weightMedium
+                    font.features: { "tnum": 1 }
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
             }
 
-            Text {
-                text: root._timeText
-                color: Theme.clockCapsuleText
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontBody
-                font.weight: Theme.weightSemibold
-                font.features: { "tnum": 1 }
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
+            Item {
+                width: timeMetrics.width
+                height: parent.height
+
+                Text {
+                    anchors.centerIn: parent
+                    text: root._timeText
+                    color: Theme.clockCapsuleText
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontBody
+                    font.weight: Theme.weightSemibold
+                    font.features: { "tnum": 1 }
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
             }
 
-            Text {
-                text: root._weekdayText
-                color: Theme.clockCapsuleText
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontSmall
-                font.weight: Theme.weightMedium
-                font.features: { "tnum": 1 }
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
+            Item {
+                width: weekdayMetrics.width
+                height: parent.height
+
+                Text {
+                    anchors.centerIn: parent
+                    text: root._weekdayText
+                    color: Theme.clockCapsuleText
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSmall
+                    font.weight: Theme.weightMedium
+                    font.features: { "tnum": 1 }
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
             }
         }
     }

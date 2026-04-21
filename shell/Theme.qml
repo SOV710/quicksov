@@ -190,7 +190,7 @@ Singleton {
     readonly property color trayChipFill: overlay(barShellFill, fgSecondary, 0.06)
     readonly property color trayChipHover: overlay(barShellFill, accentBlue, 0.10)
     readonly property color trayChipBorder: withAlpha(borderDefault, 0.14)
-    readonly property color clockCapsuleFill: overlay(barShellFill, fgPrimary, 0.30)
+    readonly property color clockCapsuleFill: overlay(barShellFill, bgSurface, 0.90)
     readonly property color clockCapsuleText: fgPrimary
     readonly property color statusCapsuleFill: overlay(barShellFill, accentTeal, 0.24)
     readonly property color statusCapsuleBorder: withAlpha(accentTeal, 0.22)
