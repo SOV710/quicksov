@@ -24,6 +24,17 @@ use crate::config::Config;
 use crate::session_env;
 use crate::util::{json_map, unix_now_ms};
 
+const NOTIFICATION_DBUS_NAME: &str = "org.freedesktop.Notifications";
+const NOTIFICATION_DBUS_PATH: &str = "/org/freedesktop/Notifications";
+const NOTIFICATION_SPEC_VERSION: &str = "1.2";
+const NOTIFICATION_SERVER_VENDOR: &str = env!("CARGO_PKG_NAME");
+const NOTIFICATION_SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
+const NOTIFICATION_CAPABILITIES: &[&str] = &["body", "actions", "persistence"];
+
+fn notification_server_name() -> &'static str {
+    option_env!("CARGO_BIN_NAME").unwrap_or("qsovd")
+}
+
 // ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
@@ -132,11 +143,10 @@ struct NotifServer {
 #[allow(clippy::too_many_arguments)]
 impl NotifServer {
     async fn get_capabilities(&self) -> Vec<String> {
-        vec![
-            "body".to_string(),
-            "actions".to_string(),
-            "persistence".to_string(),
-        ]
+        NOTIFICATION_CAPABILITIES
+            .iter()
+            .map(|capability| (*capability).to_string())
+            .collect()
     }
 
     async fn notify(
@@ -208,10 +218,10 @@ impl NotifServer {
 
     async fn get_server_information(&self) -> (String, String, String, String) {
         (
-            "qsovd".to_string(),
-            "quicksov".to_string(),
-            "0.1.0".to_string(),
-            "1.2".to_string(),
+            notification_server_name().to_string(),
+            NOTIFICATION_SERVER_VENDOR.to_string(),
+            NOTIFICATION_SERVER_VERSION.to_string(),
+            NOTIFICATION_SPEC_VERSION.to_string(),
         )
     }
 
@@ -247,8 +257,8 @@ async fn start_dbus_server(
         match zbus::connection::Builder::address(candidate.value.as_str()) {
             Ok(builder) => {
                 let builder = builder
-                    .name("org.freedesktop.Notifications")?
-                    .serve_at("/org/freedesktop/Notifications", server.clone())?;
+                    .name(NOTIFICATION_DBUS_NAME)?
+                    .serve_at(NOTIFICATION_DBUS_PATH, server.clone())?;
                 match builder.build().await {
                     Ok(conn) => return Ok(conn),
                     Err(err) => {
@@ -509,8 +519,7 @@ async fn handle_dismiss(
     let _ = events_tx.send(event);
 
     if let Some(conn) = dbus_conn {
-        if let Ok(emitter) =
-            zbus::object_server::SignalEmitter::new(conn, "/org/freedesktop/Notifications")
+        if let Ok(emitter) = zbus::object_server::SignalEmitter::new(conn, NOTIFICATION_DBUS_PATH)
         {
             let _ = NotifServer::notification_closed(&emitter, id, 2).await;
         }
