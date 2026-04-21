@@ -3,7 +3,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::io;
-use std::path::PathBuf;
 use std::time::Duration;
 
 use nix::libc;
@@ -11,14 +10,14 @@ use tokio::process::Command;
 use tokio::sync::watch;
 use tracing::{info, warn};
 
-use super::config::{WallpaperCfg, DEFAULT_RENDERER_BINARY};
+use super::config::{resolve_renderer_binary_path, WallpaperCfg};
 use super::model::RendererRuntime;
 
 pub(super) async fn supervise_renderer(
     cfg: WallpaperCfg,
     state_tx: watch::Sender<RendererRuntime>,
 ) {
-    let binary = renderer_binary_path();
+    let binary = resolve_renderer_binary_path();
 
     loop {
         let mut command = Command::new(&binary);
@@ -73,39 +72,4 @@ pub(super) async fn supervise_renderer(
 
         tokio::time::sleep(Duration::from_secs(2)).await;
     }
-}
-
-fn renderer_binary_path() -> PathBuf {
-    if let Ok(path) = std::env::var("QSOV_WALLPAPER_RENDERER") {
-        return PathBuf::from(path);
-    }
-
-    let mut candidates = Vec::<PathBuf>::new();
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            candidates.push(dir.join(DEFAULT_RENDERER_BINARY));
-            if let Some(target_dir) = dir.parent() {
-                if let Some(repo_root) = target_dir.parent() {
-                    candidates.push(
-                        repo_root
-                            .join(".build")
-                            .join("cpp")
-                            .join("wallpaper")
-                            .join("renderer")
-                            .join(DEFAULT_RENDERER_BINARY),
-                    );
-                }
-            }
-        }
-    }
-
-    candidates.push(PathBuf::from(DEFAULT_RENDERER_BINARY));
-
-    for candidate in candidates {
-        if candidate.exists() {
-            return candidate;
-        }
-    }
-
-    PathBuf::from(DEFAULT_RENDERER_BINARY)
 }

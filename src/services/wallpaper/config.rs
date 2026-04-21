@@ -29,6 +29,7 @@ pub(super) const DEFAULT_RENDERER_BINARY: &str = "qsov-wallpaper-renderer";
 pub(super) struct WallpaperCfg {
     pub(super) socket_path: String,
     pub(super) directory: PathBuf,
+    pub(super) renderer_process: String,
     pub(super) transition_type: String,
     pub(super) transition_duration_ms: u64,
     pub(super) renderer_backend: String,
@@ -104,6 +105,9 @@ impl WallpaperCfg {
                 .and_then(|entry| entry.directory.clone())
                 .map(PathBuf::from)
                 .unwrap_or_else(default_wallpaper_directory),
+            renderer_process: resolve_renderer_binary_path()
+                .display()
+                .to_string(),
             transition_type,
             transition_duration_ms: wallpaper
                 .and_then(|entry| entry.transition_duration_ms)
@@ -135,6 +139,41 @@ impl WallpaperCfg {
             configured_views: configured_views(wallpaper),
         }
     }
+}
+
+pub(super) fn resolve_renderer_binary_path() -> PathBuf {
+    if let Ok(path) = std::env::var("QSOV_WALLPAPER_RENDERER") {
+        return PathBuf::from(path);
+    }
+
+    let mut candidates = Vec::<PathBuf>::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join(DEFAULT_RENDERER_BINARY));
+            if let Some(target_dir) = dir.parent() {
+                if let Some(repo_root) = target_dir.parent() {
+                    candidates.push(
+                        repo_root
+                            .join(".build")
+                            .join("cpp")
+                            .join("wallpaper")
+                            .join("renderer")
+                            .join(DEFAULT_RENDERER_BINARY),
+                    );
+                }
+            }
+        }
+    }
+
+    candidates.push(PathBuf::from(DEFAULT_RENDERER_BINARY));
+
+    for candidate in candidates {
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+
+    PathBuf::from(DEFAULT_RENDERER_BINARY)
 }
 
 fn normalize_gpu_policy(value: Option<&str>, default: &str, field: &str) -> String {
