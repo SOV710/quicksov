@@ -2,7 +2,10 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "WallpaperNativeRuntime.hpp"
+#include "OutputSurface.hpp"
+#include "GpuCompositor.hpp"
+#include "WaylandRenderer.hpp"
+#include "SourceSession.hpp"
 
 #include <algorithm>
 
@@ -10,7 +13,7 @@
 
 #include <QDebug>
 
-namespace quicksov::wallpaper_native {
+namespace quicksov::wallpaper::renderer {
 
 void OutputSurface::render() {
     if (!m_configured || m_surface == nullptr || m_pixelSize.isEmpty()) {
@@ -344,4 +347,4 @@ void OutputSurface::capturePreviousImage() {
     );
 }
 
-} // namespace quicksov::wallpaper_native
+} // namespace quicksov::wallpaper::renderer

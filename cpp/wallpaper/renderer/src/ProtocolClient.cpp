@@ -2,12 +2,12 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "WallpaperNativeRuntime.hpp"
+#include "Runtime.hpp"
 
 #include <QCoreApplication>
 #include <QJsonDocument>
 
-namespace quicksov::wallpaper_native {
+namespace quicksov::wallpaper::renderer {
 
 WallpaperProtocolClient::WallpaperProtocolClient(QString socketPath, QObject *parent)
     : QObject(parent)
@@ -41,7 +41,7 @@ void WallpaperProtocolClient::sendJson(const QJsonObject &object) {
 void WallpaperProtocolClient::onConnected() {
     sendJson(QJsonObject{
         {QStringLiteral("proto_version"), QStringLiteral("qsov/1")},
-        {QStringLiteral("client_name"), QStringLiteral("qsov-wallpaper-native")},
+        {QStringLiteral("client_name"), QStringLiteral("qsov-wallpaper-renderer")},
         {QStringLiteral("client_version"), QStringLiteral("0.1")},
     });
 }
@@ -111,4 +111,4 @@ void WallpaperRuntime::fail(const QString &message) {
     QCoreApplication::exit(1);
 }
 
-} // namespace quicksov::wallpaper_native
+} // namespace quicksov::wallpaper::renderer

@@ -76,7 +76,7 @@ pub(super) async fn supervise_renderer(
 }
 
 fn renderer_binary_path() -> PathBuf {
-    if let Ok(path) = std::env::var("QSOV_WALLPAPER_NATIVE") {
+    if let Ok(path) = std::env::var("QSOV_WALLPAPER_RENDERER") {
         return PathBuf::from(path);
     }
 
@@ -89,8 +89,9 @@ fn renderer_binary_path() -> PathBuf {
                     candidates.push(
                         repo_root
                             .join(".build")
-                            .join("native")
-                            .join("wallpaper_native")
+                            .join("cpp")
+                            .join("wallpaper")
+                            .join("renderer")
                             .join(DEFAULT_RENDERER_BINARY),
                     );
                 }

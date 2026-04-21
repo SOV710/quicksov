@@ -20,7 +20,7 @@
 daemon.toml
   -> qsovd wallpaper service
   -> wallpaper snapshot
-  -> qsov-wallpaper-native
+  -> qsov-wallpaper-renderer
   -> Wayland background layer surfaces
 ```
 
@@ -30,7 +30,7 @@ daemon.toml
 - `AuxBar`
 - `PowerDock`
 
-旧的 QML wallpaper 路径已经从仓库中移除。当前默认运行路径只有 daemon -> native renderer 这一条主链路。
+旧的 QML wallpaper 路径已经从仓库中移除。当前默认运行路径只有 daemon -> wallpaper renderer 这一条主链路。
 
 ## 2. 进程与职责边界
 
@@ -44,7 +44,7 @@ daemon.toml
 - 将配置归约为 `sources` 与 `views`
 - 维护 `fallback_source`
 - 暴露 `wallpaper` topic snapshot
-- 查找 native renderer binary
+- 查找 wallpaper renderer binary
 - 监督并直接拉起专用 renderer 进程
 - 透传 `QSOV_SOCKET`
 - 在 child `exec` 前设置 `PR_SET_PDEATHSIG`
@@ -56,7 +56,7 @@ daemon.toml
 - 图片/视频最终合成
 - 向 compositor 提交 buffer
 
-### 2.2 `qsov-wallpaper-native`
+### 2.2 `qsov-wallpaper-renderer`
 
 这是当前 wallpaper engine 的真实 renderer。
 
@@ -121,7 +121,7 @@ daemon 归约出的核心模型不是“当前一张壁纸”，而是：
 
 ## 4. renderer 订阅与 snapshot 消费
 
-native renderer 启动后会：
+wallpaper renderer 启动后会：
 
 1. 连接 daemon UDS
 2. 完成 hello / hello-ack
@@ -173,13 +173,13 @@ renderer 内部按 `source id` 建立 `SourceSession`，不是按 output 建立 
 `SourceSession` 的两种类型：
 
 - image source: 启动时用 `QImageReader` 读入静态图
-- video source: 创建 `WallpaperVideo`，进入持续解码
+- video source: 创建 `VideoDecoder`，进入持续解码
 
 这就是当前“shared-decoder”的真实粒度：按 source 共享，而不是按 output 共享。
 
 ## 7. 视频解码链路
 
-视频路径由 `native/wallpaper_ffmpeg/WallpaperVideo` 提供。
+视频路径由 `cpp/wallpaper/decoder/ffmpeg/VideoDecoder` 提供。
 
 其职责：
 
@@ -323,10 +323,10 @@ GPU fast-path 当前使用：
 
 ## 13. 当前已暴露但未完全接通的字段
 
-以下字段目前存在于配置与协议中，但 native renderer 主链路没有完整消费，或没有形成独立语义：
+以下字段目前存在于配置与协议中，但 wallpaper renderer 主链路没有完整消费，或没有形成独立语义：
 
 - `renderer.backend`
-  - 当前主实现固定走 native renderer 主链路；该字段不是运行时 backend factory。
+  - 当前主实现固定走 wallpaper renderer 主链路；该字段不是运行时 backend factory。
 - `transition.type`
   - 当前只有 `fade`；native 实际主要消费 `duration_ms`。
 - `renderer.present_mode`
@@ -334,7 +334,7 @@ GPU fast-path 当前使用：
 - `renderer.vsync`
   - 当前未形成独立的 vsync 开关实现。
 - `renderer.video_audio`
-  - 当前 snapshot 会暴露该字段，但 native 主链路不按它做全局音频行为切换。
+  - 当前 snapshot 会暴露该字段，但 renderer 主链路不按它做全局音频行为切换。
 
 这些字段不应被误解为“已经有完整运行时语义”。
 

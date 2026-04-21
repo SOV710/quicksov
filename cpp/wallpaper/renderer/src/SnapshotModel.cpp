@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "WallpaperNativeRuntime.hpp"
+#include "SnapshotModel.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -22,7 +22,7 @@ extern "C" {
 #include <libavutil/pixdesc.h>
 }
 
-namespace quicksov::wallpaper_native {
+namespace quicksov::wallpaper::renderer {
 
 namespace {
 
@@ -620,4 +620,4 @@ SnapshotModel parseSnapshot(const QJsonObject &payload) {
     return model;
 }
 
-} // namespace quicksov::wallpaper_native
+} // namespace quicksov::wallpaper::renderer

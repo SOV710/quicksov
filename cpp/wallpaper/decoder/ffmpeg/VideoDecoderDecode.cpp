@@ -2,14 +2,14 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "WallpaperVideo.hpp"
+#include "VideoDecoder.hpp"
 
 #include <memory>
 
 #include <QDebug>
 #include <QMetaObject>
 
-#include "WallpaperVideoInternal.hpp"
+#include "VideoDecoderInternal.hpp"
 
 extern "C" {
 #include <libavformat/avformat.h>
@@ -18,18 +18,20 @@ extern "C" {
 #include <libswscale/swscale.h>
 }
 
-using quicksov::wallpaper_ffmpeg::detail::codecHwConfigFor;
-using quicksov::wallpaper_ffmpeg::detail::DecoderHwState;
-using quicksov::wallpaper_ffmpeg::detail::ffmpegErrorString;
-using quicksov::wallpaper_ffmpeg::detail::frameDelayFor;
-using quicksov::wallpaper_ffmpeg::detail::hwDeviceSelectionForBackend;
-using quicksov::wallpaper_ffmpeg::detail::hwDeviceTypeForBackend;
-using quicksov::wallpaper_ffmpeg::detail::normalizeHwdecOrder;
-using quicksov::wallpaper_ffmpeg::detail::pixelFormatName;
-using quicksov::wallpaper_ffmpeg::detail::rationalToDouble;
-using quicksov::wallpaper_ffmpeg::detail::selectHwPixelFormat;
+namespace quicksov::wallpaper::decoder::ffmpeg {
 
-void WallpaperVideo::restartDecoder() {
+using detail::codecHwConfigFor;
+using detail::DecoderHwState;
+using detail::ffmpegErrorString;
+using detail::frameDelayFor;
+using detail::hwDeviceSelectionForBackend;
+using detail::hwDeviceTypeForBackend;
+using detail::normalizeHwdecOrder;
+using detail::pixelFormatName;
+using detail::rationalToDouble;
+using detail::selectHwPixelFormat;
+
+void VideoDecoder::restartDecoder() {
     const QString localSource = m_source.isLocalFile() ? m_source.toLocalFile() : m_source.toString();
     if (localSource.isEmpty()) {
         setStatus(QStringLiteral("error"));
@@ -51,7 +53,7 @@ void WallpaperVideo::restartDecoder() {
     });
 }
 
-void WallpaperVideo::stopDecoder() {
+void VideoDecoder::stopDecoder() {
     {
         std::lock_guard lock(m_threadMutex);
         m_stopRequested = true;
@@ -64,7 +66,7 @@ void WallpaperVideo::stopDecoder() {
     }
 }
 
-void WallpaperVideo::decoderMain(
+void VideoDecoder::decoderMain(
     QString localSource,
     QStringList hwdecOrder,
     QString preferredDevicePath,
@@ -552,3 +554,5 @@ void WallpaperVideo::decoderMain(
 
     freeSws();
 }
+
+} // namespace quicksov::wallpaper::decoder::ffmpeg

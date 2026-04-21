@@ -4,7 +4,7 @@
 
 cmake_minimum_required(VERSION 3.24)
 
-project(qsov_wallpaper_native LANGUAGES C CXX)
+project(qsov_wallpaper_renderer LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -73,35 +73,42 @@ add_custom_command(
     VERBATIM
 )
 
-add_executable(qsov-wallpaper-native
+add_executable(qsov-wallpaper-renderer
     src/main.cpp
-    src/WallpaperNativeRuntime.hpp
-    src/WallpaperNativeTypes.cpp
-    src/WallpaperNativeGpu.cpp
-    src/WallpaperNativeSourceSession.cpp
-    src/WallpaperNativeWaylandRenderer.cpp
-    src/WallpaperNativeWaylandRendererEvents.cpp
-    src/WallpaperNativeOutputSurfaceCore.cpp
-    src/WallpaperNativeOutputSurfaceBuffers.cpp
-    src/WallpaperNativeOutputSurfaceRender.cpp
-    src/WallpaperNativeProtocol.cpp
+    src/Runtime.hpp
+    src/ProtocolClient.hpp
+    src/ProtocolClient.cpp
+    src/SnapshotModel.hpp
+    src/SnapshotModel.cpp
+    src/GpuCompositor.hpp
+    src/GpuCompositor.cpp
+    src/SourceSession.hpp
+    src/SourceSession.cpp
+    src/OutputSurface.hpp
+    src/OutputSurfaceCore.cpp
+    src/OutputSurfaceBuffers.cpp
+    src/OutputSurfaceRender.cpp
+    src/WaylandRenderer.hpp
+    src/WaylandRenderer.cpp
+    src/WaylandRendererEvents.cpp
     src/libplacebo_libav_impl.c
-    "${CMAKE_CURRENT_SOURCE_DIR}/../wallpaper_ffmpeg/src/WallpaperVideo.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../wallpaper_ffmpeg/src/WallpaperVideoCore.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../wallpaper_ffmpeg/src/WallpaperVideoDecode.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../wallpaper_ffmpeg/src/WallpaperVideoUtils.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../decoder/ffmpeg/VideoDecoder.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../decoder/ffmpeg/VideoDecoderCore.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../decoder/ffmpeg/VideoDecoderDecode.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../decoder/ffmpeg/VideoDecoderUtils.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../decoder/ffmpeg/VideoDecoderInternal.hpp"
     "${LAYER_SHELL_SOURCE}"
     "${LINUX_DMABUF_SOURCE}"
     "${XDG_SHELL_SOURCE}"
 )
 
-target_include_directories(qsov-wallpaper-native
+target_include_directories(qsov-wallpaper-renderer
     PRIVATE
         "${GENERATED_DIR}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../wallpaper_ffmpeg/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../decoder/ffmpeg"
 )
 
-target_link_libraries(qsov-wallpaper-native
+target_link_libraries(qsov-wallpaper-renderer
     PRIVATE
         Qt::Core
         Qt::Gui
@@ -121,6 +128,6 @@ target_link_libraries(qsov-wallpaper-native
         ${CMAKE_DL_LIBS}
 )
 
-set_target_properties(qsov-wallpaper-native PROPERTIES
+set_target_properties(qsov-wallpaper-renderer PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
 )

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "WallpaperNativeRuntime.hpp"
+#include "GpuCompositor.hpp"
 
 #include <QDebug>
 
@@ -10,7 +10,7 @@ extern "C" {
 #include <GLES2/gl2.h>
 }
 
-namespace quicksov::wallpaper_native {
+namespace quicksov::wallpaper::renderer {
 
 GpuCompositor::~GpuCompositor() {
     destroy();
@@ -226,7 +226,7 @@ void GpuCompositor::releaseTarget(quintptr key) {
 }
 
 bool GpuCompositor::renderToDmabuf(
-    const WallpaperVideo::HardwareFrameSnapshot &source,
+    const VideoDecoder::HardwareFrameSnapshot &source,
     const QSize &targetSize,
     const std::optional<CropRect> &crop,
     quintptr targetKey,
@@ -350,7 +350,7 @@ void GpuCompositor::releaseSourceFrame() {
 }
 
 GpuCompositor::SourceFrame *GpuCompositor::ensureSourceFrame(
-    const WallpaperVideo::HardwareFrameSnapshot &source,
+    const VideoDecoder::HardwareFrameSnapshot &source,
     QString *error
 ) {
     if (m_sourceFrame.frame == source.frame &&
@@ -459,4 +459,4 @@ GpuCompositor::TargetTexture *GpuCompositor::ensureTarget(
     return &inserted->second;
 }
 
-} // namespace quicksov::wallpaper_native
+} // namespace quicksov::wallpaper::renderer

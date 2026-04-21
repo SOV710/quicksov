@@ -2,12 +2,12 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "WallpaperNativeRuntime.hpp"
+#include "SourceSession.hpp"
 
 #include <QImageReader>
 #include <QUrl>
 
-namespace quicksov::wallpaper_native {
+namespace quicksov::wallpaper::renderer {
 
 SourceSession::SourceSession(
     const SourceSpec &spec,
@@ -20,17 +20,17 @@ SourceSession::SourceSession(
     , m_decodeBackendOrder(decodeBackendOrder)
     , m_preferredDevicePath(preferredDevicePath) {
     if (m_spec.kind == QStringLiteral("video")) {
-        auto *video = new WallpaperVideo(this);
+        auto *video = new VideoDecoder(this);
         video->setDebugName(QStringLiteral("source:%1").arg(m_spec.id));
         video->setMuted(m_spec.mute);
         video->setLoopEnabled(m_spec.loopEnabled);
         video->setPreferredHwdecOrder(m_decodeBackendOrder);
         video->setPreferredDevicePath(m_preferredDevicePath);
-        connect(video, &WallpaperVideo::renderableFrameAvailable, this, &SourceSession::updated);
-        connect(video, &WallpaperVideo::readyChanged, this, &SourceSession::updated);
-        connect(video, &WallpaperVideo::statusChanged, this, &SourceSession::updated);
-        connect(video, &WallpaperVideo::errorStringChanged, this, &SourceSession::updated);
-        connect(video, &WallpaperVideo::hwdecCurrentChanged, this, &SourceSession::updated);
+        connect(video, &VideoDecoder::renderableFrameAvailable, this, &SourceSession::updated);
+        connect(video, &VideoDecoder::readyChanged, this, &SourceSession::updated);
+        connect(video, &VideoDecoder::statusChanged, this, &SourceSession::updated);
+        connect(video, &VideoDecoder::errorStringChanged, this, &SourceSession::updated);
+        connect(video, &VideoDecoder::hwdecCurrentChanged, this, &SourceSession::updated);
         video->setSource(QUrl::fromLocalFile(m_spec.path));
         m_video = video;
     } else {
@@ -106,7 +106,7 @@ void SourceSession::removeRenderHint(QObject *owner) {
     }
 }
 
-WallpaperVideo::HardwareFrameSnapshot SourceSession::hardwareFrameSnapshot() const {
+VideoDecoder::HardwareFrameSnapshot SourceSession::hardwareFrameSnapshot() const {
     if (m_video == nullptr) {
         return {};
     }
@@ -136,4 +136,4 @@ bool SourceSession::paint(
     return true;
 }
 
-} // namespace quicksov::wallpaper_native
+} // namespace quicksov::wallpaper::renderer

@@ -24,9 +24,11 @@
 class QOpenGLContext;
 struct AVFrame;
 
-class WallpaperVideo : public QObject {
+namespace quicksov::wallpaper::decoder::ffmpeg {
+
+class VideoDecoder : public QObject {
     Q_OBJECT
-    QML_NAMED_ELEMENT(WallpaperVideo)
+    QML_NAMED_ELEMENT(VideoDecoder)
 
     Q_PROPERTY(QUrl source READ source WRITE setSource NOTIFY sourceChanged FINAL)
     Q_PROPERTY(bool muted READ muted WRITE setMuted NOTIFY mutedChanged FINAL)
@@ -71,8 +73,8 @@ public:
         bool ready = false;
     };
 
-    explicit WallpaperVideo(QObject *parent = nullptr);
-    ~WallpaperVideo() override;
+    explicit VideoDecoder(QObject *parent = nullptr);
+    ~VideoDecoder() override;
 
     [[nodiscard]] QUrl source() const;
     void setSource(const QUrl &source);
@@ -182,3 +184,5 @@ private:
     bool m_hasFrame = false;
     bool m_stopRequested = false;
 };
+
+} // namespace quicksov::wallpaper::decoder::ffmpeg

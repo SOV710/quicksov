@@ -2,32 +2,34 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "WallpaperVideo.hpp"
+#include "VideoDecoder.hpp"
 
 #include <algorithm>
 #include <cmath>
 
 #include <QDebug>
 
-#include "WallpaperVideoInternal.hpp"
+#include "VideoDecoderInternal.hpp"
 
-using quicksov::wallpaper_ffmpeg::detail::clampSize;
-using quicksov::wallpaper_ffmpeg::detail::normalizeHwdecOrder;
+namespace quicksov::wallpaper::decoder::ffmpeg {
 
-WallpaperVideo::WallpaperVideo(QObject *parent)
+using detail::clampSize;
+using detail::normalizeHwdecOrder;
+
+VideoDecoder::VideoDecoder(QObject *parent)
     : QObject(parent) {
     qInfo().noquote() << logPrefix() << "ffmpeg controller created";
 }
 
-WallpaperVideo::~WallpaperVideo() {
+VideoDecoder::~VideoDecoder() {
     stopDecoder();
 }
 
-QUrl WallpaperVideo::source() const {
+QUrl VideoDecoder::source() const {
     return m_source;
 }
 
-void WallpaperVideo::setSource(const QUrl &source) {
+void VideoDecoder::setSource(const QUrl &source) {
     if (m_source == source) {
         return;
     }
@@ -52,11 +54,11 @@ void WallpaperVideo::setSource(const QUrl &source) {
     restartDecoder();
 }
 
-bool WallpaperVideo::muted() const {
+bool VideoDecoder::muted() const {
     return m_muted;
 }
 
-void WallpaperVideo::setMuted(bool muted) {
+void VideoDecoder::setMuted(bool muted) {
     if (m_muted == muted) {
         return;
     }
@@ -65,11 +67,11 @@ void WallpaperVideo::setMuted(bool muted) {
     emit mutedChanged();
 }
 
-bool WallpaperVideo::loopEnabled() const {
+bool VideoDecoder::loopEnabled() const {
     return m_loopEnabled.load(std::memory_order_relaxed);
 }
 
-void WallpaperVideo::setLoopEnabled(bool loopEnabled) {
+void VideoDecoder::setLoopEnabled(bool loopEnabled) {
     if (m_loopEnabled.load(std::memory_order_relaxed) == loopEnabled) {
         return;
     }
@@ -78,11 +80,11 @@ void WallpaperVideo::setLoopEnabled(bool loopEnabled) {
     emit loopEnabledChanged();
 }
 
-qreal WallpaperVideo::volume() const {
+qreal VideoDecoder::volume() const {
     return m_volume;
 }
 
-void WallpaperVideo::setVolume(qreal volume) {
+void VideoDecoder::setVolume(qreal volume) {
     const qreal clamped = std::clamp(volume, 0.0, 100.0);
     if (qFuzzyCompare(m_volume, clamped)) {
         return;
@@ -92,11 +94,11 @@ void WallpaperVideo::setVolume(qreal volume) {
     emit volumeChanged();
 }
 
-QString WallpaperVideo::debugName() const {
+QString VideoDecoder::debugName() const {
     return m_debugName;
 }
 
-void WallpaperVideo::setDebugName(const QString &debugName) {
+void VideoDecoder::setDebugName(const QString &debugName) {
     if (m_debugName == debugName) {
         return;
     }
@@ -105,39 +107,39 @@ void WallpaperVideo::setDebugName(const QString &debugName) {
     emit debugNameChanged();
 }
 
-bool WallpaperVideo::isReady() const {
+bool VideoDecoder::isReady() const {
     return m_ready;
 }
 
-QString WallpaperVideo::status() const {
+QString VideoDecoder::status() const {
     return m_status;
 }
 
-QString WallpaperVideo::errorString() const {
+QString VideoDecoder::errorString() const {
     return m_errorString;
 }
 
-QString WallpaperVideo::hwdecCurrent() const {
+QString VideoDecoder::hwdecCurrent() const {
     return m_hwdecCurrent;
 }
 
-QSize WallpaperVideo::videoSize() const {
+QSize VideoDecoder::videoSize() const {
     return m_videoSizeValue;
 }
 
-QSize WallpaperVideo::frameSize() const {
+QSize VideoDecoder::frameSize() const {
     return m_frameSizeValue;
 }
 
-QStringList WallpaperVideo::preferredHwdecOrder() const {
+QStringList VideoDecoder::preferredHwdecOrder() const {
     return m_preferredHwdecOrder;
 }
 
-QString WallpaperVideo::preferredDevicePath() const {
+QString VideoDecoder::preferredDevicePath() const {
     return m_preferredDevicePath;
 }
 
-WallpaperVideo::FrameSnapshot WallpaperVideo::frameSnapshot() const {
+VideoDecoder::FrameSnapshot VideoDecoder::frameSnapshot() const {
     QMutexLocker locker(&m_frameMutex);
     return FrameSnapshot{
         .image = m_frameImage,
@@ -147,7 +149,7 @@ WallpaperVideo::FrameSnapshot WallpaperVideo::frameSnapshot() const {
     };
 }
 
-WallpaperVideo::HardwareFrameSnapshot WallpaperVideo::hardwareFrameSnapshot() const {
+VideoDecoder::HardwareFrameSnapshot VideoDecoder::hardwareFrameSnapshot() const {
     QMutexLocker locker(&m_frameMutex);
     return HardwareFrameSnapshot{
         .frame = m_hardwareFrame,
@@ -157,7 +159,7 @@ WallpaperVideo::HardwareFrameSnapshot WallpaperVideo::hardwareFrameSnapshot() co
     };
 }
 
-WallpaperVideo::StatsSnapshot WallpaperVideo::statsSnapshot() const {
+VideoDecoder::StatsSnapshot VideoDecoder::statsSnapshot() const {
     return StatsSnapshot{
         .status = m_status,
         .hwdecCurrent = m_hwdecCurrent,
@@ -168,18 +170,18 @@ WallpaperVideo::StatsSnapshot WallpaperVideo::statsSnapshot() const {
     };
 }
 
-bool WallpaperVideo::hasRenderableFrame() const {
+bool VideoDecoder::hasRenderableFrame() const {
     QMutexLocker locker(&m_frameMutex);
     return m_hasFrame || static_cast<bool>(m_hardwareFrame);
 }
 
-void WallpaperVideo::ensureInitialized() {
+void VideoDecoder::ensureInitialized() {
     if (!m_source.isEmpty() && !m_decoderThread.joinable()) {
         restartDecoder();
     }
 }
 
-void WallpaperVideo::updateRenderTargetHint(QObject *item, const QSize &size) {
+void VideoDecoder::updateRenderTargetHint(QObject *item, const QSize &size) {
     if (item == nullptr) {
         return;
     }
@@ -197,7 +199,7 @@ void WallpaperVideo::updateRenderTargetHint(QObject *item, const QSize &size) {
     }
 }
 
-void WallpaperVideo::removeRenderTargetHint(QObject *item) {
+void VideoDecoder::removeRenderTargetHint(QObject *item) {
     if (item == nullptr) {
         return;
     }
@@ -206,7 +208,7 @@ void WallpaperVideo::removeRenderTargetHint(QObject *item) {
     m_renderTargetHints.remove(reinterpret_cast<quintptr>(item));
 }
 
-void WallpaperVideo::setCpuFrameRequired(QObject *item, bool required) {
+void VideoDecoder::setCpuFrameRequired(QObject *item, bool required) {
     if (item == nullptr) {
         return;
     }
@@ -234,11 +236,11 @@ void WallpaperVideo::setCpuFrameRequired(QObject *item, bool required) {
     it->cpuFrameRequired = required;
 }
 
-void WallpaperVideo::updateShareContextHint(QOpenGLContext *context) {
+void VideoDecoder::updateShareContextHint(QOpenGLContext *context) {
     Q_UNUSED(context)
 }
 
-void WallpaperVideo::setPreferredHwdecOrder(const QStringList &order) {
+void VideoDecoder::setPreferredHwdecOrder(const QStringList &order) {
     const QStringList normalized = normalizeHwdecOrder(order);
     if (m_preferredHwdecOrder == normalized) {
         return;
@@ -258,7 +260,7 @@ void WallpaperVideo::setPreferredHwdecOrder(const QStringList &order) {
     restartDecoder();
 }
 
-void WallpaperVideo::setPreferredDevicePath(const QString &path) {
+void VideoDecoder::setPreferredDevicePath(const QString &path) {
     const QString normalized = path.trimmed();
     if (m_preferredDevicePath == normalized) {
         return;
@@ -278,7 +280,7 @@ void WallpaperVideo::setPreferredDevicePath(const QString &path) {
     restartDecoder();
 }
 
-void WallpaperVideo::acceptFrame(
+void VideoDecoder::acceptFrame(
     const QImage &image,
     const QSize &videoSize,
     quint64 generation,
@@ -329,7 +331,7 @@ void WallpaperVideo::acceptFrame(
     emit frameAvailable();
 }
 
-void WallpaperVideo::acceptHardwareFrame(
+void VideoDecoder::acceptHardwareFrame(
     const AvFramePtr &frame,
     const QSize &videoSize,
     quint64 generation,
@@ -370,7 +372,7 @@ void WallpaperVideo::acceptHardwareFrame(
     }
 }
 
-QSize WallpaperVideo::targetFrameSize(const QSize &videoSize) const {
+QSize VideoDecoder::targetFrameSize(const QSize &videoSize) const {
     if (!videoSize.isValid()) {
         return QSize(1920, 1080);
     }
@@ -409,7 +411,7 @@ QSize WallpaperVideo::targetFrameSize(const QSize &videoSize) const {
     return QSize(requiredWidth, requiredHeight);
 }
 
-bool WallpaperVideo::cpuFrameRequired() const {
+bool VideoDecoder::cpuFrameRequired() const {
     QMutexLocker locker(&m_hintMutex);
     if (m_renderTargetHints.isEmpty()) {
         return true;
@@ -424,19 +426,19 @@ bool WallpaperVideo::cpuFrameRequired() const {
     return false;
 }
 
-bool WallpaperVideo::shouldStop(quint64 generation) const {
+bool VideoDecoder::shouldStop(quint64 generation) const {
     std::lock_guard lock(m_threadMutex);
     return m_stopRequested || m_decoderGeneration != generation;
 }
 
-bool WallpaperVideo::waitForStop(std::chrono::nanoseconds delay, quint64 generation) {
+bool VideoDecoder::waitForStop(std::chrono::nanoseconds delay, quint64 generation) {
     std::unique_lock lock(m_threadMutex);
     return m_stopCv.wait_for(lock, delay, [this, generation]() {
         return m_stopRequested || m_decoderGeneration != generation;
     });
 }
 
-void WallpaperVideo::clearFrame() {
+void VideoDecoder::clearFrame() {
     bool frameSizeChangedFlag = false;
     bool videoSizeChangedFlag = false;
 
@@ -461,7 +463,7 @@ void WallpaperVideo::clearFrame() {
     }
 }
 
-void WallpaperVideo::setReady(bool ready) {
+void VideoDecoder::setReady(bool ready) {
     if (m_ready == ready) {
         return;
     }
@@ -470,7 +472,7 @@ void WallpaperVideo::setReady(bool ready) {
     emit readyChanged();
 }
 
-void WallpaperVideo::setStatus(const QString &status) {
+void VideoDecoder::setStatus(const QString &status) {
     if (m_status == status) {
         return;
     }
@@ -480,7 +482,7 @@ void WallpaperVideo::setStatus(const QString &status) {
     emit statusChanged();
 }
 
-void WallpaperVideo::setErrorString(const QString &errorString) {
+void VideoDecoder::setErrorString(const QString &errorString) {
     if (m_errorString == errorString) {
         return;
     }
@@ -492,7 +494,7 @@ void WallpaperVideo::setErrorString(const QString &errorString) {
     emit errorStringChanged();
 }
 
-void WallpaperVideo::setHwdecCurrent(const QString &hwdecCurrent) {
+void VideoDecoder::setHwdecCurrent(const QString &hwdecCurrent) {
     if (m_hwdecCurrent == hwdecCurrent) {
         return;
     }
@@ -501,9 +503,11 @@ void WallpaperVideo::setHwdecCurrent(const QString &hwdecCurrent) {
     emit hwdecCurrentChanged();
 }
 
-QString WallpaperVideo::logPrefix() const {
+QString VideoDecoder::logPrefix() const {
     if (m_debugName.isEmpty()) {
         return QStringLiteral("[wallpaper-ffmpeg]");
     }
     return QStringLiteral("[wallpaper-ffmpeg %1]").arg(m_debugName);
 }
+
+} // namespace quicksov::wallpaper::decoder::ffmpeg

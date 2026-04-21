@@ -48,7 +48,7 @@ log_level = "info"
 
 # ---------------------------------------------------------------------------
 # Wallpaper — source/view wallpaper renderer config
-# The daemon indexes images/videos, directly supervises qsov-wallpaper-native, and exposes
+# The daemon indexes images/videos, directly supervises qsov-wallpaper-renderer, and exposes
 # per-output view bindings. If no sources/views are configured, every output
 # falls back to the first indexed entry in the wallpaper directory.
 # ---------------------------------------------------------------------------
@@ -57,7 +57,7 @@ log_level = "info"
 # directory = "$HOME/.config/quicksov/wallpapers"
 # transition = "fade"
 # transition_duration_ms = 320
-# renderer = "native-wayland-ffmpeg"
+# renderer = "wayland-ffmpeg"
 # decode_backend_order = ["vaapi", "cuda", "software"]
 # render_device_policy = "same-as-compositor"
 # decode_device_policy = "same-as-render"

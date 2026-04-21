@@ -25,17 +25,17 @@
 
 | 属性 | 值 |
 |---|---|
-| 位置 | `qsov-wallpaper-native` 原生 renderer 进程中，每个 output 一个独立 background layer-shell surface |
+| 位置 | `qsov-wallpaper-renderer` 进程中，每个 output 一个独立 background layer-shell surface |
 | 数据源 | daemon `wallpaper` service（目录扫描 + `source/view` 状态）；renderer 只消费协议快照并呈现 |
 | 默认目录 | `$HOME/.config/quicksov/wallpapers` |
 | 配置覆盖 | `daemon.toml.[services.wallpaper].directory` |
 | 多屏策略 | 每个 output 通过 `views.<output>` 绑定一个 source；多个 output 可复用同一 source，也可各自使用不同 source |
 | Layer | `zwlr_layer_shell_v1.background`，exclusive zone `-1`，全屏锚定，空 input region |
 | 静态壁纸 | Qt `QImageReader` 解码，CPU `PreserveAspectCrop` 合成到 renderer present buffer |
-| 视频壁纸 | 原生 renderer 复用 FFmpeg `WallpaperVideo` decoder；按 source 共享解码，多 output 只做各自裁切/合成，再提交到各自 present buffer |
+| 视频壁纸 | renderer 复用 FFmpeg `VideoDecoder`；按 source 共享解码，多 output 只做各自裁切/合成，再提交到各自 present buffer |
 | decode backend | renderer 消费 `renderer.decode_backend_order`，按顺序尝试 `vaapi/cuda/vulkan/...`，失败自动回退 `software`；其中 `cuda` 现在会把选中的 NVIDIA DRM render node 映射到精确 CUDA ordinal，映射失败则跳过 `cuda` 而不是误用默认 GPU |
 | GPU 策略 | `render_device_policy` 默认 `same-as-compositor`；`decode_device_policy` 默认 `same-as-render`；`allow_cross_gpu = false` 时禁止解码/渲染主动跨 GPU 漂移 |
-| present backend | daemon 暴露 `renderer.present_backend = auto|shm|dmabuf`；native renderer 现已支持 GBM + `linux-dmabuf` 提交，`auto` 会优先走 `dmabuf`，失败时自动回退 `shm` |
+| present backend | daemon 暴露 `renderer.present_backend = auto|shm|dmabuf`；renderer 现已支持 GBM + `linux-dmabuf` 提交，`auto` 会优先走 `dmabuf`，失败时自动回退 `shm` |
 | 切换动画 | 旧画面 snapshot overlay + fade，默认 `fade 320ms` |
 | 失败回退 | 无可渲染图片或目录不可用时，提交纯黑/空背景，不阻塞其它桌面组件 |
 | 输出裁切 | `views.<output>.crop = { x, y, width, height }`，normalized 0..1，便于双屏拼接同一视频 |
@@ -45,7 +45,7 @@
 - wallpaper 正确路径是 layer-shell `background` layer，而不是普通窗口
 - output 生命周期由 renderer 的 `wl_registry` / `wl_output` 驱动
 - wallpaper 状态由 daemon 统一归约，renderer 只消费 `wallpaper` topic
-- 当 `render_device_policy` 选择独显而 compositor 主设备是另一块 GPU 时，native renderer 默认会把视频解码 / libplacebo 渲染继续放在 render GPU 上，但把 dmabuf 的 GBM 分配与 Wayland present 放回 compositor 主 GPU，避免直接向 niri 提交跨 GPU 的 NVIDIA 分配 buffer
+- 当 `render_device_policy` 选择独显而 compositor 主设备是另一块 GPU 时，renderer 默认会把视频解码 / libplacebo 渲染继续放在 render GPU 上，但把 dmabuf 的 GBM 分配与 Wayland present 放回 compositor 主 GPU，避免直接向 niri 提交跨 GPU 的 NVIDIA 分配 buffer
 - renderer 每 5s 打印一次 source/output telemetry，用于观察实际 `hwdec`、GPU 设备选择、present backend 选择、decode fps、commit/present fps、buffer starvation
 - 若希望 wallpaper 固定在 overview/backdrop 中而非随 workspace 缩放，可在 niri config 中手动添加：
 

@@ -360,7 +360,7 @@ directory = "$HOME/.config/quicksov/wallpapers"
 transition = "fade"
 transition_duration_ms = 320
 video_audio = false
-renderer = "native-wayland-ffmpeg"
+renderer = "wayland-ffmpeg"
 decode_backend_order = ["vaapi", "cuda", "software"]
 render_device_policy = "same-as-compositor"
 decode_device_policy = "same-as-render"
@@ -372,7 +372,7 @@ vsync = true
 # `cuda` hwdec 会将选中的 NVIDIA DRM render node 通过 PCI bus id
 # 映射到精确 CUDA device ordinal；若映射失败则跳过 cuda，避免误绑到默认 GPU。
 # 当 `allow_cross_gpu = true` 且 `render_device_policy` 选择了非 compositor GPU 时，
-# native wallpaper renderer 会默认拆分 render 与 present：FFmpeg hwdec / libplacebo
+# wallpaper renderer 会默认拆分 render 与 present：FFmpeg hwdec / libplacebo
 # 继续跑在 render GPU，dmabuf 的 GBM 分配与 Wayland present 回到 compositor 主 GPU。
 
 [services.wallpaper.sources.hero]
@@ -470,7 +470,7 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
     └── phosphor/
 ```
 
-开发时主 shell 使用 `quickshell --config quicksov`，qs 从 `~/.config/quickshell/quicksov/` 读 `shell.qml`。wallpaper 由 daemon 直接启动 `qsov-wallpaper-native`，并按 `QSOV_WALLPAPER_NATIVE`、同目录 sibling binary、`.build/native/wallpaper_native/qsov-wallpaper-native`、`PATH` 的顺序查找，不再启动 Quickshell/QML wallpaper shell。
+开发时主 shell 使用 `quickshell --config quicksov`，qs 从 `~/.config/quickshell/quicksov/` 读 `shell.qml`。wallpaper 由 daemon 直接启动 `qsov-wallpaper-renderer`，并按 `QSOV_WALLPAPER_RENDERER`、同目录 sibling binary、`.build/cpp/wallpaper/renderer/qsov-wallpaper-renderer`、`PATH` 的顺序查找，不再启动 Quickshell/QML wallpaper shell。
 
 ## 9. 开发仓库目录
 
@@ -488,9 +488,11 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
 │   ├── components/
 │   ├── widgets/
 │   └── overlays/
-├── native/
-│   ├── wallpaper_ffmpeg/           # shared C++ / FFmpeg decoder sources, linked into native renderer
-│   └── wallpaper_native/           # Wayland layer-shell native renderer
+├── cpp/
+│   └── wallpaper/
+│       ├── decoder/
+│       │   └── ffmpeg/              # FFmpeg video decoder used by the renderer
+│       └── renderer/                # Wayland layer-shell wallpaper renderer
 ├── config/                         # 配置模板
 │   ├── daemon.toml.example
 │   └── design-tokens.toml

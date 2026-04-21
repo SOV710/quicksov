@@ -2,13 +2,16 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "WallpaperNativeRuntime.hpp"
+#include "WaylandRenderer.hpp"
+#include "GpuCompositor.hpp"
+#include "OutputSurface.hpp"
+#include "SourceSession.hpp"
 
 #include <algorithm>
 
 #include <QDebug>
 
-namespace quicksov::wallpaper_native {
+namespace quicksov::wallpaper::renderer {
 
 void WaylandRenderer::logTelemetry() {
     const QVector<GpuDeviceInfo> devices = gpuDevices();
@@ -316,4 +319,4 @@ void WaylandRenderer::onSourceUpdated(SourceSession *source) {
     }
 }
 
-} // namespace quicksov::wallpaper_native
+} // namespace quicksov::wallpaper::renderer

@@ -2,7 +2,10 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "WallpaperNativeRuntime.hpp"
+#include "WaylandRenderer.hpp"
+#include "GpuCompositor.hpp"
+#include "OutputSurface.hpp"
+#include "SourceSession.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -11,7 +14,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-namespace quicksov::wallpaper_native {
+namespace quicksov::wallpaper::renderer {
 
 WaylandRenderer::WaylandRenderer(QObject *parent)
     : QObject(parent) {}
@@ -758,4 +761,4 @@ void WaylandRenderer::resetGpuPipeline() {
     m_dmabufAllocationDevicePath.clear();
 }
 
-} // namespace quicksov::wallpaper_native
+} // namespace quicksov::wallpaper::renderer

@@ -13,7 +13,7 @@ use super::model::{SourceSpec, ViewState};
 
 pub(super) const DEFAULT_TRANSITION: &str = "fade";
 pub(super) const DEFAULT_TRANSITION_DURATION_MS: u64 = 320;
-pub(super) const DEFAULT_RENDERER_BACKEND: &str = "native-wayland-ffmpeg";
+pub(super) const DEFAULT_RENDERER_BACKEND: &str = "wayland-ffmpeg";
 pub(super) const DEFAULT_PRESENT_BACKEND: &str = "auto";
 pub(super) const DEFAULT_DECODE_DEVICE_POLICY: &str = "same-as-render";
 pub(super) const DEFAULT_RENDER_DEVICE_POLICY: &str = "same-as-compositor";
@@ -23,7 +23,7 @@ pub(super) const DEFAULT_VIDEO_AUDIO: bool = false;
 pub(super) const DEFAULT_SOURCE_LOOP: bool = true;
 pub(super) const DEFAULT_SOURCE_MUTE: bool = true;
 pub(super) const DEFAULT_VIEW_FIT: &str = "cover";
-pub(super) const DEFAULT_RENDERER_BINARY: &str = "qsov-wallpaper-native";
+pub(super) const DEFAULT_RENDERER_BINARY: &str = "qsov-wallpaper-renderer";
 
 #[derive(Clone, Debug)]
 pub(super) struct WallpaperCfg {
@@ -60,13 +60,14 @@ impl WallpaperCfg {
         };
 
         let renderer_backend = match wallpaper.and_then(|entry| entry.renderer.as_deref()) {
-            Some("native-wayland-ffmpeg") | Some("quickshell-ffmpeg") | None => {
-                DEFAULT_RENDERER_BACKEND.to_string()
-            }
+            Some("wayland-ffmpeg")
+            | Some("native-wayland-ffmpeg")
+            | Some("quickshell-ffmpeg")
+            | None => DEFAULT_RENDERER_BACKEND.to_string(),
             Some(other) => {
                 warn!(
                     renderer = %other,
-                    "unsupported wallpaper renderer configured; falling back to native-wayland-ffmpeg"
+                    "unsupported wallpaper renderer configured; falling back to wayland-ffmpeg"
                 );
                 DEFAULT_RENDERER_BACKEND.to_string()
             }

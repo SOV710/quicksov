@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "WallpaperVideoInternal.hpp"
+#include "VideoDecoderInternal.hpp"
 
 #include <algorithm>
 #include <dlfcn.h>
@@ -15,7 +15,7 @@ extern "C" {
 #include <libavutil/pixdesc.h>
 }
 
-namespace quicksov::wallpaper_ffmpeg::detail {
+namespace quicksov::wallpaper::decoder::ffmpeg::detail {
 
 namespace {
 
@@ -383,4 +383,4 @@ enum AVPixelFormat selectHwPixelFormat(
     return pixFmts[0];
 }
 
-} // namespace quicksov::wallpaper_ffmpeg::detail
+} // namespace quicksov::wallpaper::decoder::ffmpeg::detail

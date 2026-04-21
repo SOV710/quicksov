@@ -2,13 +2,15 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "WallpaperNativeRuntime.hpp"
+#include "OutputSurface.hpp"
+#include "WaylandRenderer.hpp"
+#include "SourceSession.hpp"
 
 #include <algorithm>
 
 #include <QDebug>
 
-namespace quicksov::wallpaper_native {
+namespace quicksov::wallpaper::renderer {
 
 OutputSurface::OutputSurface(
     WaylandRenderer *renderer,
@@ -374,4 +376,4 @@ wl_output *OutputSurface::output() const {
     return m_output;
 }
 
-} // namespace quicksov::wallpaper_native
+} // namespace quicksov::wallpaper::renderer

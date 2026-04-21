@@ -192,8 +192,8 @@ def validate_snapshot(h: Harness, payload: Any) -> dict[str, Any] | None:
             h.ok(f"wallpaper.renderer.status enum is valid ({renderer.get('status')})")
         else:
             h.error(f"wallpaper.renderer.status invalid: {renderer!r}")
-        if renderer.get("process") == "qsov-wallpaper-native":
-            h.ok("wallpaper.renderer.process is qsov-wallpaper-native")
+        if renderer.get("process") == "qsov-wallpaper-renderer":
+            h.ok("wallpaper.renderer.process is qsov-wallpaper-renderer")
         else:
             h.error(f"wallpaper.renderer.process invalid: {renderer!r}")
         if isinstance(renderer.get("decode_backend_order"), list):

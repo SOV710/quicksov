@@ -2,7 +2,10 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "WallpaperNativeRuntime.hpp"
+#include "OutputSurface.hpp"
+#include "GpuCompositor.hpp"
+#include "WaylandRenderer.hpp"
+#include "SourceSession.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -15,7 +18,7 @@
 
 #include <QDebug>
 
-namespace quicksov::wallpaper_native {
+namespace quicksov::wallpaper::renderer {
 
 namespace {
 
@@ -823,4 +826,4 @@ void OutputSurface::onDmabufBufferFailed(DmaBuffer *buffer) {
     scheduleRender();
 }
 
-} // namespace quicksov::wallpaper_native
+} // namespace quicksov::wallpaper::renderer

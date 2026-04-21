@@ -17,7 +17,7 @@ extern "C" {
 #include <libavutil/hwcontext.h>
 }
 
-namespace quicksov::wallpaper_ffmpeg::detail {
+namespace quicksov::wallpaper::decoder::ffmpeg::detail {
 
 QString ffmpegErrorString(int code);
 QString pixelFormatName(AVPixelFormat format);
@@ -57,4 +57,4 @@ enum AVPixelFormat selectHwPixelFormat(
     const enum AVPixelFormat *pixFmts
 );
 
-} // namespace quicksov::wallpaper_ffmpeg::detail
+} // namespace quicksov::wallpaper::decoder::ffmpeg::detail

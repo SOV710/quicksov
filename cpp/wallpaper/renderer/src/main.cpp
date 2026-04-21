@@ -2,15 +2,15 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "WallpaperNativeRuntime.hpp"
+#include "Runtime.hpp"
 
 #include <QCoreApplication>
 
 int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
-    app.setApplicationName(QStringLiteral("qsov-wallpaper-native"));
+    app.setApplicationName(QStringLiteral("qsov-wallpaper-renderer"));
 
-    quicksov::wallpaper_native::WallpaperRuntime runtime;
+    quicksov::wallpaper::renderer::WallpaperRuntime runtime;
     const int startup = runtime.start();
     if (startup != 0) {
         return startup;
