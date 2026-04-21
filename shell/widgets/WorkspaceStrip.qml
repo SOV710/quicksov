@@ -10,6 +10,13 @@ Item {
     id: root
 
     property string outputName: ""
+    readonly property var outputWorkspaces: {
+        if (!Niri.ready || !outputName)
+            return [];
+        return Niri.workspaces.filter(function(ws) {
+            return ws && ws.output === outputName;
+        });
+    }
     property real _gooeyFromCenterX: 0
     property real _gooeyToCenterX: 0
     property real _gooeyProgress: 1
@@ -22,12 +29,13 @@ Item {
     implicitHeight: container.implicitHeight
 
     function _focusedDotCenterX() {
-        for (var i = 0; i < workspaceRepeater.count; i++) {
-            var item = workspaceRepeater.itemAt(i);
-            if (!item || !item.wsData || !item.wsData.focused)
+        var dotStep = Theme.workspaceSpotSize + row.spacing;
+        for (var i = 0; i < outputWorkspaces.length; i++) {
+            var ws = outputWorkspaces[i];
+            if (!ws || !ws.focused)
                 continue;
 
-            return item.mapToItem(container, item.width / 2, item.height / 2).x;
+            return row.x + (i * dotStep) + (Theme.workspaceSpotSize / 2);
         }
 
         return -1;
@@ -67,6 +75,7 @@ Item {
     }
 
     onOutputNameChanged: root._queueSyncFocusedBlob()
+    onOutputWorkspacesChanged: root._queueSyncFocusedBlob()
 
     Component.onCompleted: root._queueSyncFocusedBlob()
 
@@ -74,10 +83,6 @@ Item {
         target: Niri
 
         function onReadyChanged() {
-            root._queueSyncFocusedBlob();
-        }
-
-        function onWorkspacesChanged() {
             root._queueSyncFocusedBlob();
         }
     }
@@ -122,7 +127,7 @@ Item {
 
             Repeater {
                 id: workspaceRepeater
-                model: Niri.ready ? Niri.workspacesForOutput(root.outputName) : []
+                model: root.outputWorkspaces
 
                 delegate: WorkspaceDot {
                     required property var modelData
