@@ -14,7 +14,7 @@ Rectangle {
     width: Theme.batteryPanelWidth
     implicitHeight: height
     height: Math.min(contentCol.implicitHeight + Theme.spaceMd * 2, Theme.batteryPanelMaxHeight)
-    radius: Theme.radiusMd
+    radius: Theme.radiusXl
     color: Theme.bgSurface
     border.color: Theme.borderDefault
     border.width: 1
@@ -29,17 +29,7 @@ Rectangle {
             return "lucide/triangle-alert.svg";
         if (!Battery.hasBattery)
             return "lucide/battery-warning.svg";
-        if (Battery.chargeStatus === "charging")
-            return "lucide/battery-charging.svg";
-
-        var pct = Battery.percentage;
-        if (pct > 70)
-            return "lucide/battery-full.svg";
-        if (pct > 30)
-            return "lucide/battery-medium.svg";
-        if (pct > 15)
-            return "lucide/battery-low.svg";
-        return "lucide/battery-warning.svg";
+        return Theme.batteryIconForLevel(Battery.percentage, Battery.chargeStatus);
     }
 
     function _heroColor() {

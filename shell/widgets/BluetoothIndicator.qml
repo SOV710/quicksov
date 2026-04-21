@@ -10,49 +10,48 @@ import "../services"
 Item {
     id: root
 
-    implicitWidth: iconWrap.implicitWidth
-    implicitHeight: iconWrap.implicitHeight
+    implicitWidth: Theme.statusCapsuleSlotWidth
+    implicitHeight: Theme.statusCapsuleHeight
 
     signal clicked()
 
-    // Keep the slot visible once the daemon is connected so "off" can render
-    // as an explicit bluetooth-off icon instead of disappearing entirely.
     visible: Bluetooth.connected || Bluetooth.ready
 
     readonly property string _iconPath: Bluetooth.btEnabled
-                                        ? "lucide/bluetooth.svg"
-                                        : "lucide/bluetooth-off.svg"
+                                        ? Theme.iconBluetoothStatus
+                                        : Theme.iconBluetoothOffStatus
 
     readonly property color _color: {
-        if (!Bluetooth.btEnabled) return Theme.fgMuted;
-        if (Bluetooth.connectedDevices.length > 0) return Theme.accentBlue;
-        if (Bluetooth.discovering) return Theme.accentBlue;
-        return Theme.fgSecondary;
+        if (!Bluetooth.btEnabled)
+            return Theme.fgMuted;
+        if (Bluetooth.discovering)
+            return Theme.accentBlue;
+        return Theme.fgPrimary;
     }
 
     Item {
         id: iconWrap
-
-        implicitWidth: _icon.implicitWidth
-        implicitHeight: _icon.implicitHeight
+        anchors.centerIn: parent
+        width: Theme.iconSize
+        height: Theme.iconSize
 
         SvgIcon {
-            id: _icon
+            anchors.centerIn: parent
             iconPath: root._iconPath
             size: Theme.iconSize
             color: root._color
         }
 
         SequentialAnimation on opacity {
-            id: scanPulse
             running: Bluetooth.discovering && Bluetooth.btEnabled
             loops: Animation.Infinite
 
-            NumberAnimation { to: 0.4; duration: 600 }
+            NumberAnimation { to: 0.38; duration: 600 }
             NumberAnimation { to: 1.0; duration: 600 }
 
             onRunningChanged: {
-                if (!running) iconWrap.opacity = 1.0;
+                if (!running)
+                    iconWrap.opacity = 1.0;
             }
         }
     }

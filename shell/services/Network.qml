@@ -5,6 +5,7 @@
 pragma Singleton
 import QtQuick
 import Quickshell
+import ".."
 import "../ipc"
 import "../ipc/protocol.js" as Protocol
 
@@ -463,20 +464,12 @@ Singleton {
     }
 
     function iconPathForSignal(signalPct) {
-        if (signalPct < 0)
-            return "lucide/wifi.svg";
-        if (signalPct < 25)
-            return "lucide/wifi-zero.svg";
-        if (signalPct < 50)
-            return "lucide/wifi-low.svg";
-        if (signalPct < 75)
-            return "lucide/wifi.svg";
-        return "lucide/wifi-high.svg";
+        return Theme.wifiIconForSignal(signalPct);
     }
 
     function networkIconPath(network) {
         if (!network)
-            return "lucide/wifi-off.svg";
+            return Theme.iconWifiZeroStatus;
         return root.iconPathForSignal(network.signalPct);
     }
 

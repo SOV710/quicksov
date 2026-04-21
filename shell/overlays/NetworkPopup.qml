@@ -14,7 +14,7 @@ Rectangle {
     width: Theme.networkPanelWidth
     implicitHeight: height
     height: Math.min(contentCol.implicitHeight + Theme.spaceMd * 2, Theme.networkPanelMaxHeight)
-    radius: Theme.radiusMd
+    radius: Theme.radiusXl
     color: Theme.bgSurface
     border.color: Theme.borderDefault
     border.width: 1
@@ -54,7 +54,7 @@ Rectangle {
         case "backend_error":
             return "lucide/triangle-alert.svg";
         default:
-            return "lucide/wifi-off.svg";
+            return Theme.iconWifiZeroStatus;
         }
     }
 
@@ -235,7 +235,7 @@ Rectangle {
 
         StateCard {
             visible: root._showDisabledState
-            iconPath: Network.airplaneMode ? "lucide/triangle-alert.svg" : "lucide/wifi-off.svg"
+            iconPath: Network.airplaneMode ? "lucide/triangle-alert.svg" : Theme.iconWifiZeroStatus
             title: Network.availabilityTitle()
             message: Network.availabilityMessage()
         }
@@ -250,7 +250,7 @@ Rectangle {
 
         StateCard {
             visible: root._showEmptyState
-            iconPath: "lucide/wifi-off.svg"
+            iconPath: Theme.iconWifiZeroStatus
             title: "No networks found"
             message: "Use Refresh to scan nearby Wi-Fi networks."
         }

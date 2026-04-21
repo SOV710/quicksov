@@ -17,7 +17,7 @@ Rectangle {
         contentCol.implicitHeight + Theme.spaceMd * 2,
         Theme.notificationPanelMaxHeight
     )
-    radius: Theme.radiusMd
+    radius: Theme.radiusXl
     color:  Theme.bgSurface
     border.color: Theme.borderDefault
     border.width: 1

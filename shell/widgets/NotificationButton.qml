@@ -10,30 +10,29 @@ import "../services"
 Item {
     id: root
 
-    implicitWidth: row.implicitWidth + Theme.spaceSm
-    implicitHeight: row.implicitHeight
+    implicitWidth: Theme.statusCapsuleSlotWidth
+    implicitHeight: Theme.statusCapsuleHeight
 
     signal toggled()
 
-    Row {
-        id: row
-        spacing: Theme.spaceXs
-        anchors.verticalCenter: parent.verticalCenter
+    SvgIcon {
+        anchors.centerIn: parent
+        iconPath: Theme.iconNotificationStatus
+        size: Theme.iconSize
+        color: Theme.fgPrimary
+    }
 
-        SvgIcon {
-            iconPath: "lucide/bell.svg"
-            size: Theme.iconSize
-            color: Notification.hasUnread ? Theme.colorInfo : Theme.fgMuted
-            anchors.verticalCenter: parent.verticalCenter
-        }
-
-        Text {
-            visible: Notification.count > 0
-            text: String(Notification.count)
-            color: Notification.hasUnread ? Theme.colorInfo : Theme.fgMuted
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSmall
-            font.features: { "tnum": 1 }
+    Rectangle {
+        visible: Notification.hasUnread
+        width: 8
+        height: 8
+        radius: 4
+        color: Theme.colorError
+        anchors {
+            right: parent.right
+            rightMargin: 4
+            top: parent.top
+            topMargin: 10
         }
     }
 

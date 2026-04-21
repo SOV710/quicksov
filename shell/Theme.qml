@@ -17,10 +17,11 @@ Singleton {
     readonly property int spaceXl: 24
     readonly property int spaceXxl: 32
 
-    readonly property int radiusXs: 4
-    readonly property int radiusSm: 6
-    readonly property int radiusMd: 10
-    readonly property int radiusLg: 14
+    readonly property int radiusXs: 8
+    readonly property int radiusSm: 12
+    readonly property int radiusMd: 16
+    readonly property int radiusLg: 20
+    readonly property int radiusXl: 28
 
     readonly property int fontMicro: 10
     readonly property int fontSmall: 11
@@ -41,16 +42,30 @@ Singleton {
     readonly property int motionSlow: 320
     readonly property int motionDeliberate: 480
 
-    readonly property int barOuterMargin: 8
-    readonly property int barHeight: 32
-    readonly property int barPadX: 12
-    readonly property int barPadY: 6
-    readonly property int barRadius: 14
+    readonly property int barOuterMargin: 20
+    readonly property int barHeight: 48
+    readonly property int barPadX: 16
+    readonly property int barPadY: 8
+    readonly property int barRadius: 20
+    readonly property int popupGap: 12
+    readonly property int panelEdgeInset: 24
+    readonly property int groupContainerHeight: 32
+    readonly property int groupContainerPadX: 8
+    readonly property int groupContainerRadius: 16
+    readonly property int leafChipHeight: 24
+    readonly property int leafChipRadius: 12
+    readonly property int statusCapsuleHeight: 40
+    readonly property int statusCapsuleRadius: 20
+    readonly property int statusCapsulePadX: 10
+    readonly property int statusCapsuleSlotWidth: 28
+    readonly property int trayChipHeight: 28
+    readonly property int trayChipPad: 6
+    readonly property int trayChipRadius: 12
 
     // Unified icon size for bar widgets and tray items (scales with barHeight)
     function barIconSize(scale) {
         var s = (scale !== undefined) ? scale : 1.0;
-        return Math.round(barHeight * 0.5 * s);
+        return Math.round(barHeight * 0.42 * s);
     }
     readonly property int iconSize: barIconSize()
 
@@ -68,25 +83,25 @@ Singleton {
     readonly property int powerActionSize: 64
     readonly property int powerConfirmTimeoutMs: 3000
 
-    readonly property int rightPopupWidth: 420
-    readonly property int rightPopupMaxHeight: 560
+    readonly property int rightPopupWidth: 840
+    readonly property int rightPopupMaxHeight: 720
     readonly property int notificationPanelWidth: rightPopupWidth
     readonly property int notificationPanelMaxHeight: rightPopupMaxHeight
-    readonly property int notificationListMaxHeight: 480
+    readonly property int notificationListMaxHeight: 600
     readonly property int volumePanelWidth: rightPopupWidth
     readonly property int volumePanelMaxHeight: rightPopupMaxHeight
-    readonly property int volumeStreamsMaxHeight: 260
+    readonly property int volumeStreamsMaxHeight: 420
     readonly property int bluetoothPanelWidth: rightPopupWidth
     readonly property int bluetoothPanelMaxHeight: rightPopupMaxHeight
     readonly property int networkPanelWidth: rightPopupWidth
     readonly property int networkPanelMaxHeight: rightPopupMaxHeight
     readonly property int batteryPanelWidth: rightPopupWidth
-    readonly property int batteryPanelMaxHeight: 460
+    readonly property int batteryPanelMaxHeight: rightPopupMaxHeight
 
-    readonly property int clockPanelMaxWidth: 920
-    readonly property int clockPanelMaxHeight: 440
-    readonly property int clockPanelMinWidth: 760
-    readonly property int clockWeatherChartHeight: 200
+    readonly property int clockPanelMaxWidth: 1040
+    readonly property int clockPanelMaxHeight: 520
+    readonly property int clockPanelMinWidth: 920
+    readonly property int clockWeatherChartHeight: 220
     readonly property int clockWeatherIconSize: 40
 
     // --- Dynamic color tokens (updated from daemon theme topic) ---
@@ -125,6 +140,72 @@ Singleton {
 
     property int blurPanel: 28
     property int blurPopup: 22
+
+    function withAlpha(color, alpha) {
+        return Qt.rgba(color.r, color.g, color.b, alpha);
+    }
+
+    readonly property color barShadowColor: Qt.rgba(0, 0, 0, 0.18)
+    readonly property color panelShadowColor: Qt.rgba(0, 0, 0, 0.22)
+    readonly property color groupContainerFill: withAlpha(bgSurfaceRaised, 0.86)
+    readonly property color groupContainerBorder: withAlpha(borderDefault, 0.72)
+    readonly property color workspaceContainerFill: withAlpha(accentTeal, 0.16)
+    readonly property color workspaceContainerBorder: withAlpha(accentTeal, 0.24)
+    readonly property color trayChipFill: withAlpha(bgSurfaceRaised, 0.82)
+    readonly property color trayChipHover: withAlpha(surfaceHover, 0.92)
+    readonly property color trayChipBorder: withAlpha(borderDefault, 0.68)
+    readonly property color clockDateFill: withAlpha(bgSurfaceRaised, 0.88)
+    readonly property color clockTimeFill: withAlpha(surfaceActive, 0.88)
+    readonly property color clockDayFill: withAlpha(accentOrange, 0.36)
+    readonly property color statusCapsuleFill: withAlpha(accentTeal, 0.18)
+    readonly property color statusCapsuleBorder: withAlpha(accentTeal, 0.30)
+
+    readonly property string iconBatteryStatus: "material/battery_android_6_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconBatteryFullStatus: "material/battery_android_full_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconWifiStatus: "material/network_wifi_3_bar_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconWifiZeroStatus: "material/signal_wifi_0_bar_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconWifiOneStatus: "material/network_wifi_1_bar_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconWifiTwoStatus: "material/network_wifi_2_bar_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconWifiThreeStatus: "material/network_wifi_3_bar_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconWifiFourStatus: "material/signal_wifi_4_bar_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconBluetoothStatus: "material/bluetooth_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconBluetoothOffStatus: "material/bluetooth_disabled_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconVolumeStatus: "material/volume_up_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconNotificationStatus: "material/notifications_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+
+    function batteryIconForLevel(level, chargeStatus) {
+        if (chargeStatus === "fully_charged" || level >= 0.99)
+            return iconBatteryFullStatus;
+        if (typeof level !== "number")
+            return iconBatteryStatus;
+        if (level <= 0.08)
+            return "material/battery_android_0_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg";
+        if (level <= 0.22)
+            return "material/battery_android_1_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg";
+        if (level <= 0.35)
+            return "material/battery_android_2_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg";
+        if (level <= 0.50)
+            return "material/battery_android_3_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg";
+        if (level <= 0.65)
+            return "material/battery_android_4_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg";
+        if (level <= 0.82)
+            return "material/battery_android_5_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg";
+        return iconBatteryStatus;
+    }
+
+    function wifiIconForSignal(signalPct) {
+        if (signalPct < 0)
+            return iconWifiZeroStatus;
+        if (signalPct < 20)
+            return iconWifiZeroStatus;
+        if (signalPct < 40)
+            return iconWifiOneStatus;
+        if (signalPct < 60)
+            return iconWifiTwoStatus;
+        if (signalPct < 80)
+            return iconWifiThreeStatus;
+        return iconWifiFourStatus;
+    }
 
     function _applySnapshot(snap) {
         var t = snap.tokens;

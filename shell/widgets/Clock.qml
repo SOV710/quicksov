@@ -9,43 +9,56 @@ import "../services"
 Item {
     id: root
 
-    implicitWidth: label.implicitWidth
-    implicitHeight: label.implicitHeight
+    implicitWidth: row.implicitWidth
+    implicitHeight: row.implicitHeight
 
     signal openPopup()
 
-    // Format: "2026-04-12 · 19:38 CST · Sun"
-    // Derives directly from the shared Time singleton — no private timer.
-    property string _clockText: _formatClock(Time.now)
+    property string _dateText: _formatDate(Time.now)
+    property string _timeText: Qt.formatTime(Time.now, "HH:mm")
+    property string _weekdayText: Qt.formatDate(Time.now, "ddd")
 
-    // Re-format whenever Time.now changes (minute-boundary updates only)
+    function _formatDate(d) {
+        return Qt.formatDate(d, "MM/dd");
+    }
+
     Connections {
         target: Time
-        function onNowChanged() { root._clockText = root._formatClock(Time.now) }
+        function onNowChanged() {
+            root._dateText = root._formatDate(Time.now);
+            root._timeText = Qt.formatTime(Time.now, "HH:mm");
+            root._weekdayText = Qt.formatDate(Time.now, "ddd");
+        }
     }
 
-    function _tzAbbr(d) {
-        var s = d.toLocaleTimeString(Qt.locale(), "t");
-        return s || "";
-    }
+    Row {
+        id: row
+        spacing: Theme.spaceXs
+        anchors.centerIn: parent
 
-    function _formatClock(d) {
-        var date    = Qt.formatDate(d, "yyyy-MM-dd");
-        var time    = Qt.formatTime(d, "HH:mm");
-        var tz      = root._tzAbbr(d);
-        var weekday = Qt.formatDate(d, "ddd");
-        if (tz) return date + " · " + time + " " + tz + " · " + weekday;
-        return date + " · " + time + " · " + weekday;
-    }
+        ClockSegment {
+            text: root._dateText
+            fillColor: Theme.clockDateFill
+            textColor: Theme.fgSecondary
+            weight: Theme.weightMedium
+            pixelSize: Theme.fontSmall
+        }
 
-    Text {
-        id: label
-        text: root._clockText
-        color: Theme.fgPrimary
-        font.family: Theme.fontFamily
-        font.pixelSize: Theme.fontSmall
-        font.weight: Theme.weightRegular
-        font.features: { "tnum": 1 }
+        ClockSegment {
+            text: root._timeText
+            fillColor: Theme.clockTimeFill
+            textColor: Theme.fgPrimary
+            weight: Theme.weightSemibold
+            pixelSize: Theme.fontBody
+        }
+
+        ClockSegment {
+            text: root._weekdayText
+            fillColor: Theme.clockDayFill
+            textColor: Theme.fgPrimary
+            weight: Theme.weightMedium
+            pixelSize: Theme.fontSmall
+        }
     }
 
     MouseArea {
@@ -53,5 +66,33 @@ Item {
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         onClicked: root.openPopup()
+    }
+
+    component ClockSegment: Rectangle {
+        id: segment
+
+        property string text: ""
+        property color fillColor: Theme.clockDateFill
+        property color textColor: Theme.fgPrimary
+        property int weight: Theme.weightRegular
+        property int pixelSize: Theme.fontSmall
+
+        implicitWidth: label.implicitWidth + Theme.groupContainerPadX * 2
+        implicitHeight: Theme.groupContainerHeight
+        radius: Theme.groupContainerRadius
+        color: fillColor
+        border.color: Theme.withAlpha(textColor, 0.12)
+        border.width: 1
+
+        Text {
+            id: label
+            anchors.centerIn: parent
+            text: segment.text
+            color: segment.textColor
+            font.family: Theme.fontFamily
+            font.pixelSize: segment.pixelSize
+            font.weight: segment.weight
+            font.features: { "tnum": 1 }
+        }
     }
 }

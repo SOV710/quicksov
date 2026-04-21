@@ -11,39 +11,49 @@ Item {
 
     property string outputName: ""
 
-    implicitWidth: row.implicitWidth + Theme.spaceXs * 2
-    implicitHeight: row.implicitHeight
+    implicitWidth: container.implicitWidth
+    implicitHeight: container.implicitHeight
 
-    Row {
-        id: row
-        anchors.centerIn: parent
-        spacing: Theme.spaceXs
+    Rectangle {
+        id: container
+        implicitWidth: row.implicitWidth + Theme.groupContainerPadX * 2
+        implicitHeight: Theme.groupContainerHeight
+        width: implicitWidth
+        height: implicitHeight
+        radius: Theme.groupContainerRadius
+        color: Theme.workspaceContainerFill
+        border.color: Theme.workspaceContainerBorder
+        border.width: 1
 
-        Repeater {
-            model: Niri.ready ? Niri.workspacesForOutput(root.outputName) : []
-            delegate: WorkspaceDot {
-                required property var modelData
-                wsData: modelData
+        Row {
+            id: row
+            anchors.centerIn: parent
+            spacing: Theme.spaceXs
+
+            Repeater {
+                model: Niri.ready ? Niri.workspacesForOutput(root.outputName) : []
+                delegate: WorkspaceDot {
+                    required property var modelData
+                    wsData: modelData
+                }
             }
         }
     }
 
     component WorkspaceDot: Item {
         property var wsData: null
-        width: dotRect.width + Theme.spaceXs
-        height: 24
+        width: dotRect.width + Theme.spaceXs * 2
+        height: Theme.leafChipHeight
 
         Rectangle {
             id: dotRect
             anchors.verticalCenter: parent.verticalCenter
-            // Daemon sends "focused" (bool), not "is_active"
-            width:  wsData && wsData.focused ? 22 : 8
-            height: 8
-            radius: 4
-            // Daemon sends "windows" (count), not "active_window_id"
-            color:  wsData && wsData.focused ? Theme.accentBlue
-                  : wsData && wsData.windows > 0 ? Theme.fgSecondary
-                  : Theme.fgMuted
+            width: wsData && wsData.focused ? 28 : 10
+            height: 10
+            radius: 5
+            color: wsData && wsData.focused ? Theme.accentTeal
+                 : wsData && wsData.windows > 0 ? Theme.withAlpha(Theme.accentTeal, 0.54)
+                 : Theme.withAlpha(Theme.accentTeal, 0.22)
 
             Behavior on width { NumberAnimation { duration: Theme.motionFast; easing.type: Easing.OutCubic } }
             Behavior on color { ColorAnimation { duration: Theme.motionFast } }

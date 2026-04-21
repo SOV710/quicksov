@@ -244,7 +244,7 @@ Item {
         visible: root.height > 0 || root.popupVisible
         width: root.panelWidth
         height: root.panelHeight
-        radius: Theme.radiusLg
+        radius: Theme.radiusXl
         color: Theme.bgSurface
         border.color: Theme.borderDefault
         border.width: 1

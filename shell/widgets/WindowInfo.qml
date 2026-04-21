@@ -10,9 +10,10 @@ Item {
     id: root
 
     property real maxWidth: 320
+    readonly property real _innerMaxWidth: Math.max(0, root.maxWidth - Theme.groupContainerPadX * 2)
     readonly property real _textBudget: Math.max(
         0,
-        root.maxWidth - separator.implicitWidth - content.spacing * 2
+        root._innerMaxWidth - separator.implicitWidth - content.spacing * 2
     )
     readonly property real _segmentMaxWidth: Math.floor(_textBudget / 2)
     readonly property real _appWidth: Math.min(appLabel.implicitWidth, root._segmentMaxWidth)
@@ -20,17 +21,14 @@ Item {
 
     width: Math.min(
         root.maxWidth,
-        root._appWidth + separator.implicitWidth + root._titleWidth + content.spacing * 2
+        root._appWidth + separator.implicitWidth + root._titleWidth + content.spacing * 2 + Theme.groupContainerPadX * 2
     )
     implicitWidth: root._appWidth
                  + separator.implicitWidth
                  + root._titleWidth
                  + content.spacing * 2
-    implicitHeight: Math.max(
-        appLabel.implicitHeight,
-        separator.implicitHeight,
-        titleLabel.implicitHeight
-    )
+                 + Theme.groupContainerPadX * 2
+    implicitHeight: Theme.groupContainerHeight
 
     readonly property var _window: (Niri.ready ? Niri.focusedWindow : null)
     readonly property bool _hasWindow: !!_window
@@ -43,45 +41,53 @@ Item {
         return root._window.title || root._window.app_id || "Untitled";
     }
 
-    Row {
-        id: content
-        width: root.width
-        height: root.implicitHeight
-        anchors.verticalCenter: parent.verticalCenter
-        spacing: Theme.spaceXs
+    Rectangle {
+        anchors.fill: parent
+        radius: Theme.groupContainerRadius
+        color: Theme.groupContainerFill
+        border.color: Theme.groupContainerBorder
+        border.width: 1
 
-        Text {
-            id: appLabel
-            width: root._appWidth
-            text: root._appName
-            color: root._hasWindow ? Theme.fgSecondary : Theme.fgMuted
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSmall
-            font.weight: Theme.weightMedium
-            elide: Text.ElideRight
-            verticalAlignment: Text.AlignVCenter
-        }
+        Row {
+            id: content
+            width: root.width - Theme.groupContainerPadX * 2
+            height: root.implicitHeight
+            anchors.centerIn: parent
+            spacing: Theme.spaceXs
 
-        Text {
-            id: separator
-            text: "|"
-            color: Theme.fgMuted
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSmall
-            font.weight: Theme.weightRegular
-            verticalAlignment: Text.AlignVCenter
-        }
+            Text {
+                id: appLabel
+                width: root._appWidth
+                text: root._appName
+                color: root._hasWindow ? Theme.fgPrimary : Theme.fgMuted
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSmall
+                font.weight: Theme.weightMedium
+                elide: Text.ElideRight
+                verticalAlignment: Text.AlignVCenter
+            }
 
-        Text {
-            id: titleLabel
-            width: root._titleWidth
-            text: root._title
-            color: root._hasWindow ? Theme.fgSecondary : Theme.fgMuted
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSmall
-            font.weight: Theme.weightRegular
-            elide: Text.ElideRight
-            verticalAlignment: Text.AlignVCenter
+            Text {
+                id: separator
+                text: "•"
+                color: Theme.fgMuted
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSmall
+                font.weight: Theme.weightRegular
+                verticalAlignment: Text.AlignVCenter
+            }
+
+            Text {
+                id: titleLabel
+                width: root._titleWidth
+                text: root._title
+                color: root._hasWindow ? Theme.fgSecondary : Theme.fgMuted
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSmall
+                font.weight: Theme.weightRegular
+                elide: Text.ElideRight
+                verticalAlignment: Text.AlignVCenter
+            }
         }
     }
 }

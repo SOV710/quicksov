@@ -17,7 +17,7 @@ Rectangle {
         contentCol.implicitHeight + Theme.spaceMd * 2,
         Theme.volumePanelMaxHeight
     )
-    radius: Theme.radiusMd
+    radius: Theme.radiusXl
     color: Theme.bgSurface
     border.color: Theme.borderDefault
     border.width: 1
@@ -28,10 +28,7 @@ Rectangle {
     readonly property bool _hasMultipleSinks: Audio.sinks.length > 1
 
     function _iconPath(muted, value) {
-        if (muted) return "lucide/volume-x.svg";
-        if (value <= 0) return "lucide/volume-off.svg";
-        if (value > 0.66) return "lucide/volume-2.svg";
-        return "lucide/volume-1.svg";
+        return Theme.iconVolumeStatus;
     }
 
     function _percentText(value) {

@@ -28,31 +28,50 @@ Item {
 
     component TrayItem: Item {
         property var trayItem: null
-        width:  Theme.iconSize
-        height: Theme.iconSize
+        width:  chip.width
+        height: chip.height
 
-        Image {
-            id: icon
-            anchors.fill: parent
-            source: trayItem && trayItem.icon ? trayItem.icon : ""
-            fillMode: Image.PreserveAspectFit
-            visible: status !== Image.Error
-            smooth: true
-        }
+        readonly property bool _hovered: hoverHandler.hovered
 
         Rectangle {
-            anchors.fill: parent
-            color: "transparent"
-            border.color: Theme.fgMuted
+            id: chip
+            width: Math.max(Theme.trayChipHeight, Theme.iconSize + Theme.trayChipPad * 2)
+            height: Theme.trayChipHeight
+            radius: Theme.trayChipRadius
+            color: parent._hovered ? Theme.trayChipHover : Theme.trayChipFill
+            border.color: Theme.trayChipBorder
             border.width: 1
-            radius: 2
-            visible: icon.status === Image.Error
+
+            Image {
+                id: icon
+                anchors.centerIn: parent
+                width: Theme.iconSize
+                height: Theme.iconSize
+                source: trayItem && trayItem.icon ? trayItem.icon : ""
+                fillMode: Image.PreserveAspectFit
+                visible: status !== Image.Error
+                smooth: true
+            }
+
+            Rectangle {
+                anchors.centerIn: parent
+                width: Theme.iconSize
+                height: Theme.iconSize
+                color: "transparent"
+                border.color: Theme.fgMuted
+                border.width: 1
+                radius: Theme.radiusXs
+                visible: icon.status === Image.Error
+            }
         }
+
+        HoverHandler { id: hoverHandler }
 
         MouseArea {
             anchors.fill: parent
             hoverEnabled: true
             acceptedButtons: Qt.LeftButton | Qt.RightButton
+            cursorShape: Qt.PointingHandCursor
             onClicked: function(mouse) {
                 if (!trayItem) return;
                 if (mouse.button === Qt.RightButton) {

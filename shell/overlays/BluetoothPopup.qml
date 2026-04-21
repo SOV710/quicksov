@@ -14,7 +14,7 @@ Rectangle {
     width: Theme.bluetoothPanelWidth
     implicitHeight: height
     height: Math.min(contentCol.implicitHeight + Theme.spaceMd * 2, Theme.bluetoothPanelMaxHeight)
-    radius: Theme.radiusMd
+    radius: Theme.radiusXl
     color: Theme.bgSurface
     border.color: Theme.borderDefault
     border.width: 1
@@ -179,21 +179,21 @@ Rectangle {
 
         StateCard {
             visible: root._showUnavailableState
-            iconPath: "lucide/bluetooth-off.svg"
+            iconPath: Theme.iconBluetoothOffStatus
             title: "No Bluetooth adapter"
             message: "Connect an adapter or start BlueZ, then reopen this panel."
         }
 
         StateCard {
             visible: root._showDisabledState
-            iconPath: "lucide/bluetooth-off.svg"
+            iconPath: Theme.iconBluetoothOffStatus
             title: "Bluetooth is off"
             message: "Turn Bluetooth on to view paired devices and scan nearby devices."
         }
 
         StateCard {
             visible: root._showEmptyState
-            iconPath: Bluetooth.discovering ? "lucide/loader-circle.svg" : "lucide/bluetooth.svg"
+            iconPath: Bluetooth.discovering ? "lucide/loader-circle.svg" : Theme.iconBluetoothStatus
             title: Bluetooth.discovering ? "Scanning for devices" : "No devices"
             message: Bluetooth.discovering
                      ? "Nearby devices will appear here."
@@ -438,7 +438,7 @@ Rectangle {
 
                 SvgIcon {
                     anchors.centerIn: parent
-                    iconPath: "lucide/bluetooth.svg"
+                    iconPath: Theme.iconBluetoothStatus
                     size: Theme.iconSize
                     color: device && device.connected ? Theme.accentBlue : Theme.fgSecondary
                 }
