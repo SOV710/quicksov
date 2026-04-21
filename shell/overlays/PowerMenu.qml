@@ -96,10 +96,10 @@ Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.top: parent.top
             color: !actionItem.enabled
-                   ? Qt.rgba(1, 1, 1, 0.03)
+                   ? Theme.chromeSubtleFillMuted
                    : actionMouse.containsMouse
                      ? (actionItem.pendingConfirm ? Theme.surfaceActive : Theme.surfaceHover)
-                     : (actionItem.pendingConfirm ? Theme.surfaceActive : Qt.rgba(1, 1, 1, 0.04))
+                     : (actionItem.pendingConfirm ? Theme.surfaceActive : Theme.chromeSubtleFill)
             border.width: 1
             border.color: !actionItem.enabled
                           ? Theme.fgMuted

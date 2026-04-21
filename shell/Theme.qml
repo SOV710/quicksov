@@ -43,35 +43,35 @@ Singleton {
     readonly property int motionDeliberate: 480
 
     readonly property int barOuterMargin: 20
-    readonly property int barHeight: 48
+    readonly property int barHeight: 32
     readonly property int barPadX: 16
-    readonly property int barPadY: 8
+    readonly property int barPadY: 0
     readonly property int barRadius: 20
     readonly property int popupGap: 12
     readonly property int panelEdgeInset: 24
-    readonly property int groupContainerHeight: 33
+    readonly property int groupContainerHeight: 24
     readonly property int groupContainerPadX: 8
     readonly property int groupContainerRadius: 16
-    readonly property int leafChipHeight: 24
+    readonly property int leafChipHeight: 20
     readonly property int leafChipRadius: 12
-    readonly property int statusCapsuleHeight: 39
-    readonly property int statusCapsuleRadius: 20
-    readonly property int statusCapsulePadX: 10
-    readonly property int statusCapsuleSlotWidth: 28
-    readonly property int trayChipHeight: 28
-    readonly property int trayChipPad: 6
+    readonly property int statusCapsuleHeight: 26
+    readonly property int statusCapsuleRadius: 13
+    readonly property int statusCapsulePadX: 8
+    readonly property int statusCapsuleSlotWidth: 24
+    readonly property int trayChipHeight: 24
+    readonly property int trayChipPad: 4
     readonly property int trayChipRadius: 12
-    readonly property int clockSegmentHeight: 32
-    readonly property int clockSegmentRadius: 16
-    readonly property int clockSegmentMinWidth: 54
-    readonly property int clockSegmentPadX: 12
-    readonly property int workspaceSpotSize: 16
-    readonly property int workspaceActiveSpotWidth: 40
+    readonly property int clockSegmentHeight: 24
+    readonly property int clockSegmentRadius: 12
+    readonly property int clockSegmentMinWidth: 48
+    readonly property int clockSegmentPadX: 10
+    readonly property int workspaceSpotSize: 14
+    readonly property int workspaceActiveSpotWidth: 32
 
     // Unified icon size for bar widgets and tray items (scales with barHeight)
     function barIconSize(scale) {
         var s = (scale !== undefined) ? scale : 1.0;
-        return Math.round(barHeight * 0.42 * s);
+        return Math.round(barHeight * 0.44 * s);
     }
     readonly property int iconSize: barIconSize()
 
@@ -128,18 +128,22 @@ Singleton {
     property string accentRed: "#f7768e"
     property string accentGreen: "#9ece6a"
     property string accentYellow: "#e0af68"
-    property string accentPurple: "#bb9af7"
+    property string accentPurple: "#9d7cd8"
     property string accentOrange: "#ff9e64"
     property string accentTeal: "#1abc9c"
     property string accentCyan: "#7dcfff"
 
     property string colorSuccess: "#9ece6a"
     property string colorWarning: "#e0af68"
-    property string colorError: "#f7768e"
+    property string colorError: "#db4b4b"
     property string colorInfo: "#0db9d7"
 
     property string surfaceHover: "#1f2230"
-    property string surfaceActive: "#283457"
+    property string surfaceActive: "#283250"
+    property string overlayScrim: "#11121a"
+    property string overlayScrimStrong: "#13151c"
+    property string shadowBase: "#0C0E14"
+    property string shadowAlt: "#15161e"
 
     property real opacityPanel: 0.9
     property real opacityPopup: 0.94
@@ -155,8 +159,12 @@ Singleton {
         return Qt.tint(base, withAlpha(tint, alpha));
     }
 
-    readonly property color barShadowColor: Qt.rgba(0, 0, 0, 0.09)
-    readonly property color panelShadowColor: Qt.rgba(0, 0, 0, 0.22)
+    readonly property color barShadowColor: withAlpha(shadowBase, 0.09)
+    readonly property color panelShadowColor: withAlpha(shadowBase, 0.22)
+    readonly property color chromeSubtleFill: overlay(bgSurface, fgPrimary, 0.04)
+    readonly property color chromeSubtleFillMuted: overlay(bgSurface, fgPrimary, 0.03)
+    readonly property color hitAreaRevealFill: overlay(bgSurface, fgPrimary, 0.01)
+    readonly property color dangerBorderSoft: withAlpha(colorError, 0.50)
     readonly property color barShellFill: overlay(bgSurface, fgSecondary, 0.60)
     readonly property color barShellBorder: withAlpha(borderDefault, 0.18)
     readonly property color groupContainerFill: overlay(barShellFill, bgSurfaceRaised, 0.10)
@@ -246,6 +254,12 @@ Singleton {
                 root.borderDefault = core.border.default || root.borderDefault;
                 root.borderSubtle  = core.border.subtle  || root.borderSubtle;
                 root.borderAccent  = core.border.accent  || root.borderAccent;
+            }
+            if (core.overlay) {
+                root.overlayScrim = core.overlay.scrim || root.overlayScrim;
+                root.overlayScrimStrong = core.overlay.scrim_strong || root.overlayScrimStrong;
+                root.shadowBase = core.overlay.shadow || root.shadowBase;
+                root.shadowAlt = core.overlay.shadow_alt || root.shadowAlt;
             }
         }
 

@@ -73,7 +73,7 @@ Scope {
 
                 Rectangle {
                     anchors.fill: parent
-                    color: Qt.rgba(1, 1, 1, 0.01)
+                    color: Theme.hitAreaRevealFill
 
                     MouseArea {
                         id: triggerMouse

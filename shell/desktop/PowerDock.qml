@@ -119,7 +119,7 @@ Scope {
 
                     Rectangle {
                         anchors.fill: triggerZone
-                        color: Qt.rgba(1, 1, 1, 0.01)
+                        color: Theme.hitAreaRevealFill
                     }
 
                     MouseArea {

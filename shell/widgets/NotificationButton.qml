@@ -24,15 +24,15 @@ Item {
 
     Rectangle {
         visible: Notification.hasUnread
-        width: 8
-        height: 8
-        radius: 4
+        width: 6
+        height: 6
+        radius: 3
         color: Theme.colorError
         anchors {
             right: parent.right
-            rightMargin: 4
+            rightMargin: 3
             top: parent.top
-            topMargin: 10
+            topMargin: 7
         }
     }
 

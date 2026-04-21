@@ -159,9 +159,9 @@ Rectangle {
         readonly property color _accent: root._urgencyColor(notif ? notif.urgency : "normal")
 
         radius: Theme.radiusSm
-        color: cardHover.containsMouse ? Theme.surfaceHover : Qt.rgba(1,1,1,0.04)
+        color: cardHover.containsMouse ? Theme.surfaceHover : Theme.chromeSubtleFill
         border.color: notif && notif.urgency === "critical"
-                      ? Qt.rgba(Theme.colorError.r, Theme.colorError.g, Theme.colorError.b, 0.5)
+                      ? Theme.dangerBorderSoft
                       : Theme.borderSubtle
         border.width: 1
         implicitHeight: cardCol.implicitHeight + Theme.spaceXs * 2
