@@ -10,9 +10,86 @@ Item {
     id: root
 
     property string outputName: ""
+    property real _gooeyFromCenterX: 0
+    property real _gooeyToCenterX: 0
+    property real _gooeyProgress: 1
+    property bool _gooeyReady: false
+
+    readonly property real _gooeyDisplayCenterX: _gooeyFromCenterX
+        + (_gooeyToCenterX - _gooeyFromCenterX) * _gooeyProgress
 
     implicitWidth: container.implicitWidth
     implicitHeight: container.implicitHeight
+
+    function _focusedDotCenterX() {
+        for (var i = 0; i < workspaceRepeater.count; i++) {
+            var item = workspaceRepeater.itemAt(i);
+            if (!item || !item.wsData || !item.wsData.focused)
+                continue;
+
+            return item.mapToItem(container, item.width / 2, item.height / 2).x;
+        }
+
+        return -1;
+    }
+
+    function _syncFocusedBlob() {
+        var target = _focusedDotCenterX();
+        if (target < 0) {
+            _gooeyReady = false;
+            gooeyAnimation.stop();
+            return;
+        }
+
+        if (!_gooeyReady) {
+            _gooeyFromCenterX = target;
+            _gooeyToCenterX = target;
+            _gooeyProgress = 1;
+            _gooeyReady = true;
+            return;
+        }
+
+        if (Math.abs(target - _gooeyToCenterX) < 0.5)
+            return;
+
+        var current = _gooeyDisplayCenterX;
+        gooeyAnimation.stop();
+        _gooeyFromCenterX = current;
+        _gooeyToCenterX = target;
+        _gooeyProgress = 0;
+        gooeyAnimation.restart();
+    }
+
+    onOutputNameChanged: Qt.callLater(root._syncFocusedBlob)
+
+    Component.onCompleted: Qt.callLater(root._syncFocusedBlob)
+
+    Connections {
+        target: Niri
+
+        function onReadyChanged() {
+            Qt.callLater(root._syncFocusedBlob);
+        }
+
+        function onWorkspacesChanged() {
+            Qt.callLater(root._syncFocusedBlob);
+        }
+    }
+
+    NumberAnimation {
+        id: gooeyAnimation
+        target: root
+        property: "_gooeyProgress"
+        from: 0
+        to: 1
+        duration: Theme.workspaceGooeyDuration
+        easing.type: Easing.OutCubic
+
+        onFinished: {
+            root._gooeyFromCenterX = root._gooeyToCenterX;
+            root._gooeyProgress = 1;
+        }
+    }
 
     Rectangle {
         id: container
@@ -31,32 +108,61 @@ Item {
             spacing: Theme.spaceSm
 
             Repeater {
+                id: workspaceRepeater
                 model: Niri.ready ? Niri.workspacesForOutput(root.outputName) : []
+
+                onItemAdded: Qt.callLater(root._syncFocusedBlob)
+                onItemRemoved: Qt.callLater(root._syncFocusedBlob)
+
                 delegate: WorkspaceDot {
                     required property var modelData
                     wsData: modelData
                 }
             }
         }
+
+        ShaderEffect {
+            anchors.fill: parent
+            visible: root._gooeyReady
+            blending: true
+
+            property real itemWidth: width
+            property real itemHeight: height
+            property real fromCenterX: root._gooeyFromCenterX
+            property real toCenterX: root._gooeyToCenterX
+            property real progress: root._gooeyProgress
+            property real activeHalfWidth: Theme.workspaceActiveSpotWidth / 2
+            property real activeHalfHeight: Theme.workspaceSpotSize / 2
+            property real mergeStrength: Theme.workspaceGooeyMergeStrength
+            property vector4d blobColor: Qt.vector4d(
+                Theme.workspaceSpotActive.r,
+                Theme.workspaceSpotActive.g,
+                Theme.workspaceSpotActive.b,
+                Theme.workspaceSpotActive.a
+            )
+
+            fragmentShader: Qt.resolvedUrl("../shaders/qsb/workspace_gooey.frag.qsb")
+        }
     }
 
     component WorkspaceDot: Item {
         property var wsData: null
-        width: dotRect.width
+        width: Theme.workspaceSpotSize
         height: Theme.workspaceSpotSize
 
         Rectangle {
             id: dotRect
-            anchors.verticalCenter: parent.verticalCenter
-            width: wsData && wsData.focused ? Theme.workspaceActiveSpotWidth : Theme.workspaceSpotSize
+            anchors.centerIn: parent
+            width: Theme.workspaceSpotSize
             height: Theme.workspaceSpotSize
             radius: Theme.workspaceSpotSize / 2
             color: wsData && wsData.focused ? Theme.workspaceSpotActive
                  : wsData && wsData.windows > 0 ? Theme.workspaceSpotFilled
                  : Theme.workspaceSpotEmpty
+            opacity: wsData && wsData.focused ? 0.36 : 1.0
 
-            Behavior on width { NumberAnimation { duration: Theme.motionFast; easing.type: Easing.OutCubic } }
             Behavior on color { ColorAnimation { duration: Theme.motionFast } }
+            Behavior on opacity { NumberAnimation { duration: Theme.motionFast; easing.type: Easing.OutCubic } }
         }
 
         MouseArea {
