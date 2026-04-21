@@ -23,11 +23,11 @@ const CACHE_VERSION: u32 = 2;
 
 /// Spawn the `weather` service and return its [`ServiceHandle`].
 pub fn spawn(cfg: &Config) -> ServiceHandle {
-    let initial = unavailable_snapshot();
+    let weather_cfg = WeatherCfg::from_config(cfg);
+    let initial = unavailable_snapshot(weather_cfg.provider_name(), weather_cfg.ttl_sec);
     let (state_tx, state_rx) = watch::channel(initial);
     let (request_tx, request_rx) = mpsc::channel(16);
 
-    let weather_cfg = WeatherCfg::from_config(cfg);
     tokio::spawn(run(request_rx, state_tx, weather_cfg));
 
     ServiceHandle {
@@ -460,11 +460,11 @@ struct OpenMeteoHourly {
     weather_code: Vec<i64>,
 }
 
-fn unavailable_snapshot() -> Value {
+fn unavailable_snapshot(provider: &str, ttl_sec: i64) -> Value {
     json_map([
-        ("provider", Value::from("open-meteo")),
+        ("provider", Value::from(provider)),
         ("status", Value::from("loading")),
-        ("ttl_sec", Value::from(SUCCESS_TTL_SEC)),
+        ("ttl_sec", Value::from(ttl_sec)),
         ("location", Value::Null),
         ("current", Value::Null),
         ("hourly", Value::Array(vec![])),
@@ -916,5 +916,19 @@ fn wmo_to_icon_desc(code: i64) -> (&'static str, &'static str) {
         71 | 73 | 75 | 77 | 85 | 86 => ("cloud-snow", "Snow"),
         95 | 96 | 99 => ("cloud-lightning", "Thunderstorm"),
         _ => ("cloud", "Unknown"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::Value;
+
+    use super::unavailable_snapshot;
+
+    #[test]
+    fn unavailable_snapshot_uses_configured_provider_and_ttl() {
+        let snapshot = unavailable_snapshot("custom-provider", 42);
+        assert_eq!(snapshot.get("provider"), Some(&Value::from("custom-provider")));
+        assert_eq!(snapshot.get("ttl_sec"), Some(&Value::from(42)));
     }
 }
