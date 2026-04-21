@@ -71,8 +71,8 @@ Singleton {
     readonly property int clockSegmentRadius: 12
     readonly property int clockSegmentMinWidth: 48
     readonly property int clockSegmentPadX: 10
-    readonly property int workspaceSpotSize: 14
-    readonly property int workspaceActiveSpotWidth: 32
+    readonly property int workspaceSpotSize: 12
+    readonly property int workspaceActiveSpotWidth: 24
 
     // Unified icon size for bar widgets and tray items (scales with barHeight)
     function barIconSize(scale) {

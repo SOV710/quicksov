@@ -66,10 +66,14 @@ Item {
         }
     }
 
-    Item {
+    Rectangle {
         id: shell
         anchors.fill: parent
-        clip: true
+        radius: Theme.clockSegmentRadius
+        color: "transparent"
+        border.color: Theme.withAlpha(Theme.borderDefault, 0.16)
+        border.width: 1
+        antialiasing: true
 
         Row {
             id: row
@@ -83,6 +87,7 @@ Item {
                 textColor: Theme.clockDateText
                 weight: Theme.weightMedium
                 pixelSize: Theme.fontSmall
+                capLeft: true
             }
 
             ClockSegment {
@@ -101,16 +106,10 @@ Item {
                 textColor: Theme.clockDayText
                 weight: Theme.weightMedium
                 pixelSize: Theme.fontSmall
+                capRight: true
             }
         }
 
-        Rectangle {
-            anchors.fill: parent
-            radius: Theme.clockSegmentRadius
-            color: "transparent"
-            border.color: Theme.withAlpha(Theme.borderDefault, 0.16)
-            border.width: 1
-        }
     }
 
     MouseArea {
@@ -128,11 +127,26 @@ Item {
         property color textColor: Theme.fgPrimary
         property int weight: Theme.weightRegular
         property int pixelSize: Theme.fontSmall
+        property bool capLeft: false
+        property bool capRight: false
 
         implicitWidth: root._segmentWidth
         implicitHeight: Theme.clockSegmentHeight
-        radius: 0
+        radius: capLeft || capRight ? Theme.clockSegmentRadius : 0
         color: fillColor
+        antialiasing: true
+
+        Rectangle {
+            anchors {
+                top: parent.top
+                bottom: parent.bottom
+                left: capLeft ? undefined : parent.left
+                right: capLeft ? parent.right : undefined
+            }
+            width: parent.width - Theme.clockSegmentRadius
+            visible: capLeft || capRight
+            color: segment.fillColor
+        }
 
         Text {
             id: label
