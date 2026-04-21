@@ -58,4 +58,4 @@ if [[ -d "$REPO_ROOT/icons" ]]; then
 fi
 
 echo "Done. Start daemon: cargo run --manifest-path $REPO_ROOT/Cargo.toml"
-echo "Start shell: $REPO_ROOT/scripts/run-shell.sh"
+echo "Start shell: qs -c quicksov"

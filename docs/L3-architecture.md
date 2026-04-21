@@ -517,7 +517,8 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
 │       ├── 006-no-network-manager.md
 │       └── 007-binary-naming-qsovd.md
 ├── scripts/
-│   ├── install.sh                  # 安装到 ~/.config/quickshell/quicksov
+│   ├── build-wallpaper-renderer.sh # 构建 C++ wallpaper renderer
+│   ├── install.sh                  # 安装 shell/icons 到 ~/.config/quickshell/quicksov
 │   └── dev-link.sh                 # symlink 模式部署, 便于迭代
 └── README.md
 ```
@@ -528,9 +529,10 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
 
 `scripts/install.sh` 做两件事：
 
-1. `cargo install --path . --bin qsovd`  安装二进制到 `~/.local/bin/`
-2. `rsync -a shell/ ~/.config/quickshell/quicksov/`  部署 qs 配置
-3. `rsync -a icons/ ~/.config/quickshell/quicksov/icons/`
+1. `rsync -a shell/ ~/.config/quickshell/quicksov/`  部署 qs 配置
+2. `rsync -a icons/ ~/.config/quickshell/quicksov/icons/`  部署图标资源
+
+它不安装 daemon 或 wallpaper renderer；Rust daemon 通过 `cargo build` / `cargo run --bin qsovd` 构建运行，C++ wallpaper renderer 通过 `scripts/build-wallpaper-renderer.sh` 构建。
 
 ### 10.2 开发迭代
 

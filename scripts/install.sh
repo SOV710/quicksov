@@ -18,4 +18,4 @@ if [[ -d "$REPO_ROOT/icons" ]]; then
     echo "Installed icons/"
 fi
 
-echo "Done. Run shell: $REPO_ROOT/scripts/run-shell.sh"
+echo "Done. Run shell: qs -c quicksov"
