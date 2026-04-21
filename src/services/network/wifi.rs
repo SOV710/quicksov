@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::io;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::Duration;
@@ -22,17 +22,13 @@ use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
 use crate::config::Config;
 use crate::util::json_map;
 
+const DEFAULT_WIFI_BACKEND: &str = "wpa_supplicant";
+const DEFAULT_WPA_CTRL_DIR: &str = "/run/wpa_supplicant";
+const DEFAULT_WIFI_INTERFACE: &str = "wlo1";
+
 /// Spawn the `net.wifi` service and return its [`ServiceHandle`].
 pub fn spawn_wifi(cfg: &Config) -> ServiceHandle {
-    let ctrl_path = cfg
-        .services
-        .network
-        .as_ref()
-        .and_then(|n| n.wpa_ctrl_path.as_deref())
-        .unwrap_or("/run/wpa_supplicant/wlo1")
-        .to_string();
-
-    let iface = ctrl_path.rsplit('/').next().unwrap_or("wlo1").to_string();
+    let (ctrl_path, iface) = resolve_wifi_control(cfg);
 
     let initial = unavailable_snapshot(&iface);
     let (state_tx, state_rx) = watch::channel(initial);
@@ -49,6 +45,94 @@ pub fn spawn_wifi(cfg: &Config) -> ServiceHandle {
 
 fn unavailable_snapshot(iface: &str) -> Value {
     build_wifi_snapshot(iface, &WifiStatus::default(), &WifiStateSnapshot::default())
+}
+
+fn resolve_wifi_control(cfg: &Config) -> (String, String) {
+    let network = cfg.services.network.as_ref();
+
+    if let Some(backend) = network.and_then(|entry| entry.wifi_backend.as_deref()) {
+        if backend != DEFAULT_WIFI_BACKEND {
+            warn!(
+                backend = %backend,
+                fallback = DEFAULT_WIFI_BACKEND,
+                "unsupported wifi backend configured; falling back to wpa_supplicant"
+            );
+        }
+    }
+
+    if let Some(path) = network
+        .and_then(|entry| entry.wpa_ctrl_path.as_ref())
+        .map(ToString::to_string)
+    {
+        let iface = iface_from_ctrl_path(&path).unwrap_or_else(|| DEFAULT_WIFI_INTERFACE.to_string());
+        return (path, iface);
+    }
+
+    let configured_ifaces = network
+        .and_then(|entry| entry.interfaces.as_ref())
+        .map(|interfaces| {
+            interfaces
+                .iter()
+                .map(|iface| iface.trim())
+                .filter(|iface| !iface.is_empty())
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let iface_candidates = if configured_ifaces.is_empty() {
+        discover_wpa_control_interfaces()
+    } else {
+        configured_ifaces
+    };
+
+    for iface in &iface_candidates {
+        let ctrl_path = default_wpa_ctrl_path(iface);
+        if Path::new(&ctrl_path).exists() {
+            return (ctrl_path, iface.clone());
+        }
+    }
+
+    if let Some(iface) = iface_candidates.first() {
+        return (default_wpa_ctrl_path(iface), iface.clone());
+    }
+
+    let iface = DEFAULT_WIFI_INTERFACE.to_string();
+    (default_wpa_ctrl_path(&iface), iface)
+}
+
+fn iface_from_ctrl_path(path: &str) -> Option<String> {
+    Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .map(ToString::to_string)
+}
+
+fn default_wpa_ctrl_path(iface: &str) -> String {
+    format!("{DEFAULT_WPA_CTRL_DIR}/{iface}")
+}
+
+fn discover_wpa_control_interfaces() -> Vec<String> {
+    discover_wpa_control_interfaces_in(Path::new(DEFAULT_WPA_CTRL_DIR))
+}
+
+fn discover_wpa_control_interfaces_in(dir: &Path) -> Vec<String> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+
+    let mut interfaces = entries
+        .flatten()
+        .filter_map(|entry| {
+            let file_type = entry.file_type().ok()?;
+            if !file_type.is_socket() {
+                return None;
+            }
+            entry.file_name().into_string().ok()
+        })
+        .collect::<Vec<_>>();
+    interfaces.sort();
+    interfaces
 }
 
 // ---------------------------------------------------------------------------
@@ -1191,4 +1275,61 @@ enum WifiError {
     Timeout,
     #[error("wpa_supplicant command failed: {cmd} -> {reply}")]
     CommandFailed { cmd: String, reply: String },
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::config::{Config, NetworkConfig, ServicesConfig};
+
+    use super::{
+        iface_from_ctrl_path, resolve_wifi_control, DEFAULT_WIFI_INTERFACE,
+    };
+
+    #[test]
+    fn explicit_wpa_ctrl_path_wins_over_interfaces() {
+        let cfg = Config {
+            daemon: Default::default(),
+            screens: Default::default(),
+            power: Default::default(),
+            services: ServicesConfig {
+                enabled: Vec::new(),
+                weather: None,
+                wallpaper: None,
+                network: Some(NetworkConfig {
+                    wifi_backend: Some("wpa_supplicant".to_string()),
+                    wpa_ctrl_path: Some("/run/wpa_supplicant/wlp2s0".to_string()),
+                    interfaces: Some(vec!["wlo1".to_string()]),
+                }),
+                audio: None,
+                niri: None,
+            },
+        };
+
+        let (ctrl_path, iface) = resolve_wifi_control(&cfg);
+        assert_eq!(ctrl_path, "/run/wpa_supplicant/wlp2s0");
+        assert_eq!(iface, "wlp2s0");
+    }
+
+    #[test]
+    fn iface_is_derived_from_ctrl_path_basename() {
+        assert_eq!(
+            iface_from_ctrl_path("/run/wpa_supplicant/wlan42").as_deref(),
+            Some("wlan42")
+        );
+        assert_eq!(iface_from_ctrl_path(""), None);
+    }
+
+    #[test]
+    fn falls_back_to_default_interface_when_no_config_or_socket_exists() {
+        let cfg = Config {
+            daemon: Default::default(),
+            screens: Default::default(),
+            power: Default::default(),
+            services: ServicesConfig::default(),
+        };
+
+        let (ctrl_path, iface) = resolve_wifi_control(&cfg);
+        assert_eq!(iface, DEFAULT_WIFI_INTERFACE);
+        assert!(ctrl_path.ends_with(&format!("/{DEFAULT_WIFI_INTERFACE}")));
+    }
 }
