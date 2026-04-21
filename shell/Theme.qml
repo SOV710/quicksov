@@ -180,7 +180,7 @@ Singleton {
     readonly property color dangerBorderSoft: withAlpha(colorError, 0.50)
     readonly property color barShellFill: overlay(bgSurface, fgSecondary, 0.20)
     readonly property color barShellBorder: withAlpha(borderDefault, 0.18)
-    readonly property color groupContainerFill: overlay(barShellFill, bgSurfaceRaised, 0.10)
+    readonly property color groupContainerFill: overlay(barShellFill, bgSurfaceRaised, 0.40)
     readonly property color groupContainerBorder: withAlpha(borderDefault, 0.14)
     readonly property color workspaceContainerFill: overlay(barShellFill, accentTeal, 0.20)
     readonly property color workspaceContainerBorder: withAlpha(accentTeal, 0.24)
