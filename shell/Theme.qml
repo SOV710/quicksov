@@ -5,9 +5,15 @@
 pragma Singleton
 import QtQuick
 import Quickshell
+import "./ipc"
 
 Singleton {
     id: root
+
+    property bool themeConnected: false
+    property bool themeReady: false
+    property string themeStatus: "disconnected"
+    property string themeLastError: ""
 
     // --- L1 Design Tokens (static) ---
     readonly property int spaceXs: 4
@@ -307,5 +313,24 @@ Singleton {
             root.surfaceHover  = pal.derived.surface_hover_soft   || root.surfaceHover;
             root.surfaceActive = pal.derived.selection_subtle_mix || root.surfaceActive;
         }
+
+        root.themeReady = true;
+        root.themeStatus = "ok";
+    }
+
+    function _onThemeConnectionChanged(isConnected) {
+        root.themeConnected = isConnected;
+        if (isConnected) {
+            Client.subscribe("theme", root._applySnapshot);
+        } else {
+            root.themeReady = false;
+            root.themeStatus = "disconnected";
+        }
+    }
+
+    Component.onCompleted: {
+        Client.connectionChanged.connect(root._onThemeConnectionChanged);
+        if (Client.connected)
+            root._onThemeConnectionChanged(true);
     }
 }
