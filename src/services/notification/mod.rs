@@ -519,8 +519,7 @@ async fn handle_dismiss(
     let _ = events_tx.send(event);
 
     if let Some(conn) = dbus_conn {
-        if let Ok(emitter) = zbus::object_server::SignalEmitter::new(conn, NOTIFICATION_DBUS_PATH)
-        {
+        if let Ok(emitter) = zbus::object_server::SignalEmitter::new(conn, NOTIFICATION_DBUS_PATH) {
             let _ = NotifServer::notification_closed(&emitter, id, 2).await;
         }
     }

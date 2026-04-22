@@ -64,7 +64,8 @@ fn resolve_wifi_control(cfg: &Config) -> (String, String) {
         .and_then(|entry| entry.wpa_ctrl_path.as_ref())
         .map(ToString::to_string)
     {
-        let iface = iface_from_ctrl_path(&path).unwrap_or_else(|| DEFAULT_WIFI_INTERFACE.to_string());
+        let iface =
+            iface_from_ctrl_path(&path).unwrap_or_else(|| DEFAULT_WIFI_INTERFACE.to_string());
         return (path, iface);
     }
 
@@ -1281,9 +1282,7 @@ enum WifiError {
 mod tests {
     use crate::config::{Config, NetworkConfig, ServicesConfig};
 
-    use super::{
-        iface_from_ctrl_path, resolve_wifi_control, DEFAULT_WIFI_INTERFACE,
-    };
+    use super::{iface_from_ctrl_path, resolve_wifi_control, DEFAULT_WIFI_INTERFACE};
 
     #[test]
     fn explicit_wpa_ctrl_path_wins_over_interfaces() {

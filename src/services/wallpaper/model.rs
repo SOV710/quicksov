@@ -11,9 +11,7 @@ use tracing::warn;
 use crate::bus::ServiceError;
 use crate::config::{WallpaperCropConfig, WallpaperSourceConfig, WallpaperViewConfig};
 
-use super::config::{
-    WallpaperCfg, DEFAULT_SOURCE_LOOP, DEFAULT_SOURCE_MUTE, DEFAULT_VIEW_FIT,
-};
+use super::config::{WallpaperCfg, DEFAULT_SOURCE_LOOP, DEFAULT_SOURCE_MUTE, DEFAULT_VIEW_FIT};
 use super::scan::{
     classify_path, resolve_source_path, sanitize_auto_source_id, scan_directory, ScanError,
 };

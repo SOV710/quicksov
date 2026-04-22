@@ -19,8 +19,7 @@ use crate::util::{is_empty_object, json_map, unix_now_secs};
 mod policy;
 
 use self::policy::{
-    wmo_presentation, OPEN_METEO_REQUEST_SPEC, WEATHER_PROVIDER_OPEN_METEO,
-    WEATHER_SERVICE_POLICY,
+    wmo_presentation, OPEN_METEO_REQUEST_SPEC, WEATHER_PROVIDER_OPEN_METEO, WEATHER_SERVICE_POLICY,
 };
 
 /// Spawn the `weather` service and return its [`ServiceHandle`].
@@ -903,7 +902,10 @@ mod tests {
     #[test]
     fn unavailable_snapshot_uses_configured_provider_and_ttl() {
         let snapshot = unavailable_snapshot("custom-provider", 42);
-        assert_eq!(snapshot.get("provider"), Some(&Value::from("custom-provider")));
+        assert_eq!(
+            snapshot.get("provider"),
+            Some(&Value::from("custom-provider"))
+        );
         assert_eq!(snapshot.get("ttl_sec"), Some(&Value::from(42)));
     }
 }

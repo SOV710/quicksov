@@ -9,9 +9,7 @@ use std::path::Path;
 
 use futures::stream::TryStreamExt;
 use futures::StreamExt;
-use rtnetlink::packet_route::link::{
-    InfoKind, LinkAttribute, LinkFlags, LinkInfo, LinkLayerType,
-};
+use rtnetlink::packet_route::link::{InfoKind, LinkAttribute, LinkFlags, LinkInfo, LinkLayerType};
 use serde_json::Value;
 use tokio::sync::{mpsc, watch};
 use tracing::{info, warn};

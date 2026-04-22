@@ -738,11 +738,15 @@ fn map_bluetooth_action_error(context: &str, err: zbus::Error) -> ServiceError {
 fn fdo_error_message(context: &str, err: &zbus::fdo::Error) -> String {
     match err {
         zbus::fdo::Error::Failed(detail) => generic_bluetooth_error(context, Some(detail.as_str())),
-        zbus::fdo::Error::NoReply(_) | zbus::fdo::Error::TimedOut(_) | zbus::fdo::Error::Timeout(_) => {
+        zbus::fdo::Error::NoReply(_)
+        | zbus::fdo::Error::TimedOut(_)
+        | zbus::fdo::Error::Timeout(_) => {
             format!("{context} timed out")
         }
         zbus::fdo::Error::UnknownObject(_) => "bluetooth device is no longer available".to_string(),
-        zbus::fdo::Error::UnknownInterface(_) => "bluetooth backend interface is unavailable".to_string(),
+        zbus::fdo::Error::UnknownInterface(_) => {
+            "bluetooth backend interface is unavailable".to_string()
+        }
         zbus::fdo::Error::NotSupported(detail) => {
             let detail = clean_bluetooth_error_detail(Some(detail.as_str()));
             detail.unwrap_or_else(|| format!("{context} is not supported on this system"))
@@ -760,8 +764,12 @@ fn method_error_message(context: &str, name: &str, detail: Option<&str>) -> Stri
         "org.bluez.Error.AlreadyConnected" => "bluetooth device is already connected".to_string(),
         "org.bluez.Error.NotConnected" => "bluetooth device is not connected".to_string(),
         "org.bluez.Error.AlreadyExists" => "bluetooth device is already paired".to_string(),
-        "org.freedesktop.DBus.Error.UnknownObject" => "bluetooth device is no longer available".to_string(),
-        "org.freedesktop.DBus.Error.UnknownInterface" => "bluetooth backend interface is unavailable".to_string(),
+        "org.freedesktop.DBus.Error.UnknownObject" => {
+            "bluetooth device is no longer available".to_string()
+        }
+        "org.freedesktop.DBus.Error.UnknownInterface" => {
+            "bluetooth backend interface is unavailable".to_string()
+        }
         "org.bluez.Error.Failed" | "org.freedesktop.zbus.Error" => {
             generic_bluetooth_error(context, detail)
         }
