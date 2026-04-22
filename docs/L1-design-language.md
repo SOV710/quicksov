@@ -181,8 +181,8 @@ QML 通过 `Image { source: ...svg; sourceSize: ... }` 加载，改色通过 `cu
 
 | 参数 | 值 |
 |---|---|
-| `status_panel_width` | 840px |
-| `status_panel_max_height` | 720px |
+| `status_panel_width` | 440px |
+| `status_panel_max_height` | 380px |
 | `panel_edge_inset` | 24px |
 
 适用范围：
@@ -193,7 +193,12 @@ QML 通过 `Image { source: ...svg; sourceSize: ... }` 加载，改色通过 `cu
 - volume popup
 - notification center
 
-目标是统一把这些 panel 从“窄抽屉”提升为“宽面板”。
+目标是统一成**紧凑型 anchored utility panel**：
+
+- 默认尺寸克制
+- 高度随内容增长
+- 需要列表时优先增长内容区，而不是默认做成大面板
+- 与 top bar 保持轻量、精确、贴近触发源的视觉关系
 
 ### 3.5.2 Clock Panel family
 

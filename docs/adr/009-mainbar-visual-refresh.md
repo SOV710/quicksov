@@ -3,6 +3,9 @@
 **Status**: Accepted
 **Date**: 2026-04-21
 
+> Note
+> Status popup sizing in section 7 is partially superseded by [ADR-010](./010-compact-status-panels.md).
+
 ## Context
 
 当前前端并不是“功能不全”问题，而是**视觉语义和交互层级不够统一**：

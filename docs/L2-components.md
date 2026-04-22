@@ -97,7 +97,8 @@ layer-rule {
 - Esc 或点击外部关闭
 - 展开：`popup_enter` (normal + decelerate)
 - 收起：`popup_exit` (fast + accelerate)
-- `battery` / `network` / `bluetooth` / `volume` / `notification` 统一使用 `status panel family`
+- `battery` / `network` / `bluetooth` / `volume` / `notification` 统一使用紧凑型 `status panel family`
+- 右上角这组 panel 在展开时共享统一的右侧对齐逻辑：视觉上贴近 `status capsule` 与屏幕右缘，而不是分别对每个 icon 做居中漂浮
 - `clock` 使用更宽的 `clock panel family`
 
 ## 3. 主屏组件清单
@@ -234,7 +235,7 @@ layer-rule {
 | 数据源 | daemon `battery` service via UPower D-Bus |
 | bar 显示逻辑 | status capsule 内只显示 icon，不显示 `%`；充电时进入绿色语义 |
 | Icon | Material battery glyph family |
-| 几何 | click popup；使用 `status panel family`，锚定 MainBar battery slot，下方 `gap_from_bar` |
+| 几何 | click popup；使用紧凑型 `status panel family`，锚定 MainBar battery slot，下方 `gap_from_bar`；默认保持较低高度 |
 | popup 头部 | 左侧大号 battery icon；右侧主读数 `87%` + 状态词 `Charging/Discharging/Fully charged` |
 | popup 次级信息 | 第二行显示 `3h 12m remaining` / `54m until full` / `Time estimate unavailable` |
 | popup 指标卡 | `Power Source`、`Battery Health`、`Charge Rate`、`Capacity` 四张信息卡 |
@@ -254,7 +255,7 @@ layer-rule {
 | 数据源 | daemon `net.link`（netlink，接口/IP/路由） + `net.wifi`（wpa_supplicant ctrl socket） |
 | 监听接口 | `wlo1`、`enp109s0` |
 | bar 视觉 | status capsule 内 icon-only；Wi-Fi 状态优先用 Material Wi-Fi glyph family；有线连接时允许切换为 ethernet glyph；扫描时允许蓝色呼吸语义 |
-| 几何 | click popup；使用 `status panel family`，锚定 MainBar network slot，下方 `gap_from_bar` |
+| 几何 | click popup；使用紧凑型 `status panel family`，锚定 MainBar network slot，下方 `gap_from_bar`；列表区按内容增长，不默认展开成宽大 panel |
 | 头部 | 左侧 `Network` 标题 + 副标题；右侧 `Refresh`、`Wi-Fi On/Off`、`Flight` 三个 chip |
 | 状态归约 | daemon 额外提供 `availability` / `availability_reason` / `rfkill_*` / `airplane_mode`，区分 ready / disabled / unavailable |
 | 列表分组 | `Current` → `Saved` → `Available`；每行显示 SSID、状态副标题（Connected / Saved / Open / WPA2 / 频段 / 信号） |
@@ -271,7 +272,7 @@ layer-rule {
 | 属性 | 值 |
 |---|---|
 | 数据源 | daemon `bluetooth` service via BlueZ D-Bus |
-| bar 几何 | status capsule 内 icon-only；popup 使用 `status panel family` |
+| bar 几何 | status capsule 内 icon-only；popup 使用紧凑型 `status panel family` |
 | 视觉状态 | unavailable：`bluetooth-off`；disabled：`bluetooth-off`；enabled idle：`bluetooth`；已连：保持统一色但切到 connected glyph/state；扫描中：蓝色呼吸语义 |
 | 头部 | 左侧 `Bluetooth` 标题 + 状态副标题；右侧 `Refresh/Stop` 与 `On/Off` 控件 |
 | 列表分组 | `Connected` → `Paired` → `Available`；每行显示 name/address、状态文案、电量（若有） |
@@ -284,7 +285,7 @@ layer-rule {
 | 数据源 | daemon `audio` service via PipeWire |
 | bar 视觉 | status capsule 内 icon-only，不显示百分比 |
 | Icon | Material volume glyph family |
-| 几何 | click popup；使用 `status panel family`；Applications 列表区上限提升到 420px |
+| 几何 | click popup；使用紧凑型 `status panel family`；Applications 列表区上限收回到紧凑规格，避免默认面板过长 |
 | 交互 | click → popup：大音量 slider、默认 sink 切换、per-app 音量列表；hover 滚轮 → ±5% |
 
 ### 3.11 notification-center
@@ -295,7 +296,7 @@ layer-rule {
 | 数据源 | daemon `notification` service（实现 `org.freedesktop.Notifications` D-Bus server，完全取代 mako/dunst） |
 | bar 视觉 | `bell` icon；有未读时右上角小红点；不显示数量 |
 | Icon | Material notifications glyph family |
-| 几何 | click popup；使用 `status panel family`；通知列表区上限 600px |
+| 几何 | click popup；使用紧凑型 `status panel family`；通知列表区上限收回到紧凑规格 |
 | 交互 | click → 展开 NotificationCenter popup；长按或右键 → 清空全部 |
 
 **Toast 行为**：新 notification 到达时主屏右上角滑入 toast 卡片（`notification_in`），stay 5s 自动滑出，hover 暂停。最多堆叠 3 条。
