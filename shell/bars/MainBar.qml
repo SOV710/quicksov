@@ -238,6 +238,15 @@ Scope {
             }
 
             Item {
+                id: statusPopupAnchor
+                x: barRect.x + rightZone.x + statusCapsule.x
+                y: barRect.y + rightZone.y + statusCapsule.y
+                width: statusCapsule.width
+                height: statusCapsule.height
+                visible: false
+            }
+
+            Item {
                 id: notifPopupAnchor
                 x: barRect.x + rightZone.x + statusCapsule.x + statusRow.x + notifWidget.x
                 y: barRect.y + rightZone.y + statusCapsule.y + statusRow.y + notifWidget.y
@@ -252,7 +261,7 @@ Scope {
                 visible: false
                 width: Math.min(Theme.notificationPanelWidth, barRect.width - Theme.panelEdgeInset * 2)
 
-                readonly property real _preferredX: notifPopupAnchor.x + (notifPopupAnchor.width - width) / 2
+                readonly property real _preferredX: statusPopupAnchor.x + statusPopupAnchor.width - width
                 readonly property real _minX: barRect.x + Theme.panelEdgeInset
                 readonly property real _maxX: Math.max(_minX, barRect.x + barRect.width - Theme.panelEdgeInset - width)
 
@@ -275,7 +284,7 @@ Scope {
                 visible: false
                 width: Math.min(Theme.bluetoothPanelWidth, barRect.width - Theme.panelEdgeInset * 2)
 
-                readonly property real _preferredX: bluetoothPopupAnchor.x + (bluetoothPopupAnchor.width - width) / 2
+                readonly property real _preferredX: statusPopupAnchor.x + statusPopupAnchor.width - width
                 readonly property real _minX: barRect.x + Theme.panelEdgeInset
                 readonly property real _maxX: Math.max(_minX, barRect.x + barRect.width - Theme.panelEdgeInset - width)
 
@@ -298,7 +307,7 @@ Scope {
                 visible: false
                 width: Math.min(Theme.networkPanelWidth, barRect.width - Theme.panelEdgeInset * 2)
 
-                readonly property real _preferredX: networkPopupAnchor.x + (networkPopupAnchor.width - width) / 2
+                readonly property real _preferredX: statusPopupAnchor.x + statusPopupAnchor.width - width
                 readonly property real _minX: barRect.x + Theme.panelEdgeInset
                 readonly property real _maxX: Math.max(_minX, barRect.x + barRect.width - Theme.panelEdgeInset - width)
 
@@ -321,7 +330,7 @@ Scope {
                 visible: false
                 width: Math.min(Theme.volumePanelWidth, barRect.width - Theme.panelEdgeInset * 2)
 
-                readonly property real _preferredX: volumePopupAnchor.x + (volumePopupAnchor.width - width) / 2
+                readonly property real _preferredX: statusPopupAnchor.x + statusPopupAnchor.width - width
                 readonly property real _minX: barRect.x + Theme.panelEdgeInset
                 readonly property real _maxX: Math.max(_minX, barRect.x + barRect.width - Theme.panelEdgeInset - width)
 
@@ -344,7 +353,7 @@ Scope {
                 visible: false
                 width: Math.min(Theme.batteryPanelWidth, barRect.width - Theme.panelEdgeInset * 2)
 
-                readonly property real _preferredX: batteryPopupAnchor.x + (batteryPopupAnchor.width - width) / 2
+                readonly property real _preferredX: statusPopupAnchor.x + statusPopupAnchor.width - width
                 readonly property real _minX: barRect.x + Theme.panelEdgeInset
                 readonly property real _maxX: Math.max(_minX, barRect.x + barRect.width - Theme.panelEdgeInset - width)
 
