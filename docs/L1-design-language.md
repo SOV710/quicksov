@@ -184,6 +184,7 @@ QML 通过 `Image { source: ...svg; sourceSize: ... }` 加载，改色通过 `cu
 | `status_panel_width` | 440px |
 | `status_panel_max_height` | 380px |
 | `panel_edge_inset` | 24px |
+| `status_panel_right_inset` | 8px |
 
 适用范围：
 
@@ -199,6 +200,7 @@ QML 通过 `Image { source: ...svg; sourceSize: ... }` 加载，改色通过 `cu
 - 高度随内容增长
 - 需要列表时优先增长内容区，而不是默认做成大面板
 - 与 top bar 保持轻量、精确、贴近触发源的视觉关系
+- 右上角这组 panel 默认贴近 bar 右缘展开，减少无意义右侧留白
 
 ### 3.5.2 Clock Panel family
 
