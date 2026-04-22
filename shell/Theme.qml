@@ -55,6 +55,7 @@ Singleton {
     readonly property int barRadius: 20
     readonly property int popupGap: 12
     readonly property int panelEdgeInset: 24
+    readonly property int statusPopupRightInset: 8
     readonly property int groupContainerHeight: 24
     readonly property int groupContainerPadX: 8
     readonly property int groupContainerRadius: 16
