@@ -7,6 +7,7 @@ use std::time::Instant;
 
 use crate::bus::ServiceHandle;
 use crate::config::Config;
+use crate::wallpaper_contract::WALLPAPER_TOPIC;
 
 pub mod audio;
 pub mod battery;
@@ -57,8 +58,8 @@ pub async fn start_services(cfg: &Config, started_at: Instant) -> HashMap<String
             "weather" => {
                 map.insert("weather".into(), weather::spawn(cfg));
             }
-            "wallpaper" => {
-                map.insert("wallpaper".into(), wallpaper::spawn(cfg));
+            WALLPAPER_TOPIC => {
+                map.insert(WALLPAPER_TOPIC.into(), wallpaper::spawn(cfg));
             }
             "theme" => {
                 map.insert("theme".into(), theme::spawn(cfg));

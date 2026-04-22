@@ -24,6 +24,7 @@ use tracing::info;
 
 use crate::bus::{ServiceHandle, ServiceRequest};
 use crate::config::Config;
+use crate::wallpaper_contract::{WALLPAPER_LAYER_NAMESPACE, WALLPAPER_TOPIC};
 
 use self::actions::WallpaperAction;
 use self::config::WallpaperCfg;
@@ -57,6 +58,11 @@ async fn run(
     mut state: WallpaperState,
 ) {
     info!(path = %state.directory().display(), "wallpaper service started");
+    info!(
+        topic = WALLPAPER_TOPIC,
+        renderer_layer_namespace = WALLPAPER_LAYER_NAMESPACE,
+        "wallpaper runtime contract loaded"
+    );
 
     state.set_renderer(renderer_rx.borrow().clone());
     state_tx.send_replace(state.snapshot());

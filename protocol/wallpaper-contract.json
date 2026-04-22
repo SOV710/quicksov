@@ -1,0 +1,27 @@
+{
+  "protocol": {
+    "proto_version": "qsov/1",
+    "topic": "wallpaper"
+  },
+  "renderer": {
+    "binary_name": "qsov-wallpaper-renderer",
+    "client_name": "qsov-wallpaper-renderer",
+    "client_version": "0.1.0",
+    "layer_namespace": "quicksov-wallpaper"
+  },
+  "decoder": {
+    "software_backend": "software",
+    "catalog": [
+      "vaapi",
+      "cuda",
+      "vulkan",
+      "qsv",
+      "software"
+    ],
+    "default_order": [
+      "vaapi",
+      "cuda",
+      "software"
+    ]
+  }
+}

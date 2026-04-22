@@ -32,6 +32,16 @@ daemon.toml
 
 旧的 QML wallpaper 路径已经从仓库中移除。当前默认运行路径只有 daemon -> wallpaper renderer 这一条主链路。
 
+`protocol/wallpaper-contract.json` 是当前 daemon 与 C++ renderer 共享的 runtime contract 单一来源。它当前承载：
+
+- protocol version
+- `wallpaper` topic 名称
+- renderer binary / client name / client version
+- layer-shell namespace
+- decode backend catalog
+- default decode backend order
+- software fallback backend 名称
+
 ## 2. 进程与职责边界
 
 ### 2.1 `qsovd`
@@ -70,6 +80,21 @@ daemon.toml
 - 决定 decode / render / present GPU
 - 选择 `dmabuf` 或 `shm` 提交路径
 - 执行 per-output crop / cover / fade transition
+
+### 2.3 共享 contract 的接入方式
+
+当前共享 contract 的接入不是“运行时各自读一份 JSON”，而是：
+
+- Rust: `build.rs` 在编译时读取 `protocol/wallpaper-contract.json`，生成 `wallpaper_contract` 常量模块
+- C++: renderer 的 CMake 在配置阶段读取同一份 JSON，生成 `WallpaperContractConfig.hpp`
+
+因此当前不是手写双份常量表，而是：
+
+```text
+protocol/wallpaper-contract.json
+  -> Rust generated constants
+  -> C++ generated constants
+```
 
 ## 3. daemon 侧状态模型
 
@@ -185,13 +210,14 @@ renderer 内部按 `source id` 建立 `SourceSession`，不是按 output 建立 
 
 - 维护独立 decoder thread
 - 打开输入流并选择视频 stream
-- 按 `decode_backend_order` 尝试硬解 backend
+- 按共享 contract 中的 decode backend catalog 校验并归一化 `decode_backend_order`
+- 按归一化后的 `decode_backend_order` 尝试硬解 backend
 - 按 `preferredDevicePath` 绑定目标设备
 - 输出两类帧快照：
   - `FrameSnapshot`: CPU/QImage 路径
   - `HardwareFrameSnapshot`: 硬件帧路径
 
-当前实现会优先尝试配置中的硬解后端，失败自动回退到 `software`。
+当前实现会优先尝试配置中的硬解后端；未知 backend 会在归一化阶段被丢弃，且最终总会自动回退到共享 contract 指定的 `software` backend。
 
 `cuda` 路径当前不是简单使用默认 CUDA device，而是尝试将选中的 DRM render node 映射到精确 CUDA ordinal；若映射失败，则跳过该 `cuda` 候选。
 

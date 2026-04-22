@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
+use crate::wallpaper_contract::QSOV_PROTO_VERSION;
+
 // ---------------------------------------------------------------------------
 // Kind discriminants (§2 of protocol/spec.md)
 // ---------------------------------------------------------------------------
@@ -62,7 +64,7 @@ pub const E_RATE_LIMITED: &str = "E_RATE_LIMITED";
 pub const E_CANCELED: &str = "E_CANCELED";
 
 /// Expected protocol version string that clients must present in `Hello`.
-pub const PROTO_VERSION: &str = "qsov/1";
+pub const PROTO_VERSION: &str = QSOV_PROTO_VERSION;
 
 // ---------------------------------------------------------------------------
 // Wire types

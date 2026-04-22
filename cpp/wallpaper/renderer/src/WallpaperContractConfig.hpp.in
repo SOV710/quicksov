@@ -1,0 +1,25 @@
+// SPDX-FileCopyrightText: 2026 SOV710
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#pragma once
+
+#include <array>
+
+namespace quicksov::wallpaper::shared {
+
+inline constexpr const char *kProtoVersion = "@WALLPAPER_PROTO_VERSION@";
+inline constexpr const char *kWallpaperTopic = "@WALLPAPER_TOPIC@";
+inline constexpr const char *kRendererBinaryName = "@WALLPAPER_RENDERER_BINARY_NAME@";
+inline constexpr const char *kRendererClientName = "@WALLPAPER_RENDERER_CLIENT_NAME@";
+inline constexpr const char *kRendererClientVersion = "@WALLPAPER_RENDERER_CLIENT_VERSION@";
+inline constexpr const char *kLayerNamespace = "@WALLPAPER_LAYER_NAMESPACE@";
+inline constexpr const char *kSoftwareDecodeBackend = "@WALLPAPER_SOFTWARE_DECODE_BACKEND@";
+
+inline constexpr std::array<const char *, @WALLPAPER_DECODE_CATALOG_LENGTH@> kDecodeBackendCatalog = {{
+@WALLPAPER_DECODE_CATALOG_INIT@}};
+
+inline constexpr std::array<const char *, @WALLPAPER_DECODE_DEFAULT_ORDER_LENGTH@> kDefaultDecodeBackendOrder = {{
+@WALLPAPER_DECODE_DEFAULT_ORDER_INIT@}};
+
+} // namespace quicksov::wallpaper::shared

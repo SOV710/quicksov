@@ -321,11 +321,7 @@ QString selectGpuDevicePath(
 }
 
 QStringList reorderDecodeBackendsForGpu(QStringList backends, GpuVendor vendor) {
-    for (QString &backend : backends) {
-        backend = backend.trimmed().toLower();
-    }
-    backends.removeAll(QString());
-    backends.removeDuplicates();
+    backends = shared::normalizeDecodeBackendOrder(std::move(backends));
 
     auto preferFront = [&](const QString &backend) {
         backends.removeAll(backend);
@@ -338,8 +334,9 @@ QStringList reorderDecodeBackendsForGpu(QStringList backends, GpuVendor vendor) 
         preferFront(QStringLiteral("vaapi"));
     }
 
-    backends.removeAll(QStringLiteral("software"));
-    backends.append(QStringLiteral("software"));
+    const QString softwareBackend = QString::fromLatin1(shared::kSoftwareDecodeBackend);
+    backends.removeAll(softwareBackend);
+    backends.append(softwareBackend);
     return backends;
 }
 
@@ -580,11 +577,14 @@ SnapshotModel parseSnapshot(const QJsonObject &payload) {
             QStringLiteral("same-as-compositor")
         );
     model.allowCrossGpu = renderer.value(QStringLiteral("allow_cross_gpu")).toBool(false);
+    QStringList configuredBackends;
+    configuredBackends.reserve(decodeBackendOrder.size());
     for (const QJsonValue &entry : decodeBackendOrder) {
-        const QString backend = entry.toString().trimmed().toLower();
-        if (!backend.isEmpty() && !model.decodeBackendOrder.contains(backend)) {
-            model.decodeBackendOrder.push_back(backend);
-        }
+        configuredBackends.push_back(entry.toString());
+    }
+    model.decodeBackendOrder = shared::normalizeDecodeBackendOrder(std::move(configuredBackends));
+    if (model.decodeBackendOrder.isEmpty()) {
+        model.decodeBackendOrder = shared::defaultDecodeBackendOrder();
     }
 
     const QJsonObject sources = payload.value(QStringLiteral("sources")).toObject();

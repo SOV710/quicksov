@@ -11,6 +11,7 @@ mod platform;
 mod services;
 mod session_env;
 mod util;
+mod wallpaper_contract;
 
 use std::path::PathBuf;
 use thiserror::Error;

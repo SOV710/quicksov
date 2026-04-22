@@ -8,6 +8,10 @@ use std::path::PathBuf;
 use tracing::warn;
 
 use crate::config::{paths, Config, WallpaperConfig};
+use crate::wallpaper_contract::{
+    default_wallpaper_decode_backend_order, normalize_wallpaper_decode_backend_order,
+    WALLPAPER_RENDERER_BINARY,
+};
 
 use super::model::{SourceSpec, ViewState};
 
@@ -23,7 +27,7 @@ pub(super) const DEFAULT_VIDEO_AUDIO: bool = false;
 pub(super) const DEFAULT_SOURCE_LOOP: bool = true;
 pub(super) const DEFAULT_SOURCE_MUTE: bool = true;
 pub(super) const DEFAULT_VIEW_FIT: &str = "cover";
-pub(super) const DEFAULT_RENDERER_BINARY: &str = "qsov-wallpaper-renderer";
+pub(super) const DEFAULT_RENDERER_BINARY: &str = WALLPAPER_RENDERER_BINARY;
 
 #[derive(Clone, Debug)]
 pub(super) struct WallpaperCfg {
@@ -99,29 +103,24 @@ impl WallpaperCfg {
             "render_device_policy",
         );
 
+        let decode_backend_order = wallpaper
+            .and_then(|entry| entry.decode_backend_order.as_ref())
+            .map(|order| normalize_configured_decode_backend_order(order))
+            .unwrap_or_else(default_wallpaper_decode_backend_order);
+
         Self {
             socket_path: cfg.daemon.socket_path.clone(),
             directory: wallpaper
                 .and_then(|entry| entry.directory.clone())
                 .map(PathBuf::from)
                 .unwrap_or_else(default_wallpaper_directory),
-            renderer_process: resolve_renderer_binary_path()
-                .display()
-                .to_string(),
+            renderer_process: resolve_renderer_binary_path().display().to_string(),
             transition_type,
             transition_duration_ms: wallpaper
                 .and_then(|entry| entry.transition_duration_ms)
                 .unwrap_or(DEFAULT_TRANSITION_DURATION_MS),
             renderer_backend,
-            decode_backend_order: wallpaper
-                .and_then(|entry| entry.decode_backend_order.clone())
-                .unwrap_or_else(|| {
-                    vec![
-                        "vaapi".to_string(),
-                        "cuda".to_string(),
-                        "software".to_string(),
-                    ]
-                }),
+            decode_backend_order,
             decode_device_policy,
             render_device_policy,
             allow_cross_gpu: wallpaper
@@ -174,6 +173,19 @@ pub(super) fn resolve_renderer_binary_path() -> PathBuf {
     }
 
     PathBuf::from(DEFAULT_RENDERER_BINARY)
+}
+
+fn normalize_configured_decode_backend_order(order: &[String]) -> Vec<String> {
+    let (normalized, unsupported) = normalize_wallpaper_decode_backend_order(order);
+
+    for backend in unsupported {
+        warn!(
+            decode_backend = %backend,
+            "unsupported wallpaper decode backend configured; dropping entry"
+        );
+    }
+
+    normalized
 }
 
 fn normalize_gpu_policy(value: Option<&str>, default: &str, field: &str) -> String {

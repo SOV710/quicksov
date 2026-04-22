@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "Runtime.hpp"
+#include "WallpaperContract.hpp"
 
 #include <QCoreApplication>
 #include <QJsonDocument>
@@ -40,9 +41,18 @@ void WallpaperProtocolClient::sendJson(const QJsonObject &object) {
 
 void WallpaperProtocolClient::onConnected() {
     sendJson(QJsonObject{
-        {QStringLiteral("proto_version"), QStringLiteral("qsov/1")},
-        {QStringLiteral("client_name"), QStringLiteral("qsov-wallpaper-renderer")},
-        {QStringLiteral("client_version"), QStringLiteral("0.1")},
+        {
+            QStringLiteral("proto_version"),
+            QString::fromLatin1(shared::kProtoVersion),
+        },
+        {
+            QStringLiteral("client_name"),
+            QString::fromLatin1(shared::kRendererClientName),
+        },
+        {
+            QStringLiteral("client_version"),
+            QString::fromLatin1(shared::kRendererClientVersion),
+        },
     });
 }
 
@@ -68,7 +78,10 @@ void WallpaperProtocolClient::onReadyRead() {
             sendJson(QJsonObject{
                 {QStringLiteral("id"), 0},
                 {QStringLiteral("kind"), 5},
-                {QStringLiteral("topic"), QStringLiteral("wallpaper")},
+                {
+                    QStringLiteral("topic"),
+                    QString::fromLatin1(shared::kWallpaperTopic),
+                },
                 {QStringLiteral("action"), QStringLiteral("")},
                 {QStringLiteral("payload"), QJsonValue::Null},
             });
@@ -77,7 +90,7 @@ void WallpaperProtocolClient::onReadyRead() {
 
         const int kind = object.value(QStringLiteral("kind")).toInt(-1);
         const QString topic = object.value(QStringLiteral("topic")).toString();
-        if (kind == 3 && topic == QStringLiteral("wallpaper")) {
+        if (kind == 3 && topic == QString::fromLatin1(shared::kWallpaperTopic)) {
             emit snapshotReceived(object.value(QStringLiteral("payload")).toObject());
         } else if (kind == 2) {
             emit fatalError(QStringLiteral("daemon returned ERR for wallpaper subscription"));

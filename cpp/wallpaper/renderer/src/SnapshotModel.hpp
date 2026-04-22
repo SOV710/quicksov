@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include "WallpaperContract.hpp"
+
 #include <optional>
 #include <vector>
 
@@ -27,7 +29,7 @@ extern "C" {
 namespace quicksov::wallpaper::renderer {
 
 inline constexpr const char *kLogPrefix = "[wallpaper-renderer]";
-inline constexpr const char *kNamespace = "quicksov-wallpaper";
+inline constexpr const char *kNamespace = shared::kLayerNamespace;
 inline constexpr int kTransitionFrameMs = 16;
 inline constexpr uint32_t kDmabufDrmFormat = DRM_FORMAT_ARGB8888;
 

@@ -12,6 +12,9 @@ use tracing::{info, warn};
 
 use super::config::{resolve_renderer_binary_path, WallpaperCfg};
 use super::model::RendererRuntime;
+use crate::wallpaper_contract::{
+    WALLPAPER_RENDERER_CLIENT_NAME, WALLPAPER_RENDERER_CLIENT_VERSION,
+};
 
 pub(super) async fn supervise_renderer(
     cfg: WallpaperCfg,
@@ -34,7 +37,13 @@ pub(super) async fn supervise_renderer(
         match command.spawn() {
             Ok(mut child) => {
                 let pid = child.id().unwrap_or_default();
-                info!(pid, path = %binary.display(), "spawned wallpaper renderer");
+                info!(
+                    pid,
+                    path = %binary.display(),
+                    client = WALLPAPER_RENDERER_CLIENT_NAME,
+                    client_version = WALLPAPER_RENDERER_CLIENT_VERSION,
+                    "spawned wallpaper renderer"
+                );
                 state_tx.send_replace(RendererRuntime::running(pid));
 
                 match child.wait().await {

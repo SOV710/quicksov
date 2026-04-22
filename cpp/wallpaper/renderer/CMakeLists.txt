@@ -28,8 +28,10 @@ qt_standard_project_setup(REQUIRES 6.8)
 
 set(LAYER_SHELL_XML "${CMAKE_CURRENT_SOURCE_DIR}/proto/wlr-layer-shell-unstable-v1.xml")
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(WALLPAPER_CONTRACT_JSON "${CMAKE_CURRENT_SOURCE_DIR}/../../../protocol/wallpaper-contract.json")
 set(LAYER_SHELL_HEADER "${GENERATED_DIR}/wlr-layer-shell-unstable-v1-client-protocol.h")
 set(LAYER_SHELL_SOURCE "${GENERATED_DIR}/wlr-layer-shell-unstable-v1-client-protocol.c")
+set(WALLPAPER_CONTRACT_HEADER "${GENERATED_DIR}/WallpaperContractConfig.hpp")
 find_file(
     LINUX_DMABUF_XML
     NAMES linux-dmabuf-v1.xml
@@ -51,6 +53,37 @@ set(XDG_SHELL_HEADER "${GENERATED_DIR}/xdg-shell-client-protocol.h")
 set(XDG_SHELL_SOURCE "${GENERATED_DIR}/xdg-shell-client-protocol.c")
 
 file(MAKE_DIRECTORY "${GENERATED_DIR}")
+
+file(READ "${WALLPAPER_CONTRACT_JSON}" WALLPAPER_CONTRACT)
+string(JSON WALLPAPER_PROTO_VERSION GET "${WALLPAPER_CONTRACT}" protocol proto_version)
+string(JSON WALLPAPER_TOPIC GET "${WALLPAPER_CONTRACT}" protocol topic)
+string(JSON WALLPAPER_RENDERER_BINARY_NAME GET "${WALLPAPER_CONTRACT}" renderer binary_name)
+string(JSON WALLPAPER_RENDERER_CLIENT_NAME GET "${WALLPAPER_CONTRACT}" renderer client_name)
+string(JSON WALLPAPER_RENDERER_CLIENT_VERSION GET "${WALLPAPER_CONTRACT}" renderer client_version)
+string(JSON WALLPAPER_LAYER_NAMESPACE GET "${WALLPAPER_CONTRACT}" renderer layer_namespace)
+string(JSON WALLPAPER_SOFTWARE_DECODE_BACKEND GET "${WALLPAPER_CONTRACT}" decoder software_backend)
+string(JSON WALLPAPER_DECODE_CATALOG_LENGTH LENGTH "${WALLPAPER_CONTRACT}" decoder catalog)
+string(JSON WALLPAPER_DECODE_DEFAULT_ORDER_LENGTH LENGTH "${WALLPAPER_CONTRACT}" decoder default_order)
+
+math(EXPR WALLPAPER_DECODE_CATALOG_LAST "${WALLPAPER_DECODE_CATALOG_LENGTH} - 1")
+set(WALLPAPER_DECODE_CATALOG_INIT "")
+foreach(index RANGE 0 ${WALLPAPER_DECODE_CATALOG_LAST})
+    string(JSON decode_backend GET "${WALLPAPER_CONTRACT}" decoder catalog ${index})
+    string(APPEND WALLPAPER_DECODE_CATALOG_INIT "    \"${decode_backend}\",\n")
+endforeach()
+
+math(EXPR WALLPAPER_DECODE_DEFAULT_ORDER_LAST "${WALLPAPER_DECODE_DEFAULT_ORDER_LENGTH} - 1")
+set(WALLPAPER_DECODE_DEFAULT_ORDER_INIT "")
+foreach(index RANGE 0 ${WALLPAPER_DECODE_DEFAULT_ORDER_LAST})
+    string(JSON decode_backend GET "${WALLPAPER_CONTRACT}" decoder default_order ${index})
+    string(APPEND WALLPAPER_DECODE_DEFAULT_ORDER_INIT "    \"${decode_backend}\",\n")
+endforeach()
+
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/WallpaperContractConfig.hpp.in"
+    "${WALLPAPER_CONTRACT_HEADER}"
+    @ONLY
+)
 
 add_custom_command(
     OUTPUT
@@ -75,6 +108,7 @@ add_custom_command(
 
 add_executable(qsov-wallpaper-renderer
     src/main.cpp
+    src/WallpaperContract.hpp
     src/Runtime.hpp
     src/ProtocolClient.hpp
     src/ProtocolClient.cpp
@@ -105,6 +139,7 @@ add_executable(qsov-wallpaper-renderer
 target_include_directories(qsov-wallpaper-renderer
     PRIVATE
         "${GENERATED_DIR}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
         "${CMAKE_CURRENT_SOURCE_DIR}/../decoder/ffmpeg"
 )
 

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "VideoDecoderInternal.hpp"
+#include "WallpaperContract.hpp"
 
 #include <algorithm>
 #include <dlfcn.h>
@@ -290,23 +291,10 @@ std::chrono::nanoseconds frameDelayFor(
 }
 
 QStringList normalizeHwdecOrder(QStringList order) {
-    QStringList normalized;
-    normalized.reserve(order.size() + 1);
-
-    for (QString &entry : order) {
-        entry = entry.trimmed().toLower();
-        if (entry.isEmpty()) {
-            continue;
-        }
-        if (!normalized.contains(entry)) {
-            normalized.push_back(entry);
-        }
+    QStringList normalized = shared::normalizeDecodeBackendOrder(std::move(order));
+    if (normalized.isEmpty()) {
+        normalized = shared::defaultDecodeBackendOrder();
     }
-
-    if (!normalized.contains(QStringLiteral("software"))) {
-        normalized.push_back(QStringLiteral("software"));
-    }
-
     return normalized;
 }
 
