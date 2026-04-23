@@ -51,8 +51,12 @@ Scope {
 
             exclusiveZone: Theme.barHeight
             color: "transparent"
+            mask: barSurfaceRegion
 
-            BackgroundEffect.blurRegion: Region {
+            BackgroundEffect.blurRegion: barSurfaceRegion
+
+            Region {
+                id: barSurfaceRegion
                 item: barRect
                 radius: barRect.radius
 
