@@ -208,7 +208,7 @@ QML 通过 `Image { source: ...svg; sourceSize: ... }` 加载，改色通过 `cu
 | `panel_edge_inset` | 24px |
 | `status_panel_right_inset` | 16px |
 | `status_panel_gap_from_bar` | 0px |
-| `status_panel_shoulder_depth` | 18px |
+| `status_panel_shoulder_depth` | 10px |
 | `status_panel_lower_corner_radius` | 28px（= `radius.xl`） |
 
 适用范围：
