@@ -93,7 +93,7 @@ layer-rule {
 
 **Popup / Dock 通用规则**：
 - `clock` family 仍从 bar 下方 `popup.gap_from_bar`（12px）处滑出
-- 右上角 `StatusDockHost` family 不使用 gap，直接 dock 在 `status capsule` 下方
+- 右上角 `StatusDockHost` family 不使用 gap，直接 dock 在 `MainBar` 底边
 - 浮动 popup 的 x 对齐触发 widget 中心，超出屏幕时向内偏移，至少保留 `panel_edge_inset`（24px）
 - 同时最多一个 popup 打开；打开新的自动关闭旧的
 - Esc 或点击外部关闭
@@ -101,7 +101,7 @@ layer-rule {
 - 收起：`popup_exit` (fast + accelerate)
 - `battery` / `network` / `bluetooth` / `volume` / `notification` 统一使用紧凑型 `docked status panel family`
 - 右上角这组 panel 不再各自独立定位；它们共享一个 `StatusDockHost`
-- `StatusDockHost` 固定挂在 `status capsule` 下方，整体沿 bar 右缘对齐
+- `StatusDockHost` 固定挂在 `MainBar` 下方，整体沿 bar 右缘对齐
 - 右上角这组 panel 的 reveal 是单一 drawer vertical expansion，不是各自独立的浮层滑入
 - `clock` 使用更宽的 `clock panel family`
 - `MainBar` family 的 blur 由 `MainBar` 这个 `PanelWindow` 统一请求；popup 自己不重复附着协议
@@ -237,11 +237,10 @@ layer-rule {
 
 **几何要求**：
 
-- status capsule 改为与 bar **等高**
-- status capsule 上下顶住 bar，作为 dock host 的 trigger surface
-- status capsule 与下方 docked panel 使用同色系 shell fill
-- 打开 panel 时，不允许出现 `capsule` 与 `panel body` 之间的视觉缝隙
-- 不得把 bar 整体做厚；变化只发生在右侧状态区对象，而不是整个 bar
+- status capsule 维持 bar 内部嵌入式几何，不上下顶住 bar
+- status capsule 是触发控件，不是 dock shell 的一部分
+- docked panel 与 `MainBar` 连接，而不是与 `status capsule` 本体连接
+- 打开 panel 时，视觉重心应落在“bar 下方抽出一个 panel”，而不是“capsule 自身被拉长”
 
 ### 3.7 battery
 

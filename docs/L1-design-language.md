@@ -160,8 +160,8 @@ QML 通过 `Image { source: ...svg; sourceSize: ... }` 加载，改色通过 `cu
 | `group_container_radius` | 16px（= `radius.md`） |
 | `leaf_chip_height` | 12-20px（视组件而定；workspace spot 优先 14px） |
 | `leaf_chip_radius` | 12px（= `radius.sm`） |
-| `status_capsule_height` | 32px（与 bar 等高） |
-| `status_capsule_radius` | 16px |
+| `status_capsule_height` | 26px |
+| `status_capsule_radius` | 13px |
 
 这些 token 只定义视觉层级，不强制所有组件做完全相同的内部布局；但必须遵守 `bar shell -> group container -> leaf item` 的层级关系。
 
@@ -169,8 +169,8 @@ QML 通过 `Image { source: ...svg; sourceSize: ... }` 加载，改色通过 `cu
 
 - `workspace-strip` 的 inactive spot 不得暗到接近 bar 底色，至少需要维持清晰轮廓
 - `window-info` 文本块必须在其 container 中严格竖直居中
-- `status capsule` 在本轮改为**上下顶住 bar**的整块 dock trigger surface，用于与下方 docked panel 直接拼接
-- `status capsule` 不得再表现为 bar 内部漂浮的小胶囊；它现在是右侧系统状态对象的上半部分
+- `status capsule` 恢复为 bar 内部嵌入式 trigger capsule，不上下顶住 bar
+- `status capsule` 负责触发右上角系统 panel，但它本身不是 dock shell 的上半块外壳
 
 ### 3.4 副屏 auto-hide left-bar 几何
 
@@ -225,17 +225,17 @@ QML 通过 `Image { source: ...svg; sourceSize: ... }` 加载，改色通过 `cu
 - 高度随内容增长
 - 需要列表时优先增长内容区，而不是默认做成大面板
 - 与 top bar 保持轻量、精确、贴近触发源的视觉关系
-- 右上角这组 panel 不再是彼此独立漂浮的 popup，而是一个与 `status capsule` 融合的 **single dock host**
+- 右上角这组 panel 不再是彼此独立漂浮的 popup，而是一个与 `MainBar` 融合的 **single dock host**
 - dock host 与 bar 之间**无 gap**
-- panel 顶部 junction 使用 inverse-radius / concave shoulder，从 `status capsule` 自然过渡到更宽的下方 panel body
+- panel 顶部 junction 使用 inverse-radius / concave shoulder，从 `bar` 底边自然过渡到下方 panel body
 - panel 下缘维持常规大圆角
 - 默认沿 bar 右侧展开，减少无意义右侧留白
 - 这组 panel 的 blur 不单独各挂一套协议，而是由 `MainBar` window 统一请求
 
 补充规则：
 
-- 右上角这组 panel 的 steady-state fill 必须与 `status capsule` 同源同色
-- 打开某个 panel 时，不允许再看到“上方独立胶囊 + 下方独立浮层”的断裂结构
+- 右上角这组 panel 的 steady-state fill 必须与 `bar shell` 同源同色
+- 打开某个 panel 时，panel 必须被感知为从 `MainBar` 底部抽出，而不是从 `status capsule` 自身长出
 - 外壳展开动效是垂直 drawer reveal，使用 ease-out；起步快，结束减速
 - 切换 battery/network/bluetooth/volume/notification 时优先复用同一外壳，不闪烁重建整个 shell
 
