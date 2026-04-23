@@ -3,13 +3,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import QtQuick
-import QtQuick.Layouts
 import ".."
-import "../components"
 import "../services"
 
 Item {
     id: root
+
+    property bool dragInProgress: false
+    property int draggedIndex: -1
+    property int draggedNotificationId: -1
+    property real dragProgress: 0
+    property int expandedNotificationId: -1
+    property double nowMs: Date.now()
 
     width: parent ? parent.width : Theme.notificationPanelWidth
     implicitHeight: Math.min(
@@ -17,269 +22,168 @@ Item {
         Theme.notificationPanelMaxHeight
     )
 
-    // ── helpers ─────────────────────────────────────────────────────────────
-    function _timeLabel(ts) {
+    function _clearDragState() {
+        root.dragInProgress = false;
+        root.draggedIndex = -1;
+        root.draggedNotificationId = -1;
+        root.dragProgress = 0;
+    }
+
+    function _hasNotification(id) {
+        if (id < 0 || !Notification.notifications) return false;
+
+        for (var i = 0; i < Notification.notifications.length; ++i) {
+            var notif = Notification.notifications[i];
+            if (notif && notif.id === id) return true;
+        }
+
+        return false;
+    }
+
+    function _markVisibleAsRead() {
+        if (!root.visible || !Notification.connected || !Notification.hasUnread) return;
+        Notification.markRead();
+    }
+
+    function _neighborOffsetForIndex(cardIndex) {
+        if (!root.dragInProgress || Math.abs(cardIndex - root.draggedIndex) !== 1) return 0;
+        return Theme.spaceMd * root.dragProgress;
+    }
+
+    function _pruneTransientState() {
+        if (!root._hasNotification(root.expandedNotificationId))
+            root.expandedNotificationId = -1;
+        if (!root._hasNotification(root.draggedNotificationId))
+            root._clearDragState();
+    }
+
+    function _relativeTimeLabel(ts) {
         if (!ts) return "";
-        var d = new Date(ts);
-        var h = d.getHours().toString().padStart(2, "0");
-        var m = d.getMinutes().toString().padStart(2, "0");
-        return h + ":" + m;
+
+        var delta = Math.max(0, root.nowMs - ts);
+        if (delta < 45000) return "now";
+
+        var minute = 60 * 1000;
+        var hour = 60 * minute;
+        var day = 24 * hour;
+
+        if (delta < hour) return Math.max(1, Math.floor(delta / minute)) + "m";
+        if (delta < day) return Math.max(1, Math.floor(delta / hour)) + "h";
+        return Math.max(1, Math.floor(delta / day)) + "d";
     }
 
-    function _urgencyColor(urgency) {
-        if (urgency === "critical") return Theme.colorError;
-        if (urgency === "low")      return Theme.fgMuted;
-        return Theme.fgSecondary;
+    function _setDragState(notificationId, cardIndex, active, progress) {
+        if (active) {
+            root.dragInProgress = true;
+            root.draggedNotificationId = notificationId;
+            root.draggedIndex = cardIndex;
+            root.dragProgress = progress;
+            return;
+        }
+
+        if (root.draggedNotificationId === notificationId || root.draggedIndex === cardIndex)
+            root._clearDragState();
     }
 
-    function _previewText(text, limit) {
-        if (!text || text.length <= limit) return text || "";
-
-        var cut = text.slice(0, limit);
-        var lastSpace = Math.max(cut.lastIndexOf(" "), cut.lastIndexOf("\n"));
-        if (lastSpace > Math.floor(limit * 0.65)) cut = cut.slice(0, lastSpace);
-        return cut.replace(/\s+$/, "") + "...";
+    Component.onCompleted: {
+        root.nowMs = Date.now();
+        root._markVisibleAsRead();
+        root._pruneTransientState();
     }
 
-    function _displayActions(actions) {
-        if (!actions || !actions.length) return [];
-
-        return actions.filter(function(action) {
-            return action
-                && typeof action.id === "string"
-                && typeof action.label === "string"
-                && action.label.trim().length > 0;
-        });
+    onVisibleChanged: {
+        if (visible) {
+            root.nowMs = Date.now();
+            root._markVisibleAsRead();
+        } else {
+            root._clearDragState();
+        }
     }
 
-    // ── layout ───────────────────────────────────────────────────────────────
+    Connections {
+        target: Notification
+
+        function onCountChanged() {
+            root._markVisibleAsRead();
+        }
+
+        function onNotificationsChanged() {
+            root._clearDragState();
+            root._pruneTransientState();
+        }
+    }
+
+    Timer {
+        interval: 30000
+        repeat: true
+        running: root.visible
+        onTriggered: root.nowMs = Date.now()
+    }
+
     Column {
         id: contentCol
+
         anchors {
-            top: parent.top; left: parent.left; right: parent.right
+            top: parent.top
+            left: parent.left
+            right: parent.right
             margins: Theme.spaceMd
         }
         spacing: Theme.spaceSm
 
-        // header row
-        RowLayout {
-            width: parent.width
-
-            Text {
-                text: "Notifications"
-                color: Theme.fgPrimary
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontLabel
-                font.weight: Theme.weightSemibold
-                Layout.fillWidth: true
-            }
-
-            Text {
-                visible: Notification.notifications.length > 0
-                text: "Clear all"
-                color: Theme.accentBlue
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontBody
-
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: Notification.dismissAll()
-                }
-            }
-        }
-
-        // empty state
         Item {
             visible: Notification.notifications.length === 0
             width: parent.width
-            implicitHeight: 80
+            implicitHeight: 72
 
             Text {
                 anchors.centerIn: parent
-                text: "No notifications"
                 color: Theme.fgMuted
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontBody
                 horizontalAlignment: Text.AlignHCenter
+                text: "No notifications"
             }
         }
 
-        // notification cards
         ListView {
             id: notifList
+
             visible: Notification.notifications.length > 0
-            width:  parent.width
+            width: parent.width
             implicitHeight: contentHeight
             height: Math.min(contentHeight, Theme.notificationListMaxHeight)
-            model:  Notification.notifications
-            clip:   true
-            spacing: Theme.spaceXs
-            interactive: contentHeight > height
+            model: Notification.notifications
+            boundsBehavior: Flickable.StopAtBounds
+            clip: true
+            interactive: !root.dragInProgress && contentHeight > height
+            spacing: Theme.spaceSm
 
-            delegate: NotifCard {
+            delegate: NotificationCard {
+                required property int index
                 required property var modelData
+
+                cardIndex: index
+                expanded: root.expandedNotificationId === modelData.id
+                neighborOffset: root._neighborOffsetForIndex(index)
                 notif: modelData
+                relativeTime: root._relativeTimeLabel(modelData ? modelData.timestamp : 0)
                 width: notifList.width
-            }
-        }
-    }
 
-    // ── notification card component ──────────────────────────────────────────
-    component NotifCard: Rectangle {
-        id: card
-        property var notif: null
-        property bool expanded: false
-        readonly property int _bodyPreviewLimit: Math.max(
-            90,
-            Math.floor((cardCol.width / (Theme.fontBody * 0.62)) * 3)
-        )
-        readonly property string _bodyText: notif ? notif.body || "" : ""
-        readonly property bool _bodyCanExpand: _bodyText.length > _bodyPreviewLimit
-        readonly property var _actions: root._displayActions(notif ? notif.actions : [])
-
-        readonly property color _accent: root._urgencyColor(notif ? notif.urgency : "normal")
-
-        radius: Theme.radiusSm
-        color: cardHover.containsMouse ? Theme.surfaceHover : Theme.chromeSubtleFill
-        border.color: notif && notif.urgency === "critical"
-                      ? Theme.dangerBorderSoft
-                      : Theme.borderSubtle
-        border.width: 1
-        implicitHeight: cardCol.implicitHeight + Theme.spaceXs * 2
-        clip: true
-
-        HoverHandler { id: cardHover }
-
-        Behavior on color { ColorAnimation { duration: Theme.motionFast } }
-
-        // urgency accent bar on the left
-        Rectangle {
-            width: 3
-            anchors { left: parent.left; top: parent.top; bottom: parent.bottom; topMargin: 4; bottomMargin: 4 }
-            radius: 2
-            color: card._accent
-            visible: notif && notif.urgency !== "normal"
-        }
-
-        Column {
-            id: cardCol
-            anchors {
-                left: parent.left; right: parent.right; top: parent.top
-                margins: Theme.spaceXs
-                leftMargin: notif && notif.urgency !== "normal" ? Theme.spaceXs + 6 : Theme.spaceXs
-            }
-            spacing: 2
-
-            // app name + time + dismiss
-            RowLayout {
-                width: parent.width
-
-                Text {
-                    text: notif ? notif.app_name : ""
-                    color: card._accent
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontBody
-                    font.weight: Theme.weightMedium
-                    elide: Text.ElideRight
-                    Layout.fillWidth: true
+                onDismissRequested: notificationId => {
+                    if (root.expandedNotificationId === notificationId)
+                        root.expandedNotificationId = -1;
+                    Notification.dismiss(notificationId);
                 }
 
-                Text {
-                    text: root._timeLabel(notif ? notif.timestamp : 0)
-                    color: Theme.fgMuted
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontBody
-                    visible: notif && notif.timestamp > 0
+                onDragStateChanged: (notificationId, cardIndex, active, progress) => {
+                    root._setDragState(notificationId, cardIndex, active, progress);
                 }
 
-                SvgIcon {
-                    iconPath: "lucide/x.svg"
-                    size: Theme.fontSmall
-                    color: Theme.fgMuted
-                    Layout.leftMargin: Theme.spaceXs
-
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: if (notif) Notification.dismiss(notif.id)
-                    }
-                }
-            }
-
-            // summary
-            Text {
-                text: notif ? notif.summary : ""
-                color: Theme.fgPrimary
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontBody
-                font.weight: Theme.weightMedium
-                elide: Text.ElideRight
-                width: parent.width
-            }
-
-            // body
-            Text {
-                id: bodyLabel
-                visible: card._bodyText !== ""
-                text: card.expanded
-                      ? card._bodyText
-                      : root._previewText(card._bodyText, card._bodyPreviewLimit)
-                color: Theme.fgSecondary
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontBody
-                wrapMode: Text.WordWrap
-                width: parent.width
-            }
-
-            Text {
-                visible: bodyLabel.visible && card._bodyCanExpand
-                text: card.expanded ? "Less" : "More"
-                color: Theme.accentBlue
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontBody
-                font.weight: Theme.weightMedium
-
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: card.expanded = !card.expanded
-                }
-            }
-
-            // action buttons
-            Row {
-                visible: card._actions.length > 0
-                spacing: Theme.spaceXs
-                topPadding: 2
-
-                Repeater {
-                    model: card._actions
-
-                    delegate: Rectangle {
-                        required property var modelData
-                        height: 18
-                        width:  actionLabel.implicitWidth + Theme.spaceSm * 2
-                        radius: Theme.radiusXs
-                        color: actionBtn.containsMouse ? Theme.surfaceActive : Theme.borderDefault
-
-                        Text {
-                            id: actionLabel
-                            anchors.centerIn: parent
-                            text: modelData.label || ""
-                            color: Theme.fgPrimary
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontBody
-                        }
-
-                        HoverHandler { id: actionBtn }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: Notification.invokeAction(notif.id, modelData.id)
-                        }
-                    }
+                onToggleExpandedRequested: notificationId => {
+                    root.expandedNotificationId = root.expandedNotificationId === notificationId
+                                                ? -1
+                                                : notificationId;
                 }
             }
         }

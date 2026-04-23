@@ -25,6 +25,12 @@ Singleton {
     function dismissAll() {
         Client.request("notification", "dismiss_all", {}, null);
     }
+    function markRead(id) {
+        var payload = {};
+        if (id !== undefined && id !== null)
+            payload.id = id;
+        Client.request("notification", "mark_read", payload, null);
+    }
     function invokeAction(id, actionKey) {
         Client.request("notification", "invoke_action", { id: id, action_id: actionKey }, null);
     }
