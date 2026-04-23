@@ -4,8 +4,6 @@
 
 //! `niri` service — Niri compositor IPC.
 
-mod app_names;
-
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -17,24 +15,23 @@ use tracing::{debug, info, warn};
 
 use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
 use crate::config::Config;
+use crate::services::applications::{AppLookup, AppResolver};
 use crate::session_env;
 use crate::util::json_map;
-use app_names::AppNameResolver;
 
 /// Spawn the `niri` service and return its [`ServiceHandle`].
-pub fn spawn(cfg: &Config) -> ServiceHandle {
+pub fn spawn(cfg: &Config, apps: Arc<AppResolver>) -> ServiceHandle {
     let configured_socket = cfg
         .services
         .niri
         .as_ref()
         .and_then(|niri| niri.socket.clone())
         .filter(|socket| !socket.is_empty());
-    let app_names = Arc::new(AppNameResolver::load());
     let initial = empty_snapshot();
     let (state_tx, state_rx) = watch::channel(initial);
     let (request_tx, request_rx) = mpsc::channel(16);
 
-    tokio::spawn(run(request_rx, state_tx, configured_socket, app_names));
+    tokio::spawn(run(request_rx, state_tx, configured_socket, apps));
 
     ServiceHandle {
         request_tx,
@@ -58,7 +55,7 @@ async fn run(
     mut request_rx: mpsc::Receiver<ServiceRequest>,
     state_tx: watch::Sender<Value>,
     configured_socket: Option<String>,
-    app_names: Arc<AppNameResolver>,
+    apps: Arc<AppResolver>,
 ) {
     info!("niri service started");
     loop {
@@ -69,7 +66,7 @@ async fn run(
             "resolved niri IPC socket candidate"
         );
 
-        match connect_and_run(&mut request_rx, &state_tx, &socket.path, &app_names).await {
+        match connect_and_run(&mut request_rx, &state_tx, &socket.path, &apps).await {
             Ok(()) => break,
             Err(e) => {
                 warn!(
@@ -90,7 +87,7 @@ async fn connect_and_run(
     request_rx: &mut mpsc::Receiver<ServiceRequest>,
     state_tx: &watch::Sender<Value>,
     socket_path: &str,
-    app_names: &AppNameResolver,
+    apps: &AppResolver,
 ) -> Result<(), NiriError> {
     // Fetch initial state via separate one-shot connections
     let workspaces = niri_request(socket_path, r#""Workspaces""#).await?;
@@ -98,7 +95,7 @@ async fn connect_and_run(
     let windows_json = niri_request(socket_path, r#""Windows""#).await?;
 
     let ws_list = parse_workspaces(&workspaces);
-    let fw = parse_focused_window(&focused, app_names);
+    let fw = parse_focused_window(&focused, apps);
     // window_id → workspace_id: used to count windows per workspace
     let mut win_map: HashMap<i64, i64> = parse_window_workspace_map(&windows_json);
 
@@ -134,10 +131,10 @@ async fn connect_and_run(
                 match line {
                     Ok(Some(text)) => {
                         let refresh_focus =
-                            process_event(&text, &mut ws_state, &mut fw_state, &mut win_map, app_names);
+                            process_event(&text, &mut ws_state, &mut fw_state, &mut win_map, apps);
                         if refresh_focus {
                             if let Ok(fw_json) = niri_request(socket_path, r#""FocusedWindow""#).await {
-                                fw_state = parse_focused_window(&fw_json, app_names);
+                                fw_state = parse_focused_window(&fw_json, apps);
                             }
                         }
                         state_tx.send_replace(build_snapshot(&ws_state, &fw_state, &win_map));
@@ -241,14 +238,14 @@ fn parse_window_workspace_map(json: &str) -> HashMap<i64, i64> {
     map
 }
 
-fn parse_focused_window(json: &str, app_names: &AppNameResolver) -> Option<FocusedWindow> {
+fn parse_focused_window(json: &str, apps: &AppResolver) -> Option<FocusedWindow> {
     let val: serde_json::Value = serde_json::from_str(json).ok()?;
-    focused_window_from_value(val.get("Ok")?.get("FocusedWindow")?, app_names)
+    focused_window_from_value(val.get("Ok")?.get("FocusedWindow")?, apps)
 }
 
 fn focused_window_from_value(
     value: &serde_json::Value,
-    app_names: &AppNameResolver,
+    apps: &AppResolver,
 ) -> Option<FocusedWindow> {
     let win = if let Some(obj) = value.as_object() {
         if obj.contains_key("id") {
@@ -263,11 +260,16 @@ fn focused_window_from_value(
     };
 
     let app_id = win.get("app_id")?.as_str()?.to_string();
+    let resolved = apps.resolve(&AppLookup {
+        app_id: Some(app_id.clone()),
+        ..AppLookup::default()
+    });
     Some(FocusedWindow {
         id: win.get("id")?.as_i64()?,
-        display_name: app_names.resolve(&app_id),
+        display_name: resolved.display_name,
         app_id,
         title: win.get("title")?.as_str()?.to_string(),
+        icon: resolved.icon,
     })
 }
 
@@ -276,7 +278,7 @@ fn process_event(
     ws_state: &mut Vec<WorkspaceInfo>,
     fw_state: &mut Option<FocusedWindow>,
     win_map: &mut HashMap<i64, i64>,
-    app_names: &AppNameResolver,
+    apps: &AppResolver,
 ) -> bool {
     let val: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
@@ -305,7 +307,7 @@ fn process_event(
             if w.is_null() {
                 None
             } else {
-                focused_window_from_value(w, app_names)
+                focused_window_from_value(w, apps)
             }
         });
         refresh_focus = true;
@@ -372,6 +374,7 @@ struct FocusedWindow {
     display_name: String,
     app_id: String,
     title: String,
+    icon: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -399,6 +402,7 @@ fn build_snapshot(
             ("display_name", Value::from(w.display_name.as_str())),
             ("app_id", Value::from(w.app_id.as_str())),
             ("title", Value::from(w.title.as_str())),
+            ("icon", Value::from(w.icon.as_str())),
         ]),
         None => Value::Null,
     };
@@ -481,7 +485,7 @@ mod tests {
 
     #[test]
     fn workspace_activated_unfocused_does_not_clear_global_focus() {
-        let app_names = AppNameResolver::load();
+        let apps = AppResolver::load();
         let mut workspaces = vec![
             WorkspaceInfo {
                 id: 1,
@@ -506,7 +510,7 @@ mod tests {
             &mut workspaces,
             &mut focused_window,
             &mut win_map,
-            &app_names,
+            &apps,
         );
 
         assert!(refresh);
@@ -516,7 +520,7 @@ mod tests {
 
     #[test]
     fn workspace_activated_focused_switches_global_focus() {
-        let app_names = AppNameResolver::load();
+        let apps = AppResolver::load();
         let mut workspaces = vec![
             WorkspaceInfo {
                 id: 1,
@@ -541,7 +545,7 @@ mod tests {
             &mut workspaces,
             &mut focused_window,
             &mut win_map,
-            &app_names,
+            &apps,
         );
 
         assert!(refresh);

@@ -21,6 +21,7 @@ use tracing::{info, warn};
 
 use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
 use crate::config::Config;
+use crate::services::applications::{AppLookup, AppResolver, ResolvedApp};
 use crate::session_env;
 use crate::util::{json_map, unix_now_ms};
 
@@ -40,13 +41,13 @@ fn notification_server_name() -> &'static str {
 // ---------------------------------------------------------------------------
 
 /// Spawn the `notification` service and return its [`ServiceHandle`].
-pub fn spawn(_cfg: &Config) -> ServiceHandle {
+pub fn spawn(_cfg: &Config, apps: Arc<AppResolver>) -> ServiceHandle {
     let initial = empty_snapshot();
     let (state_tx, state_rx) = watch::channel(initial);
     let (request_tx, request_rx) = mpsc::channel(16);
     let (events_tx, _) = broadcast::channel(64);
 
-    tokio::spawn(run(request_rx, state_tx.clone(), events_tx.clone()));
+    tokio::spawn(run(request_rx, state_tx.clone(), events_tx.clone(), apps));
 
     ServiceHandle {
         request_tx,
@@ -105,6 +106,7 @@ async fn run(
     mut request_rx: mpsc::Receiver<ServiceRequest>,
     state_tx: watch::Sender<Value>,
     events_tx: broadcast::Sender<Value>,
+    apps: Arc<AppResolver>,
 ) {
     info!("notification service started");
 
@@ -112,7 +114,7 @@ async fn run(
 
     // Start the D-Bus server
     let dbus_conn =
-        match start_dbus_server(shared.clone(), state_tx.clone(), events_tx.clone()).await {
+        match start_dbus_server(shared.clone(), state_tx.clone(), events_tx.clone(), apps).await {
             Ok(conn) => Some(conn),
             Err(e) => {
                 warn!(error = %e, "notification D-Bus server failed to start");
@@ -137,6 +139,7 @@ struct NotifServer {
     shared: Arc<RwLock<NotifState>>,
     state_tx: watch::Sender<Value>,
     events_tx: broadcast::Sender<Value>,
+    apps: Arc<AppResolver>,
 }
 
 #[zbus::interface(name = "org.freedesktop.Notifications")]
@@ -159,10 +162,16 @@ impl NotifServer {
         actions: Vec<String>,
         hints: HashMap<String, zbus::zvariant::Value<'_>>,
         _expire_timeout: i32,
+        #[zbus(header)] header: zbus::message::Header<'_>,
+        #[zbus(connection)] connection: &zbus::Connection,
     ) -> u32 {
         let urgency = parse_urgency(&hints);
         let parsed_actions = parse_actions(&actions);
-        let (app_name, summary) = normalize_notification_text(app_name, summary);
+        let resolved =
+            resolve_notification_app(&self.apps, connection, &header, app_name, app_icon, &hints)
+                .await;
+        let (app_name, summary) =
+            normalize_notification_text(app_name, summary, resolved.display_name.as_str());
 
         let mut state = self.shared.write().await;
         let id = if replaces_id > 0 {
@@ -170,7 +179,7 @@ impl NotifServer {
                 app_name: &app_name,
                 summary: &summary,
                 body,
-                icon: app_icon,
+                icon: resolved.icon.as_str(),
                 urgency: &urgency,
                 actions: parsed_actions,
             };
@@ -181,7 +190,7 @@ impl NotifServer {
                 app_name: &app_name,
                 summary: &summary,
                 body,
-                icon: app_icon,
+                icon: resolved.icon.as_str(),
                 urgency: &urgency,
                 actions: parsed_actions,
             };
@@ -244,11 +253,13 @@ async fn start_dbus_server(
     shared: Arc<RwLock<NotifState>>,
     state_tx: watch::Sender<Value>,
     events_tx: broadcast::Sender<Value>,
+    apps: Arc<AppResolver>,
 ) -> Result<zbus::Connection, NotifError> {
     let server = NotifServer {
         shared,
         state_tx,
         events_tx,
+        apps,
     };
 
     let mut last_err = None;
@@ -376,9 +387,18 @@ fn parse_actions(actions: &[String]) -> Vec<NotifAction> {
         .collect()
 }
 
-fn normalize_notification_text(app_name: &str, summary: &str) -> (String, String) {
+fn normalize_notification_text(
+    app_name: &str,
+    summary: &str,
+    resolved_name: &str,
+) -> (String, String) {
     let app_name = app_name.trim();
     let summary = summary.trim();
+    let resolved_name = resolved_name.trim();
+
+    if !resolved_name.is_empty() {
+        return (resolved_name.to_string(), summary.to_string());
+    }
 
     if !app_name.is_empty() {
         return (app_name.to_string(), summary.to_string());
@@ -389,6 +409,87 @@ fn normalize_notification_text(app_name: &str, summary: &str) -> (String, String
     }
 
     (String::new(), String::new())
+}
+
+async fn resolve_notification_app(
+    apps: &AppResolver,
+    connection: &zbus::Connection,
+    header: &zbus::message::Header<'_>,
+    app_name: &str,
+    app_icon: &str,
+    hints: &HashMap<String, zbus::zvariant::Value<'_>>,
+) -> ResolvedApp {
+    let process_id = hint_u32(hints, "sender-pid").or_else(|| hint_u32(hints, "x-kde-app-pid"));
+    let process_id = match process_id {
+        Some(process_id) => Some(process_id),
+        None => sender_process_id(connection, header).await,
+    };
+
+    let icon_hint = [
+        hint_string(hints, "image-path"),
+        hint_string(hints, "image_path"),
+        non_empty(app_icon),
+    ]
+    .into_iter()
+    .flatten()
+    .next();
+
+    apps.resolve(&AppLookup {
+        icon_hint,
+        desktop_entry: hint_string(hints, "desktop-entry"),
+        app_name: non_empty(app_name),
+        process_id,
+        ..AppLookup::default()
+    })
+}
+
+async fn sender_process_id(
+    connection: &zbus::Connection,
+    header: &zbus::message::Header<'_>,
+) -> Option<u32> {
+    let sender = header.sender()?.to_owned();
+    let proxy = zbus::fdo::DBusProxy::new(connection).await.ok()?;
+    proxy
+        .get_connection_unix_process_id(sender.into())
+        .await
+        .ok()
+}
+
+fn hint_string(hints: &HashMap<String, zbus::zvariant::Value<'_>>, key: &str) -> Option<String> {
+    match hints.get(key)? {
+        zbus::zvariant::Value::Str(value) => non_empty(value.as_str()),
+        zbus::zvariant::Value::Value(value) => match value.as_ref() {
+            zbus::zvariant::Value::Str(value) => non_empty(value.as_str()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn hint_u32(hints: &HashMap<String, zbus::zvariant::Value<'_>>, key: &str) -> Option<u32> {
+    match hints.get(key)? {
+        zbus::zvariant::Value::U32(value) => Some(*value),
+        zbus::zvariant::Value::I32(value) => (*value >= 0).then_some(*value as u32),
+        zbus::zvariant::Value::U64(value) => u32::try_from(*value).ok(),
+        zbus::zvariant::Value::I64(value) => u32::try_from(*value).ok(),
+        zbus::zvariant::Value::Value(value) => match value.as_ref() {
+            zbus::zvariant::Value::U32(value) => Some(*value),
+            zbus::zvariant::Value::I32(value) => (*value >= 0).then_some(*value as u32),
+            zbus::zvariant::Value::U64(value) => u32::try_from(*value).ok(),
+            zbus::zvariant::Value::I64(value) => u32::try_from(*value).ok(),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn non_empty(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 // ---------------------------------------------------------------------------

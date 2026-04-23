@@ -51,6 +51,7 @@ Singleton {
             app_name: stream && stream.app_name ? stream.app_name : "",
             binary: stream && stream.binary ? stream.binary : "",
             title: stream && stream.title ? stream.title : "",
+            icon: stream && stream.icon ? stream.icon : "",
             volume_pct: stream && stream.volume_pct !== undefined ? stream.volume_pct : 0,
             muted: stream && stream.muted === true
         };

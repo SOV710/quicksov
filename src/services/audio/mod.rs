@@ -9,6 +9,7 @@
 //! `wpctl`, which is WirePlumber's supported control surface for PipeWire.
 
 use std::process::{Command, Output};
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::Value;
@@ -18,6 +19,7 @@ use tracing::{info, warn};
 
 use crate::bus::{ServiceError, ServiceHandle, ServiceRequest};
 use crate::config::Config;
+use crate::services::applications::{AppLookup, AppResolver};
 use crate::util::{json_map, prettify_label};
 
 const DEFAULT_AUDIO_BACKEND: &str = "pipewire";
@@ -25,13 +27,13 @@ const AUDIO_POLL_INTERVAL_MS: u64 = 1000;
 const MAX_VOLUME_PERCENT: u64 = 150;
 
 /// Spawn the `audio` service and return its [`ServiceHandle`].
-pub fn spawn(cfg: &Config) -> ServiceHandle {
+pub fn spawn(cfg: &Config, apps: Arc<AppResolver>) -> ServiceHandle {
     let initial = unavailable_snapshot();
     let (state_tx, state_rx) = watch::channel(initial);
     let (request_tx, request_rx) = mpsc::channel(16);
     let audio_cfg = AudioCfg::from_config(cfg);
 
-    tokio::spawn(run(request_rx, state_tx, audio_cfg));
+    tokio::spawn(run(request_rx, state_tx, audio_cfg, apps));
 
     ServiceHandle {
         request_tx,
@@ -74,6 +76,7 @@ struct AudioStream {
     app_name: String,
     binary: String,
     title: String,
+    icon: String,
     volume_pct: i64,
     muted: bool,
 }
@@ -117,6 +120,7 @@ async fn run(
     mut request_rx: mpsc::Receiver<ServiceRequest>,
     state_tx: watch::Sender<Value>,
     audio_cfg: AudioCfg,
+    apps: Arc<AppResolver>,
 ) {
     info!(backend = %audio_cfg.backend, "audio service started");
 
@@ -126,7 +130,13 @@ async fn run(
     let mut last_snapshot = unavailable_snapshot();
     let mut warned_refresh_failure = false;
 
-    refresh_and_publish(&state_tx, &mut last_snapshot, &mut warned_refresh_failure).await;
+    refresh_and_publish(
+        &state_tx,
+        &mut last_snapshot,
+        &mut warned_refresh_failure,
+        &apps,
+    )
+    .await;
 
     loop {
         tokio::select! {
@@ -135,6 +145,7 @@ async fn run(
                     &state_tx,
                     &mut last_snapshot,
                     &mut warned_refresh_failure,
+                    &apps,
                 ).await;
             }
             req = request_rx.recv() => {
@@ -144,6 +155,7 @@ async fn run(
                     &state_tx,
                     &mut last_snapshot,
                     &mut warned_refresh_failure,
+                    &apps,
                 ).await;
             }
         }
@@ -156,8 +168,9 @@ async fn refresh_and_publish(
     state_tx: &watch::Sender<Value>,
     last_snapshot: &mut Value,
     warned_refresh_failure: &mut bool,
+    apps: &Arc<AppResolver>,
 ) {
-    match refresh_snapshot().await {
+    match refresh_snapshot(Arc::clone(apps)).await {
         Ok(snapshot) => {
             let next = snapshot_to_value(&snapshot);
             if next != *last_snapshot {
@@ -208,18 +221,19 @@ fn stream_to_value(stream: &AudioStream) -> Value {
         ("app_name", Value::from(stream.app_name.as_str())),
         ("binary", Value::from(stream.binary.as_str())),
         ("title", Value::from(stream.title.as_str())),
+        ("icon", Value::from(stream.icon.as_str())),
         ("volume_pct", Value::from(stream.volume_pct)),
         ("muted", Value::Bool(stream.muted)),
     ])
 }
 
-async fn refresh_snapshot() -> Result<AudioSnapshot, AudioError> {
-    tokio::task::spawn_blocking(refresh_snapshot_blocking)
+async fn refresh_snapshot(apps: Arc<AppResolver>) -> Result<AudioSnapshot, AudioError> {
+    tokio::task::spawn_blocking(move || refresh_snapshot_blocking(&apps))
         .await
         .map_err(|err| AudioError::Task(err.to_string()))?
 }
 
-fn refresh_snapshot_blocking() -> Result<AudioSnapshot, AudioError> {
+fn refresh_snapshot_blocking(apps: &AppResolver) -> Result<AudioSnapshot, AudioError> {
     let output = run_command("pw-dump", &[])?;
     let objects: Vec<Value> =
         serde_json::from_slice(&output.stdout).map_err(|err| AudioError::Json(err.to_string()))?;
@@ -233,7 +247,7 @@ fn refresh_snapshot_blocking() -> Result<AudioSnapshot, AudioError> {
 
     let mut sinks = collect_audio_nodes(&objects, "Audio/Sink");
     let mut sources = collect_audio_nodes(&objects, "Audio/Source");
-    let mut streams = collect_audio_streams(&objects);
+    let mut streams = collect_audio_streams(&objects, apps);
 
     sort_nodes(&mut sinks, &default_sink);
     sort_nodes(&mut sources, &default_source);
@@ -310,11 +324,14 @@ fn parse_audio_node(object: &Value, media_class: &str) -> Option<AudioNode> {
     })
 }
 
-fn collect_audio_streams(objects: &[Value]) -> Vec<AudioStream> {
-    objects.iter().filter_map(parse_audio_stream).collect()
+fn collect_audio_streams(objects: &[Value], apps: &AppResolver) -> Vec<AudioStream> {
+    objects
+        .iter()
+        .filter_map(|object| parse_audio_stream(object, apps))
+        .collect()
 }
 
-fn parse_audio_stream(object: &Value) -> Option<AudioStream> {
+fn parse_audio_stream(object: &Value, apps: &AppResolver) -> Option<AudioStream> {
     let props = info_props(object)?;
     if string_prop(props, "media.class")? != "Stream/Output/Audio" {
         return None;
@@ -325,13 +342,40 @@ fn parse_audio_stream(object: &Value) -> Option<AudioStream> {
         .unwrap_or("")
         .to_string();
     let title = string_prop(props, "media.name").unwrap_or("").to_string();
+    let resolved = apps.resolve(&AppLookup {
+        icon_hint: first_string_prop(
+            props,
+            &[
+                "application.icon-name",
+                "window.icon-name",
+                "media.icon-name",
+            ],
+        ),
+        app_id: first_string_prop(
+            props,
+            &["application.id", "application.process.application.id"],
+        ),
+        app_name: string_prop(props, "application.name").map(ToOwned::to_owned),
+        binary: if binary.is_empty() {
+            None
+        } else {
+            Some(binary.clone())
+        },
+        process_id: u32_prop(props, "application.process.id"),
+        ..AppLookup::default()
+    });
     let state = node_state(object).unwrap_or_default();
 
     Some(AudioStream {
         id,
-        app_name: preferred_stream_name(props),
+        app_name: if resolved.display_name.is_empty() {
+            preferred_stream_name(props)
+        } else {
+            resolved.display_name
+        },
         binary,
         title,
+        icon: resolved.icon,
         volume_pct: volume_pct(state.volume),
         muted: state.muted,
     })
@@ -379,8 +423,22 @@ fn string_prop<'a>(props: &'a serde_json::Map<String, Value>, key: &str) -> Opti
     props.get(key)?.as_str()
 }
 
+fn first_string_prop(props: &serde_json::Map<String, Value>, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| string_prop(props, key))
+        .map(ToOwned::to_owned)
+}
+
 fn object_id(object: &Value) -> Option<u32> {
     object.get("id")?.as_u64().map(|id| id as u32)
+}
+
+fn u32_prop(props: &serde_json::Map<String, Value>, key: &str) -> Option<u32> {
+    match props.get(key)? {
+        Value::Number(value) => value.as_u64().map(|value| value as u32),
+        Value::String(value) => value.parse().ok(),
+        _ => None,
+    }
 }
 
 fn node_state(object: &Value) -> Option<NodeState> {

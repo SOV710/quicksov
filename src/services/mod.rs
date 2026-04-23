@@ -3,15 +3,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Instant;
 
 use crate::bus::ServiceHandle;
 use crate::config::Config;
 use crate::wallpaper_contract::WALLPAPER_TOPIC;
 
+pub mod applications;
 pub mod audio;
 pub mod battery;
 pub mod bluetooth;
+pub mod icon;
 pub mod meta;
 pub mod mpris;
 pub mod network;
@@ -28,6 +31,12 @@ pub mod weather;
 /// information (currently `meta`).
 pub async fn start_services(cfg: &Config, started_at: Instant) -> HashMap<String, ServiceHandle> {
     let mut map: HashMap<String, ServiceHandle> = HashMap::new();
+    let needs_app_resolver = cfg
+        .services
+        .enabled
+        .iter()
+        .any(|topic| matches!(topic.as_str(), "audio" | "icon" | "niri" | "notification"));
+    let apps = needs_app_resolver.then(|| Arc::new(applications::AppResolver::load()));
 
     for topic in &cfg.services.enabled {
         match topic.as_str() {
@@ -44,16 +53,31 @@ pub async fn start_services(cfg: &Config, started_at: Instant) -> HashMap<String
                 map.insert("bluetooth".into(), bluetooth::spawn(cfg));
             }
             "audio" => {
-                map.insert("audio".into(), audio::spawn(cfg));
+                map.insert(
+                    "audio".into(),
+                    audio::spawn(cfg, Arc::clone(apps.as_ref().expect("app resolver"))),
+                );
             }
             "mpris" => {
                 map.insert("mpris".into(), mpris::spawn(cfg));
             }
             "notification" => {
-                map.insert("notification".into(), notification::spawn(cfg));
+                map.insert(
+                    "notification".into(),
+                    notification::spawn(cfg, Arc::clone(apps.as_ref().expect("app resolver"))),
+                );
             }
             "niri" => {
-                map.insert("niri".into(), niri::spawn(cfg));
+                map.insert(
+                    "niri".into(),
+                    niri::spawn(cfg, Arc::clone(apps.as_ref().expect("app resolver"))),
+                );
+            }
+            "icon" => {
+                map.insert(
+                    "icon".into(),
+                    icon::spawn(cfg, Arc::clone(apps.as_ref().expect("app resolver"))),
+                );
             }
             "weather" => {
                 map.insert("weather".into(), weather::spawn(cfg));
