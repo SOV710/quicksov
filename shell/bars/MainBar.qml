@@ -15,6 +15,79 @@ Scope {
         model: Quickshell.screens
 
         PanelWindow {
+            id: dismissWindow
+
+            required property var modelData
+            screen: modelData
+            visible: bar._anyPopupOpen
+
+            anchors.top: true
+            anchors.left: true
+            anchors.right: true
+            anchors.bottom: true
+
+            exclusionMode: ExclusionMode.Ignore
+            exclusiveZone: 0
+            aboveWindows: true
+            focusable: false
+            color: "transparent"
+            mask: Region {
+                intersection: Intersection.Xor
+
+                Region {
+                    item: dismissBarHole
+                    radius: Theme.barRadius
+                }
+
+                Region {
+                    item: clockPopup.popupVisible ? dismissClockHole : null
+                    radius: clockPopup.shellRadius
+                }
+
+                Region {
+                    item: statusDock.shellVisible ? dismissStatusDockHole : null
+                    topLeftRadius: 0
+                    topRightRadius: 0
+                    bottomLeftRadius: Theme.statusDockLowerRadius
+                    bottomRightRadius: Theme.statusDockLowerRadius
+                }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.AllButtons
+                onClicked: bar.closeAllPopups()
+            }
+
+            Item {
+                id: dismissBarHole
+                x: Theme.barOuterMargin
+                y: Theme.barOuterMargin
+                width: dismissWindow.width - Theme.barOuterMargin * 2
+                height: Theme.barHeight
+                visible: false
+            }
+
+            Item {
+                id: dismissClockHole
+                x: Theme.barOuterMargin + clockPopup.x
+                y: Theme.barOuterMargin + clockPopup.y
+                width: clockPopup.width
+                height: clockPopup.height
+                visible: false
+            }
+
+            Item {
+                id: dismissStatusDockHole
+                x: Theme.barOuterMargin + statusDock.x
+                y: Theme.barOuterMargin + statusDock.y
+                width: statusDock.width
+                height: statusDock.height
+                visible: false
+            }
+        }
+
+        PanelWindow {
             id: bar
 
             required property var modelData
