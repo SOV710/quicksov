@@ -25,7 +25,9 @@ Item {
     readonly property color accentColor: _accentFor(notif ? notif.urgency : "normal")
     readonly property real dismissThreshold: Math.max(96, width * 0.35)
     readonly property string detailsText: notif && typeof notif.body === "string" ? notif.body : ""
+    readonly property real contentColumnX: root.iconColumnWidth + Theme.spaceMd
     readonly property string iconSource: notif && typeof notif.icon === "string" ? notif.icon : ""
+    readonly property int iconColumnWidth: 52
     readonly property string titleText: _titleFor(notif)
 
     property bool dismissing: false
@@ -199,8 +201,8 @@ Item {
 
                     Rectangle {
                         Layout.alignment: Qt.AlignTop
-                        Layout.preferredHeight: 52
-                        Layout.preferredWidth: 52
+                        Layout.preferredHeight: root.iconColumnWidth
+                        Layout.preferredWidth: root.iconColumnWidth
                         radius: Theme.radiusMd
                         color: Theme.overlay(Theme.chromeSubtleFillMuted, root.accentColor, 0.22)
                         border.color: Theme.withAlpha(root.accentColor, 0.26)
@@ -287,33 +289,47 @@ Item {
                 }
             }
 
-            Flow {
+            Item {
                 visible: root.expanded
                 width: parent.width
-                spacing: Theme.spaceXs
+                implicitHeight: actionsContainer.implicitHeight
 
-                Repeater {
-                    model: root.actions
+                Item {
+                    id: actionsContainer
 
-                    delegate: ActionChip {
-                        required property var modelData
+                    x: root.contentColumnX
+                    width: Math.max(0, parent.width - root.contentColumnX)
+                    implicitHeight: actionsRow.implicitHeight
 
-                        accentColor: root.accentColor
-                        label: modelData.label || ""
-                        onClicked: {
-                            if (root.notif)
-                                Notification.invokeAction(root.notif.id, modelData.id);
+                    Row {
+                        id: actionsRow
+
+                        spacing: Theme.spaceXs
+
+                        Repeater {
+                            model: root.actions
+
+                            delegate: ActionChip {
+                                required property var modelData
+
+                                accentColor: root.accentColor
+                                label: modelData.label || ""
+                                onClicked: {
+                                    if (root.notif)
+                                        Notification.invokeAction(root.notif.id, modelData.id);
+                                }
+                            }
                         }
-                    }
-                }
 
-                ActionChip {
-                    accentColor: Theme.accentTeal
-                    emphasized: true
-                    label: "I got it"
-                    onClicked: {
-                        if (root.notif)
-                            root.dismissRequested(root.notif.id);
+                        ActionChip {
+                            accentColor: Theme.accentTeal
+                            emphasized: true
+                            label: "I got it"
+                            onClicked: {
+                                if (root.notif)
+                                    root.dismissRequested(root.notif.id);
+                            }
+                        }
                     }
                 }
             }
