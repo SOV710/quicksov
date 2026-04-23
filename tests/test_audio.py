@@ -20,7 +20,7 @@ from _qsov_testlib import (
 
 REQUIRED = ["default_sink", "default_source", "sinks", "sources", "streams"]
 NODE_REQUIRED = ["id", "name", "description", "volume_pct", "muted"]
-STREAM_REQUIRED = ["id", "app_name", "binary", "title", "volume_pct", "muted"]
+STREAM_REQUIRED = ["id", "app_name", "binary", "title", "icon", "volume_pct", "muted"]
 
 
 def _read_snapshot(h: Harness, socket_path: str, timeout: float) -> dict[str, Any] | None:

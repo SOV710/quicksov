@@ -341,6 +341,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
           "app_name":   { "type": "string" },
           "binary":     { "type": "string" },
           "title":      { "type": "string" },
+          "icon":       { "type": "string", "description": "best-effort local icon path" },
           "volume_pct": { "type": "integer", "minimum": 0, "maximum": 150 },
           "muted":      { "type": "boolean" }
         }
@@ -418,7 +419,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
           "app_name":  { "type": "string" },
           "summary":   { "type": "string" },
           "body":      { "type": "string" },
-          "icon":      { "type": "string" },
+          "icon":      { "type": "string", "description": "best-effort local icon path" },
           "urgency":   { "type": "string", "enum": ["low","normal","critical"] },
           "timestamp": { "type": "integer", "description": "unix ms" },
           "actions":   { "type": "array", "items": { "type": "object", "properties": { "id": { "type":"string" }, "label": { "type":"string" } } } }
@@ -443,7 +444,46 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 
 ---
 
-### 5.8 `niri`
+### 5.8 `icon`
+
+**State Snapshot**:
+
+```json
+{
+  "type": "object",
+  "required": ["availability","desktop_entries","icon_entries"],
+  "properties": {
+    "availability":    { "type": "string", "enum": ["ready"] },
+    "desktop_entries": { "type": "integer", "minimum": 0 },
+    "icon_entries":    { "type": "integer", "minimum": 0 }
+  }
+}
+```
+
+**Actions**:
+- `resolve` — payload `{ icon_hint?: string, desktop_entry?: string, app_id?: string, wm_class?: string, app_name?: string, binary?: string, process_id?: int }`
+
+**`resolve` response**:
+
+```json
+{
+  "type": "object",
+  "required": ["display_name","icon","icon_name","desktop_entry","match_source"],
+  "properties": {
+    "display_name":  { "type": "string" },
+    "icon":          { "type": "string", "description": "best-effort local icon path" },
+    "icon_name":     { "type": "string" },
+    "desktop_entry": { "type": "string" },
+    "match_source":  { "type": "string", "description": "which fallback branch matched" }
+  }
+}
+```
+
+**后端**: daemon 内建应用元数据解析器；综合 `.desktop`、icon theme / pixmaps、通知 / PipeWire hint，以及 `/proc/<pid>` 信息做 best-effort 反查。
+
+---
+
+### 5.9 `niri`
 
 **State Snapshot**:
 
@@ -470,7 +510,8 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
         "id":           { "type": "integer" },
         "display_name": { "type": "string" },
         "app_id":       { "type": "string" },
-        "title":        { "type": "string" }
+        "title":        { "type": "string" },
+        "icon":         { "type": "string", "description": "best-effort local icon path" }
       }
     }
   }
@@ -485,7 +526,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 
 ---
 
-### 5.9 `weather`
+### 5.10 `weather`
 
 **State Snapshot**:
 
@@ -557,7 +598,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 
 ---
 
-### 5.10 `wallpaper`
+### 5.11 `wallpaper`
 
 **State Snapshot**:
 
@@ -741,7 +782,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 
 ---
 
-### 5.11 `theme`
+### 5.12 `theme`
 
 **State Snapshot**: 整个 `design-tokens.toml` 解析后的 JSON 对象。Schema 由 `config/design-tokens.toml` 的结构定义，此处不复述。
 
@@ -749,7 +790,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 
 ---
 
-### 5.12 `meta`
+### 5.13 `meta`
 
 **State Snapshot**:
 

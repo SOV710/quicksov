@@ -446,6 +446,7 @@
                 "app_name": { "type": "string" },
                 "binary": { "type": "string" },
                 "title": { "type": "string" },
+                "icon": { "type": "string" },
                 "volume_pct": {
                   "type": "integer",
                   "minimum": 0,
@@ -683,6 +684,55 @@
       "backend": "daemon implements org.freedesktop.Notifications D-Bus server"
     },
 
+    "icon": {
+      "state_snapshot": {
+        "type": "object",
+        "required": ["availability", "desktop_entries", "icon_entries"],
+        "properties": {
+          "availability": {
+            "type": "string",
+            "enum": ["ready"]
+          },
+          "desktop_entries": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "icon_entries": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "actions": {
+        "resolve": {
+          "request": {
+            "type": "object",
+            "properties": {
+              "icon_hint": { "type": "string" },
+              "desktop_entry": { "type": "string" },
+              "app_id": { "type": "string" },
+              "wm_class": { "type": "string" },
+              "app_name": { "type": "string" },
+              "binary": { "type": "string" },
+              "process_id": { "type": "integer" }
+            }
+          },
+          "response": {
+            "type": "object",
+            "required": ["display_name", "icon", "icon_name", "desktop_entry", "match_source"],
+            "properties": {
+              "display_name": { "type": "string" },
+              "icon": { "type": "string" },
+              "icon_name": { "type": "string" },
+              "desktop_entry": { "type": "string" },
+              "match_source": { "type": "string" }
+            }
+          }
+        }
+      },
+      "backend": "desktop entries + icon theme/pixmaps + /proc process fallback"
+    },
+
     "niri": {
       "state_snapshot": {
         "type": "object",
@@ -706,7 +756,8 @@
               "id": { "type": "integer" },
               "display_name": { "type": "string" },
               "app_id": { "type": "string" },
-              "title": { "type": "string" }
+              "title": { "type": "string" },
+              "icon": { "type": "string" }
             }
           }
         }

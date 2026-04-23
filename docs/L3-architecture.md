@@ -172,6 +172,7 @@ server → client:  HelloAck  { server_version, capabilities, session_id }
 | `audio` | PipeWire sink/source、音量、静音 |
 | `mpris` | MPRIS 播放器发现与控制 |
 | `notification` | Freedesktop notification server |
+| `icon` | 应用元数据 / icon 反查（desktop entry + icon theme + `/proc` fallback） |
 | `niri` | Niri workspace、window、action |
 | `weather` | Open-Meteo 天气 scheduler / worker 与快照缓存 |
 | `theme` | design-tokens.toml 的内容，启动时推送，热重载时更新 |

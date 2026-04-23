@@ -19,7 +19,7 @@ from _qsov_testlib import (
 
 REQUIRED = ["workspaces", "focused_window"]
 WORKSPACE_REQUIRED = ["idx", "name", "output", "focused", "windows"]
-WINDOW_REQUIRED = ["id", "display_name", "app_id", "title"]
+WINDOW_REQUIRED = ["id", "display_name", "app_id", "title", "icon"]
 
 
 def run() -> int:
