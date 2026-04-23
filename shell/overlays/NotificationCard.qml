@@ -159,6 +159,7 @@ Item {
 
                 width: parent.width
                 implicitHeight: summaryRow.implicitHeight
+                property bool tapBlockedForCurrentGesture: false
 
                 HoverHandler {
                     cursorShape: root.motionLocked ? Qt.ArrowCursor : Qt.PointingHandCursor
@@ -166,7 +167,13 @@ Item {
 
                 TapHandler {
                     enabled: !root.motionLocked && !root.dismissing
+                    onPressedChanged: {
+                        if (pressed)
+                            summaryArea.tapBlockedForCurrentGesture = false;
+                    }
                     onTapped: {
+                        if (summaryArea.tapBlockedForCurrentGesture)
+                            return;
                         if (root.notif)
                             root.toggleExpandedRequested(root.notif.id);
                     }
@@ -182,6 +189,7 @@ Item {
 
                     onActiveChanged: {
                         if (active) {
+                            summaryArea.tapBlockedForCurrentGesture = true;
                             root.dragStartOffset = root.swipeOffset;
                             if (root.notif) {
                                 root.dragStarted(root.notif.id, root.cardIndex);
