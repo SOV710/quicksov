@@ -8,21 +8,11 @@ import ".."
 import "../components"
 import "../services"
 
-Rectangle {
+Item {
     id: root
 
-    readonly property Item shellItem: root
-    readonly property int shellRadius: Theme.radiusXl
-
-    width: Theme.bluetoothPanelWidth
-    implicitHeight: height
-    height: Math.min(contentCol.implicitHeight + Theme.spaceMd * 2, Theme.bluetoothPanelMaxHeight)
-    radius: Theme.radiusXl
-    color: Theme.popupShellFill
-    border.color: Theme.popupShellBorder
-    border.width: 1
-    opacity: visible ? 1 : 0
-    clip: true
+    width: parent ? parent.width : Theme.bluetoothPanelWidth
+    implicitHeight: Math.min(contentCol.implicitHeight + Theme.spaceMd * 2, Theme.bluetoothPanelMaxHeight)
 
     readonly property bool _showLoadingState: !Bluetooth.ready
     readonly property bool _showUnavailableState: Bluetooth.ready && !Bluetooth.btAvailable
@@ -78,15 +68,6 @@ Rectangle {
         } else {
             Bluetooth.pairDevice(device.address);
         }
-    }
-
-    Behavior on opacity { NumberAnimation { duration: Theme.motionFast } }
-
-    MouseArea {
-        anchors.fill: parent
-        acceptedButtons: Qt.AllButtons
-        onClicked: function(mouse) { mouse.accepted = true; }
-        onPressed: function(mouse) { mouse.accepted = true; }
     }
 
     Column {

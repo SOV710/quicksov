@@ -8,24 +8,14 @@ import ".."
 import "../components"
 import "../services"
 
-Rectangle {
+Item {
     id: root
 
-    readonly property Item shellItem: root
-    readonly property int shellRadius: Theme.radiusXl
-
-    width: Theme.volumePanelWidth
-    implicitHeight: height
-    height: Math.min(
+    width: parent ? parent.width : Theme.volumePanelWidth
+    implicitHeight: Math.min(
         contentCol.implicitHeight + Theme.spaceMd * 2,
         Theme.volumePanelMaxHeight
     )
-    radius: Theme.radiusXl
-    color: Theme.popupShellFill
-    border.color: Theme.popupShellBorder
-    border.width: 1
-    opacity: visible ? 1 : 0
-    clip: true
 
     readonly property bool _hasAudio: Audio.ready && Audio.defaultSink !== null
     readonly property bool _hasMultipleSinks: Audio.sinks.length > 1
@@ -51,15 +41,6 @@ Rectangle {
         if (!stream || !stream.title) return "";
         if (stream.title === stream.app_name) return "";
         return stream.title;
-    }
-
-    Behavior on opacity { NumberAnimation { duration: Theme.motionFast } }
-
-    MouseArea {
-        anchors.fill: parent
-        acceptedButtons: Qt.AllButtons
-        onClicked: function(mouse) { mouse.accepted = true; }
-        onPressed: function(mouse) { mouse.accepted = true; }
     }
 
     Column {

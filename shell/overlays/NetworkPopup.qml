@@ -8,21 +8,11 @@ import ".."
 import "../components"
 import "../services"
 
-Rectangle {
+Item {
     id: root
 
-    readonly property Item shellItem: root
-    readonly property int shellRadius: Theme.radiusXl
-
-    width: Theme.networkPanelWidth
-    implicitHeight: height
-    height: Math.min(contentCol.implicitHeight + Theme.spaceMd * 2, Theme.networkPanelMaxHeight)
-    radius: Theme.radiusXl
-    color: Theme.popupShellFill
-    border.color: Theme.popupShellBorder
-    border.width: 1
-    opacity: visible ? 1 : 0
-    clip: true
+    width: parent ? parent.width : Theme.networkPanelWidth
+    implicitHeight: Math.min(contentCol.implicitHeight + Theme.spaceMd * 2, Theme.networkPanelMaxHeight)
 
     property string expandedSsid: ""
     property string passwordText: ""
@@ -131,15 +121,6 @@ Rectangle {
         } else {
             root._expandPassword(null);
         }
-    }
-
-    Behavior on opacity { NumberAnimation { duration: Theme.motionFast } }
-
-    MouseArea {
-        anchors.fill: parent
-        acceptedButtons: Qt.AllButtons
-        onClicked: function(mouse) { mouse.accepted = true; }
-        onPressed: function(mouse) { mouse.accepted = true; }
     }
 
     Column {

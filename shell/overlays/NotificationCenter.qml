@@ -8,35 +8,14 @@ import ".."
 import "../components"
 import "../services"
 
-Rectangle {
+Item {
     id: root
 
-    readonly property Item shellItem: root
-    readonly property int shellRadius: Theme.radiusXl
-
-    width: Theme.notificationPanelWidth
-    implicitHeight: height
-    height: Math.min(
+    width: parent ? parent.width : Theme.notificationPanelWidth
+    implicitHeight: Math.min(
         contentCol.implicitHeight + Theme.spaceMd * 2,
         Theme.notificationPanelMaxHeight
     )
-    radius: Theme.radiusXl
-    color: Theme.popupShellFill
-    border.color: Theme.popupShellBorder
-    border.width: 1
-    opacity: visible ? 1 : 0
-    clip: true
-
-    Behavior on opacity { NumberAnimation { duration: Theme.motionFast } }
-
-    // Consume background clicks so they do not fall through to MainBar's
-    // global outside-click dismiss layer.
-    MouseArea {
-        anchors.fill: parent
-        acceptedButtons: Qt.AllButtons
-        onClicked: function(mouse) { mouse.accepted = true; }
-        onPressed: function(mouse) { mouse.accepted = true; }
-    }
 
     // ── helpers ─────────────────────────────────────────────────────────────
     function _timeLabel(ts) {

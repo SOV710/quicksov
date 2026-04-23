@@ -32,20 +32,13 @@ Scope {
             }
 
             readonly property bool _anyPopupOpen: clockPopup.popupVisible
-                                                 || notifCenter.visible
-                                                 || bluetoothPopup.visible
-                                                 || networkPopup.visible
-                                                 || volumePopup.visible
-                                                 || batteryPopup.visible
+                                                 || statusDock.panelOverflowHeight > 0
 
             property int _popupHeight: {
                 var h = 0;
                 if (clockPopup.popupVisible) h = Math.max(h, clockPopup.implicitHeight + Theme.popupGap);
-                if (notifCenter.visible)     h = Math.max(h, notifCenter.implicitHeight + Theme.popupGap);
-                if (bluetoothPopup.visible)  h = Math.max(h, bluetoothPopup.implicitHeight + Theme.popupGap);
-                if (networkPopup.visible)    h = Math.max(h, networkPopup.implicitHeight + Theme.popupGap);
-                if (volumePopup.visible)     h = Math.max(h, volumePopup.implicitHeight + Theme.popupGap);
-                if (batteryPopup.visible)    h = Math.max(h, batteryPopup.implicitHeight + Theme.popupGap);
+                if (statusDock.panelOverflowHeight > 0)
+                    h = Math.max(h, statusDock.panelOverflowHeight);
                 return h;
             }
 
@@ -69,38 +62,34 @@ Scope {
                 }
 
                 Region {
-                    item: notifCenter.visible ? notifCenter.shellItem : null
-                    radius: notifCenter.shellRadius
-                }
+                    item: statusDock.shellVisible ? statusDock.blurBodyItem : null
+                    topLeftRadius: 0
+                    topRightRadius: 0
+                    bottomLeftRadius: Theme.statusDockLowerRadius
+                    bottomRightRadius: Theme.statusDockLowerRadius
 
-                Region {
-                    item: bluetoothPopup.visible ? bluetoothPopup.shellItem : null
-                    radius: bluetoothPopup.shellRadius
-                }
+                    Region {
+                        item: statusDock.shellVisible ? statusDock.blurLeftNotchItem : null
+                        shape: RegionShape.Ellipse
+                        intersection: Intersection.Subtract
+                    }
 
-                Region {
-                    item: networkPopup.visible ? networkPopup.shellItem : null
-                    radius: networkPopup.shellRadius
-                }
+                    Region {
+                        item: statusDock.shellVisible ? statusDock.blurRightNotchItem : null
+                        shape: RegionShape.Ellipse
+                        intersection: Intersection.Subtract
+                    }
 
-                Region {
-                    item: volumePopup.visible ? volumePopup.shellItem : null
-                    radius: volumePopup.shellRadius
-                }
-
-                Region {
-                    item: batteryPopup.visible ? batteryPopup.shellItem : null
-                    radius: batteryPopup.shellRadius
+                    Region {
+                        item: statusDock.shellVisible ? statusDock.blurNeckItem : null
+                        intersection: Intersection.Combine
+                    }
                 }
             }
 
             function closeAllPopups() {
                 clockPopup.popupVisible = false;
-                notifCenter.visible = false;
-                bluetoothPopup.visible = false;
-                networkPopup.visible = false;
-                volumePopup.visible = false;
-                batteryPopup.visible = false;
+                statusDock.close();
             }
 
             MouseArea {
@@ -187,73 +176,30 @@ Scope {
                         anchors.verticalCenter: parent.verticalCenter
                     }
 
-                    Rectangle {
-                        id: statusCapsule
+                    Item {
+                        id: statusDockSlot
+                        width: statusDock.capsuleWidth
                         height: Theme.statusCapsuleHeight
-                        width: statusRow.implicitWidth + Theme.statusCapsulePadX * 2
-                        radius: Theme.statusCapsuleRadius
-                        color: Theme.statusCapsuleFill
-                        border.color: Theme.statusCapsuleBorder
-                        border.width: 1
                         anchors.verticalCenter: parent.verticalCenter
-
-                        Row {
-                            id: statusRow
-                            anchors.centerIn: parent
-                            spacing: Theme.spaceSm
-
-                            BatteryIndicator {
-                                id: batteryWidget
-                                anchors.verticalCenter: parent.verticalCenter
-                                onClicked: {
-                                    var next = !batteryPopup.visible;
-                                    bar.closeAllPopups();
-                                    batteryPopup.visible = next;
-                                }
-                            }
-
-                            NetworkIndicator {
-                                id: networkWidget
-                                anchors.verticalCenter: parent.verticalCenter
-                                onClicked: {
-                                    var next = !networkPopup.visible;
-                                    bar.closeAllPopups();
-                                    networkPopup.visible = next;
-                                }
-                            }
-
-                            BluetoothIndicator {
-                                id: bluetoothWidget
-                                anchors.verticalCenter: parent.verticalCenter
-                                onClicked: {
-                                    var next = !bluetoothPopup.visible;
-                                    bar.closeAllPopups();
-                                    bluetoothPopup.visible = next;
-                                }
-                            }
-
-                            VolumeIndicator {
-                                id: volumeWidget
-                                anchors.verticalCenter: parent.verticalCenter
-                                onClicked: {
-                                    var next = !volumePopup.visible;
-                                    bar.closeAllPopups();
-                                    volumePopup.visible = next;
-                                }
-                            }
-
-                            NotificationButton {
-                                id: notifWidget
-                                anchors.verticalCenter: parent.verticalCenter
-                                onToggled: {
-                                    var next = !notifCenter.visible;
-                                    bar.closeAllPopups();
-                                    notifCenter.visible = next;
-                                }
-                            }
-                        }
                     }
                 }
+            }
+
+            StatusDockHost {
+                id: statusDock
+                barItem: barRect
+                triggerItem: statusDockSlot
+                availableWidth: Math.max(0, barRect.width - Theme.panelEdgeInset * 2)
+                maxPanelHeight: bar.screen
+                                ? Math.max(
+                                      0,
+                                      Math.min(
+                                          Theme.rightPopupMaxHeight,
+                                          bar.screen.height - Theme.barHeight - Theme.barOuterMargin * 2 - Theme.panelEdgeInset
+                                      )
+                                  )
+                                : Theme.rightPopupMaxHeight
+                onToggleRequested: clockPopup.popupVisible = false
             }
 
             ClockPopup {
@@ -273,70 +219,6 @@ Scope {
                 }
             }
 
-            NotificationCenter {
-                id: notifCenter
-                z: 2
-                visible: false
-                width: Math.min(Theme.notificationPanelWidth, barRect.width - Theme.panelEdgeInset * 2)
-
-                readonly property real _preferredX: barRect.x + barRect.width - Theme.statusPopupRightInset - width
-                readonly property real _minX: barRect.x + Theme.panelEdgeInset
-
-                x: Math.max(_minX, _preferredX)
-                y: barRect.y + barRect.height + Theme.popupGap
-            }
-
-            BluetoothPopup {
-                id: bluetoothPopup
-                z: 2
-                visible: false
-                width: Math.min(Theme.bluetoothPanelWidth, barRect.width - Theme.panelEdgeInset * 2)
-
-                readonly property real _preferredX: barRect.x + barRect.width - Theme.statusPopupRightInset - width
-                readonly property real _minX: barRect.x + Theme.panelEdgeInset
-
-                x: Math.max(_minX, _preferredX)
-                y: barRect.y + barRect.height + Theme.popupGap
-            }
-
-            NetworkPopup {
-                id: networkPopup
-                z: 2
-                visible: false
-                width: Math.min(Theme.networkPanelWidth, barRect.width - Theme.panelEdgeInset * 2)
-
-                readonly property real _preferredX: barRect.x + barRect.width - Theme.statusPopupRightInset - width
-                readonly property real _minX: barRect.x + Theme.panelEdgeInset
-
-                x: Math.max(_minX, _preferredX)
-                y: barRect.y + barRect.height + Theme.popupGap
-            }
-
-            VolumePopup {
-                id: volumePopup
-                z: 2
-                visible: false
-                width: Math.min(Theme.volumePanelWidth, barRect.width - Theme.panelEdgeInset * 2)
-
-                readonly property real _preferredX: barRect.x + barRect.width - Theme.statusPopupRightInset - width
-                readonly property real _minX: barRect.x + Theme.panelEdgeInset
-
-                x: Math.max(_minX, _preferredX)
-                y: barRect.y + barRect.height + Theme.popupGap
-            }
-
-            BatteryPopup {
-                id: batteryPopup
-                z: 2
-                visible: false
-                width: Math.min(Theme.batteryPanelWidth, barRect.width - Theme.panelEdgeInset * 2)
-
-                readonly property real _preferredX: barRect.x + barRect.width - Theme.statusPopupRightInset - width
-                readonly property real _minX: barRect.x + Theme.panelEdgeInset
-
-                x: Math.max(_minX, _preferredX)
-                y: barRect.y + barRect.height + Theme.popupGap
-            }
         }
     }
 }

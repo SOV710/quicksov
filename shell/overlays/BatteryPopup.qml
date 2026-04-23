@@ -8,21 +8,11 @@ import ".."
 import "../components"
 import "../services"
 
-Rectangle {
+Item {
     id: root
 
-    readonly property Item shellItem: root
-    readonly property int shellRadius: Theme.radiusXl
-
-    width: Theme.batteryPanelWidth
-    implicitHeight: height
-    height: Math.min(contentCol.implicitHeight + Theme.spaceMd * 2, Theme.batteryPanelMaxHeight)
-    radius: Theme.radiusXl
-    color: Theme.popupShellFill
-    border.color: Theme.popupShellBorder
-    border.width: 1
-    opacity: visible ? 1 : 0
-    clip: true
+    width: parent ? parent.width : Theme.batteryPanelWidth
+    implicitHeight: Math.min(contentCol.implicitHeight + Theme.spaceMd * 2, Theme.batteryPanelMaxHeight)
 
     readonly property var _profiles: ["power-saver", "balanced", "performance"]
     readonly property color _heroTone: root._heroColor()
@@ -78,15 +68,6 @@ Rectangle {
         if (Battery.profilePending)
             return "Applying " + Battery.profileLabel(Battery.pendingProfile) + "…";
         return "";
-    }
-
-    Behavior on opacity { NumberAnimation { duration: Theme.motionFast } }
-
-    MouseArea {
-        anchors.fill: parent
-        acceptedButtons: Qt.AllButtons
-        onClicked: function(mouse) { mouse.accepted = true; }
-        onPressed: function(mouse) { mouse.accepted = true; }
     }
 
     Column {
