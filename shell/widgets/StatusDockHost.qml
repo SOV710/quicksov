@@ -18,36 +18,20 @@ Item {
     property string activePanel: ""
 
     readonly property bool panelVisible: activePanel !== ""
-    readonly property real capsuleWidth: statusRow.implicitWidth + Theme.statusCapsulePadX * 2
-    readonly property real panelWidth: Math.max(
-        capsuleWidth,
-        Math.min(Theme.rightPopupWidth, availableWidth)
-    )
+    readonly property real panelWidth: Math.min(Theme.rightPopupWidth, availableWidth)
     readonly property real _preferredX: {
-        if (!triggerItem || !root.parent)
-            return 0;
-        var p = triggerItem.mapToItem(root.parent, 0, 0);
-        return p.x + triggerItem.width - root.panelWidth;
+        if (triggerItem && root.parent) {
+            var p = triggerItem.mapToItem(root.parent, 0, 0);
+            return p.x + triggerItem.width - root.panelWidth;
+        }
+        if (barItem)
+            return barItem.x + barItem.width - Theme.statusPopupRightInset - root.panelWidth;
+        return 0;
     }
     readonly property real _minX: barItem ? barItem.x + Theme.panelEdgeInset : 0
     readonly property real _maxX: barItem
                                   ? barItem.x + barItem.width - Theme.panelEdgeInset - root.panelWidth
                                   : _preferredX
-    readonly property real _triggerLocalX: {
-        if (!triggerItem || !root.parent)
-            return root.panelWidth - root.capsuleWidth;
-        var p = triggerItem.mapToItem(root.parent, 0, 0);
-        return p.x - root.x;
-    }
-    readonly property real capsuleX: Math.max(
-        0,
-        Math.min(root.panelWidth - root.capsuleWidth, root._triggerLocalX)
-    )
-    readonly property real leftShoulderWidth: Math.max(0, root.capsuleX)
-    readonly property real rightShoulderWidth: Math.max(
-        0,
-        root.panelWidth - (root.capsuleX + root.capsuleWidth)
-    )
     readonly property color shellFill: Theme.statusDockFill
     readonly property color shellStroke: Theme.statusDockBorder
 
@@ -76,14 +60,13 @@ Item {
     readonly property bool shellVisible: panelOverflowHeight > 0.5
 
     readonly property Item blurBodyItem: blurBody
-    readonly property Item blurNeckItem: blurNeck
-    readonly property Item blurLeftNotchItem: blurLeftNotch
-    readonly property Item blurRightNotchItem: blurRightNotch
+    readonly property Item blurLeftCutoutItem: blurLeftCutout
+    readonly property Item blurRightCutoutItem: blurRightCutout
 
     x: Math.max(root._minX, Math.min(root._maxX, root._preferredX))
-    y: barItem ? barItem.y : 0
+    y: barItem ? barItem.y + barItem.height : 0
     width: panelWidth
-    height: Theme.barHeight + panelOverflowHeight
+    height: panelOverflowHeight
     z: 2
 
     function togglePanel(name) {
@@ -96,8 +79,6 @@ Item {
     }
 
     onPanelBodyHeightChanged: shellCanvas.requestPaint()
-    onCapsuleXChanged: shellCanvas.requestPaint()
-    onCapsuleWidthChanged: shellCanvas.requestPaint()
     onShellFillChanged: shellCanvas.requestPaint()
     onShellStrokeChanged: shellCanvas.requestPaint()
     onWidthChanged: shellCanvas.requestPaint()
@@ -111,10 +92,7 @@ Item {
 
     Item {
         id: panelShell
-        x: 0
-        y: Theme.barHeight
-        width: root.width
-        height: root.panelOverflowHeight
+        anchors.fill: parent
         visible: root.shellVisible
 
         MouseArea {
@@ -134,42 +112,19 @@ Item {
         }
 
         Item {
-            id: blurNeck
-            x: root.capsuleX
-            y: 0
-            width: root.capsuleWidth
-            height: Math.min(Theme.statusDockShoulderDepth, panelShell.height)
-            visible: false
-        }
-
-        Item {
-            id: blurLeftNotch
-            readonly property real _width: root.leftShoulderWidth > 0
-                                           ? Math.max(
-                                                 Theme.statusDockShoulderDepth * 2,
-                                                 root.leftShoulderWidth * 2
-                                             )
-                                           : 0
-
-            x: root.capsuleX - (_width / 2)
+            id: blurLeftCutout
+            x: -Theme.statusDockShoulderDepth
             y: -Theme.statusDockShoulderDepth
-            width: _width
+            width: Theme.statusDockShoulderDepth * 2
             height: Theme.statusDockShoulderDepth * 2
             visible: false
         }
 
         Item {
-            id: blurRightNotch
-            readonly property real _width: root.rightShoulderWidth > 0
-                                           ? Math.max(
-                                                 Theme.statusDockShoulderDepth * 2,
-                                                 root.rightShoulderWidth * 2
-                                             )
-                                           : 0
-
-            x: root.capsuleX + root.capsuleWidth - (_width / 2)
+            id: blurRightCutout
+            x: panelShell.width - Theme.statusDockShoulderDepth
             y: -Theme.statusDockShoulderDepth
-            width: _width
+            width: Theme.statusDockShoulderDepth * 2
             height: Theme.statusDockShoulderDepth * 2
             visible: false
         }
@@ -183,39 +138,19 @@ Item {
             function drawPath(ctx) {
                 var w = width;
                 var h = height;
-                var d = Math.min(Theme.statusDockShoulderDepth, h);
+                var d = Math.min(Theme.statusDockShoulderDepth, Math.max(0, h));
                 var r = Math.min(Theme.statusDockLowerRadius, Math.max(0, h / 2));
-                var nx = root.capsuleX;
-                var nw = root.capsuleWidth;
-                var right = w - (nx + nw);
-
-                var leftCp1X = Math.max(0, nx * 0.48);
-                var rightCp1X = nw + nx + Math.max(6, right * 0.52);
 
                 ctx.beginPath();
-                ctx.moveTo(nx, 0);
-                ctx.lineTo(nx + nw, 0);
-                ctx.bezierCurveTo(
-                    rightCp1X,
-                    0,
-                    w,
-                    d * 0.42,
-                    w,
-                    d
-                );
+                ctx.moveTo(d, 0);
+                ctx.lineTo(w - d, 0);
+                ctx.quadraticCurveTo(w, 0, w, d);
                 ctx.lineTo(w, h - r);
                 ctx.quadraticCurveTo(w, h, w - r, h);
                 ctx.lineTo(r, h);
                 ctx.quadraticCurveTo(0, h, 0, h - r);
                 ctx.lineTo(0, d);
-                ctx.bezierCurveTo(
-                    0,
-                    d * 0.42,
-                    leftCp1X,
-                    0,
-                    nx,
-                    0
-                );
+                ctx.quadraticCurveTo(0, 0, d, 0);
                 ctx.closePath();
             }
 
@@ -268,56 +203,6 @@ Item {
                 id: notificationPanel
                 width: parent.width
                 visible: root.activePanel === "notification"
-            }
-        }
-    }
-
-    Rectangle {
-        id: capsule
-        x: root.capsuleX
-        y: 0
-        width: root.capsuleWidth
-        height: Theme.statusCapsuleHeight
-        radius: Theme.statusCapsuleRadius
-        color: Theme.statusDockFill
-        border.color: Theme.statusDockBorder
-        border.width: 1
-
-        MouseArea {
-            anchors.fill: parent
-            acceptedButtons: Qt.AllButtons
-            onPressed: function(mouse) { mouse.accepted = true; }
-            onClicked: function(mouse) { mouse.accepted = true; }
-        }
-
-        Row {
-            id: statusRow
-            anchors.centerIn: parent
-            spacing: Theme.spaceSm
-
-            BatteryIndicator {
-                anchors.verticalCenter: parent.verticalCenter
-                onClicked: root.togglePanel("battery")
-            }
-
-            NetworkIndicator {
-                anchors.verticalCenter: parent.verticalCenter
-                onClicked: root.togglePanel("network")
-            }
-
-            BluetoothIndicator {
-                anchors.verticalCenter: parent.verticalCenter
-                onClicked: root.togglePanel("bluetooth")
-            }
-
-            VolumeIndicator {
-                anchors.verticalCenter: parent.verticalCenter
-                onClicked: root.togglePanel("volume")
-            }
-
-            NotificationButton {
-                anchors.verticalCenter: parent.verticalCenter
-                onToggled: root.togglePanel("notification")
             }
         }
     }

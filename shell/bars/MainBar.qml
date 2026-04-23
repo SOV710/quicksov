@@ -69,20 +69,15 @@ Scope {
                     bottomRightRadius: Theme.statusDockLowerRadius
 
                     Region {
-                        item: statusDock.shellVisible ? statusDock.blurLeftNotchItem : null
+                        item: statusDock.shellVisible ? statusDock.blurLeftCutoutItem : null
                         shape: RegionShape.Ellipse
                         intersection: Intersection.Subtract
                     }
 
                     Region {
-                        item: statusDock.shellVisible ? statusDock.blurRightNotchItem : null
+                        item: statusDock.shellVisible ? statusDock.blurRightCutoutItem : null
                         shape: RegionShape.Ellipse
                         intersection: Intersection.Subtract
-                    }
-
-                    Region {
-                        item: statusDock.shellVisible ? statusDock.blurNeckItem : null
-                        intersection: Intersection.Combine
                     }
                 }
             }
@@ -176,11 +171,46 @@ Scope {
                         anchors.verticalCenter: parent.verticalCenter
                     }
 
-                    Item {
-                        id: statusDockSlot
-                        width: statusDock.capsuleWidth
+                    Rectangle {
+                        id: statusCapsule
                         height: Theme.statusCapsuleHeight
+                        width: statusRow.implicitWidth + Theme.statusCapsulePadX * 2
+                        radius: Theme.statusCapsuleRadius
+                        color: Theme.statusCapsuleFill
+                        border.color: Theme.statusCapsuleBorder
+                        border.width: 1
                         anchors.verticalCenter: parent.verticalCenter
+
+                        Row {
+                            id: statusRow
+                            anchors.centerIn: parent
+                            spacing: Theme.spaceSm
+
+                            BatteryIndicator {
+                                anchors.verticalCenter: parent.verticalCenter
+                                onClicked: statusDock.togglePanel("battery")
+                            }
+
+                            NetworkIndicator {
+                                anchors.verticalCenter: parent.verticalCenter
+                                onClicked: statusDock.togglePanel("network")
+                            }
+
+                            BluetoothIndicator {
+                                anchors.verticalCenter: parent.verticalCenter
+                                onClicked: statusDock.togglePanel("bluetooth")
+                            }
+
+                            VolumeIndicator {
+                                anchors.verticalCenter: parent.verticalCenter
+                                onClicked: statusDock.togglePanel("volume")
+                            }
+
+                            NotificationButton {
+                                anchors.verticalCenter: parent.verticalCenter
+                                onToggled: statusDock.togglePanel("notification")
+                            }
+                        }
                     }
                 }
             }
@@ -188,7 +218,7 @@ Scope {
             StatusDockHost {
                 id: statusDock
                 barItem: barRect
-                triggerItem: statusDockSlot
+                triggerItem: statusCapsule
                 availableWidth: Math.max(0, barRect.width - Theme.panelEdgeInset * 2)
                 maxPanelHeight: bar.screen
                                 ? Math.max(

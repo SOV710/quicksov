@@ -61,8 +61,8 @@ Singleton {
     readonly property int groupContainerRadius: 16
     readonly property int leafChipHeight: 20
     readonly property int leafChipRadius: 12
-    readonly property int statusCapsuleHeight: 32
-    readonly property int statusCapsuleRadius: 16
+    readonly property int statusCapsuleHeight: 26
+    readonly property int statusCapsuleRadius: 13
     readonly property int statusCapsulePadX: 8
     readonly property int statusCapsuleSlotWidth: 24
     readonly property int statusDockShoulderDepth: 18
@@ -203,8 +203,8 @@ Singleton {
     readonly property color clockCapsuleText: fgPrimary
     readonly property color statusCapsuleFill: overlay(barShellFill, accentTeal, 0.24)
     readonly property color statusCapsuleBorder: withAlpha(accentTeal, 0.22)
-    readonly property color statusDockFill: statusCapsuleFill
-    readonly property color statusDockBorder: statusCapsuleBorder
+    readonly property color statusDockFill: barShellFill
+    readonly property color statusDockBorder: barShellBorder
 
     readonly property string iconBatteryStatus: "material/battery_android_6_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
     readonly property string iconBatteryFullStatus: "material/battery_android_full_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
