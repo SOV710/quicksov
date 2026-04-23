@@ -4,6 +4,7 @@
 
 import QtQuick
 import Quickshell
+import Quickshell.Wayland
 import ".."
 import "../services"
 import "../widgets"
@@ -57,6 +58,41 @@ Scope {
 
             exclusiveZone: Theme.barHeight
             color: "transparent"
+
+            BackgroundEffect.blurRegion: Region {
+                item: barRect
+                radius: barRect.radius
+
+                Region {
+                    item: clockPopup.popupVisible ? clockPopup.shellItem : null
+                    radius: clockPopup.shellRadius
+                }
+
+                Region {
+                    item: notifCenter.visible ? notifCenter.shellItem : null
+                    radius: notifCenter.shellRadius
+                }
+
+                Region {
+                    item: bluetoothPopup.visible ? bluetoothPopup.shellItem : null
+                    radius: bluetoothPopup.shellRadius
+                }
+
+                Region {
+                    item: networkPopup.visible ? networkPopup.shellItem : null
+                    radius: networkPopup.shellRadius
+                }
+
+                Region {
+                    item: volumePopup.visible ? volumePopup.shellItem : null
+                    radius: volumePopup.shellRadius
+                }
+
+                Region {
+                    item: batteryPopup.visible ? batteryPopup.shellItem : null
+                    radius: batteryPopup.shellRadius
+                }
+            }
 
             function closeAllPopups() {
                 clockPopup.popupVisible = false;

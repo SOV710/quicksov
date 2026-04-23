@@ -11,6 +11,9 @@ import "../services"
 Rectangle {
     id: root
 
+    readonly property Item shellItem: root
+    readonly property int shellRadius: Theme.radiusXl
+
     width: Theme.volumePanelWidth
     implicitHeight: height
     height: Math.min(
@@ -18,10 +21,10 @@ Rectangle {
         Theme.volumePanelMaxHeight
     )
     radius: Theme.radiusXl
-    color: Theme.bgSurface
-    border.color: Theme.borderDefault
+    color: Theme.popupShellFill
+    border.color: Theme.popupShellBorder
     border.width: 1
-    opacity: visible ? Theme.opacityPopup : 0
+    opacity: visible ? 1 : 0
     clip: true
 
     readonly property bool _hasAudio: Audio.ready && Audio.defaultSink !== null

@@ -16,6 +16,8 @@ Item {
     property int availableHeight: Theme.clockPanelMaxHeight
     property int viewMonth: Time.now.getMonth()
     property int viewYear: Time.now.getFullYear()
+    readonly property Item shellItem: panel
+    readonly property int shellRadius: Theme.radiusXl
 
     readonly property int panelWidth: Math.max(
         Math.min(Theme.clockPanelMinWidth, availableWidth),
@@ -245,10 +247,10 @@ Item {
         width: root.panelWidth
         height: root.panelHeight
         radius: Theme.radiusXl
-        color: Theme.bgSurface
-        border.color: Theme.borderDefault
+        color: Theme.popupShellFill
+        border.color: Theme.popupShellBorder
         border.width: 1
-        opacity: root.popupVisible ? Theme.opacityPopup : 0
+        opacity: root.popupVisible ? 1 : 0
         y: root.popupVisible ? 0 : -Theme.spaceMd
 
         Behavior on opacity { NumberAnimation { duration: Theme.motionFast } }

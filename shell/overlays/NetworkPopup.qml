@@ -11,14 +11,17 @@ import "../services"
 Rectangle {
     id: root
 
+    readonly property Item shellItem: root
+    readonly property int shellRadius: Theme.radiusXl
+
     width: Theme.networkPanelWidth
     implicitHeight: height
     height: Math.min(contentCol.implicitHeight + Theme.spaceMd * 2, Theme.networkPanelMaxHeight)
     radius: Theme.radiusXl
-    color: Theme.bgSurface
-    border.color: Theme.borderDefault
+    color: Theme.popupShellFill
+    border.color: Theme.popupShellBorder
     border.width: 1
-    opacity: visible ? Theme.opacityPopup : 0
+    opacity: visible ? 1 : 0
     clip: true
 
     property string expandedSsid: ""
