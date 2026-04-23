@@ -23,7 +23,7 @@ Item {
 
     readonly property var actions: _displayActions(notif ? notif.actions : [])
     readonly property color accentColor: _accentFor(notif ? notif.urgency : "normal")
-    readonly property real dismissThreshold: Math.max(96, width * 0.35)
+    readonly property real dismissThreshold: Math.max(80, width * 0.28)
     readonly property string detailsText: notif && typeof notif.body === "string" ? notif.body : ""
     readonly property real contentColumnX: root.iconColumnWidth + Theme.spaceMd
     readonly property string iconSource: notif && typeof notif.icon === "string" ? notif.icon : ""
@@ -58,6 +58,13 @@ Item {
     height: implicitHeight
     width: parent ? parent.width : 0
 
+    Behavior on height {
+        NumberAnimation {
+            duration: Theme.statusDockRevealDuration
+            easing.type: Easing.OutCubic
+        }
+    }
+
     function _accentFor(urgency) {
         if (urgency === "critical") return Theme.colorError;
         if (urgency === "low") return Theme.fgMuted;
@@ -77,7 +84,8 @@ Item {
 
     function _dragProgressFor(offset) {
         if (root.dismissThreshold <= 0) return 0;
-        return Math.max(0, Math.min(1, offset / root.dismissThreshold));
+        var linear = Math.max(0, Math.min(1, offset / root.dismissThreshold));
+        return 1 - Math.pow(1 - linear, 1.85);
     }
 
     function _endDrag() {
@@ -107,6 +115,7 @@ Item {
         id: cardFrame
 
         width: root.width
+        height: root.height
         x: root.swipeOffset + root.neighborOffset
         implicitHeight: contentCol.implicitHeight + Theme.spaceMd * 2
         radius: Theme.radiusMd
@@ -115,6 +124,7 @@ Item {
                       ? Theme.dangerBorderSoft
                       : (root.expanded ? Theme.borderDefault : Theme.borderSubtle)
         border.width: 1
+        clip: true
 
         Behavior on color {
             ColorAnimation {

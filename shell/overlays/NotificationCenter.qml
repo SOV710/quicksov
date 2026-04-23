@@ -47,7 +47,7 @@ Item {
 
     function _neighborOffsetForIndex(cardIndex) {
         if (!root.dragInProgress || Math.abs(cardIndex - root.draggedIndex) !== 1) return 0;
-        return Theme.spaceMd * root.dragProgress;
+        return Theme.spaceLg * root.dragProgress;
     }
 
     function _pruneTransientState() {
