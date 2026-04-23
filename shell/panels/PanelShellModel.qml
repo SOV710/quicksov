@@ -12,6 +12,10 @@ QtObject {
     property Item coordinateItem: null
     property var geometry: null
     property int borderThickness: 1
+    property real _barSceneX: 0
+    property real _barSceneY: 0
+    property real _barSceneWidth: 0
+    property real _barSceneHeight: 0
 
     function positive(value) {
         return Math.max(0, value);
@@ -21,22 +25,37 @@ QtObject {
         return Math.max(0, Math.min(radius, width / 2, height / 2));
     }
 
-    readonly property real barX: {
-        if (barItem && coordinateItem) {
-            var point = barItem.mapToItem(coordinateItem, 0, 0);
-            return point.x;
-        }
-        return 0;
+    function map_item(item) {
+        if (!item || !coordinateItem)
+            return Qt.point(0, 0);
+
+        return item.mapToItem(coordinateItem, 0, 0);
     }
-    readonly property real barY: {
-        if (barItem && coordinateItem) {
-            var point = barItem.mapToItem(coordinateItem, 0, 0);
-            return point.y;
+
+    function refresh_bar_mapping() {
+        if (!barItem || !coordinateItem) {
+            _barSceneX = 0;
+            _barSceneY = 0;
+            _barSceneWidth = 0;
+            _barSceneHeight = 0;
+            return;
         }
-        return 0;
+
+        var point = map_item(barItem);
+        _barSceneX = point.x;
+        _barSceneY = point.y;
+        _barSceneWidth = barItem.width;
+        _barSceneHeight = barItem.height;
     }
-    readonly property real barWidth: barItem ? barItem.width : 0
-    readonly property real barHeight: barItem ? barItem.height : 0
+
+    function refresh_mappings() {
+        refresh_bar_mapping();
+    }
+
+    readonly property real barX: _barSceneX
+    readonly property real barY: _barSceneY
+    readonly property real barWidth: _barSceneWidth
+    readonly property real barHeight: _barSceneHeight
     readonly property real barRadius: clampRadius(Theme.barRadius, barWidth, barHeight)
 
     readonly property bool panelActive: geometry
@@ -163,5 +182,49 @@ QtObject {
                                                               root.shoulderHeight - root.innerBorder
                                                           )
                                                         : 0
+    }
+
+    onBarItemChanged: refresh_mappings()
+    onCoordinateItemChanged: refresh_mappings()
+    Component.onCompleted: refresh_mappings()
+
+    property var _barItemConnections: Connections {
+        target: root.barItem
+
+        function onXChanged() {
+            root.refresh_bar_mapping();
+        }
+
+        function onYChanged() {
+            root.refresh_bar_mapping();
+        }
+
+        function onWidthChanged() {
+            root.refresh_bar_mapping();
+        }
+
+        function onHeightChanged() {
+            root.refresh_bar_mapping();
+        }
+    }
+
+    property var _coordinateItemConnections: Connections {
+        target: root.coordinateItem
+
+        function onXChanged() {
+            root.refresh_mappings();
+        }
+
+        function onYChanged() {
+            root.refresh_mappings();
+        }
+
+        function onWidthChanged() {
+            root.refresh_mappings();
+        }
+
+        function onHeightChanged() {
+            root.refresh_mappings();
+        }
     }
 }
