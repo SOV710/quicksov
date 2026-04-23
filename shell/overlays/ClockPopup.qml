@@ -11,22 +11,9 @@ import "../services"
 Item {
     id: root
 
-    property bool popupVisible: false
-    property int availableWidth: Theme.clockPanelMaxWidth
-    property int availableHeight: Theme.clockPanelMaxHeight
     property int viewMonth: Time.now.getMonth()
     property int viewYear: Time.now.getFullYear()
-    readonly property Item shellItem: panel
-    readonly property int shellRadius: Theme.radiusXl
 
-    readonly property int panelWidth: Math.max(
-        Math.min(Theme.clockPanelMinWidth, availableWidth),
-        Math.min(Theme.clockPanelMaxWidth, availableWidth)
-    )
-    readonly property int panelHeight: Math.max(
-        0,
-        Math.min(Theme.clockPanelMaxHeight, availableHeight)
-    )
     readonly property int _firstDayOfWeekJs: {
         var day = Qt.locale().firstDayOfWeek;
         return day === undefined ? 1 : (day % 7);
@@ -51,11 +38,9 @@ Item {
     readonly property string _longDateLabel: Qt.formatDate(Time.now, "dddd · d MMMM yyyy")
     readonly property var _weatherMetrics: _buildWeatherMetrics()
 
-    width: panelWidth
-    height: popupVisible ? panelHeight : 0
-    implicitWidth: panelWidth
-    implicitHeight: height
-    clip: true
+    width: parent ? parent.width : Theme.clockPanelMaxWidth
+    implicitWidth: width
+    implicitHeight: Theme.clockPanelMaxHeight
 
     function _beginningOfCell(index) {
         var start = new Date(root.viewYear, root.viewMonth, 1);
@@ -226,40 +211,17 @@ Item {
         ];
     }
 
-    onPopupVisibleChanged: {
-        if (!popupVisible)
-            return;
-
+    Component.onCompleted: {
         root._resetToToday();
         root._maybeRefreshWeather();
     }
 
-    Behavior on height {
-        NumberAnimation {
-            duration: Theme.motionNormal
-            easing.type: Easing.OutCubic
-        }
-    }
-
     Rectangle {
         id: panel
-        visible: root.height > 0 || root.popupVisible
-        width: root.panelWidth
-        height: root.panelHeight
-        radius: Theme.radiusXl
-        color: Theme.popupShellFill
-        border.color: Theme.popupShellBorder
-        border.width: 1
-        opacity: root.popupVisible ? 1 : 0
-        y: root.popupVisible ? 0 : -Theme.spaceMd
-
-        Behavior on opacity { NumberAnimation { duration: Theme.motionFast } }
-        Behavior on y {
-            NumberAnimation {
-                duration: Theme.motionNormal
-                easing.type: Easing.OutCubic
-            }
-        }
+        anchors.fill: parent
+        radius: 0
+        color: "transparent"
+        border.width: 0
 
         MouseArea {
             anchors.fill: parent

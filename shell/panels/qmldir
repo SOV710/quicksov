@@ -1,0 +1,4 @@
+MainBarPopupController 1.0 MainBarPopupController.qml
+DockedPanelShell 1.0 DockedPanelShell.qml
+MainBarExclusiveZoneWindow 1.0 MainBarExclusiveZoneWindow.qml
+MainBarOverlayWindow 1.0 MainBarOverlayWindow.qml
