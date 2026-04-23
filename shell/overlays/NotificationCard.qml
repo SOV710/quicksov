@@ -14,13 +14,17 @@ Item {
     property var notif: null
     property bool expanded: false
     property int cardIndex: -1
-    property bool dragInProgress: false
+    property bool directFollowActive: false
+    property bool motionLocked: false
     property real neighborOffset: 0
     property string relativeTime: ""
 
     signal dismissRequested(int notificationId)
+    signal dragStarted(int notificationId, int cardIndex)
     signal dragOffsetChanged(int notificationId, int cardIndex, real offset)
-    signal dragStateChanged(int notificationId, int cardIndex, bool active)
+    signal cancelReleaseRequested(int notificationId, int cardIndex)
+    signal dismissFlyoutStarted(int notificationId, int cardIndex)
+    signal dismissFlyoutCompleted(int notificationId, int cardIndex)
     signal toggleExpandedRequested(int notificationId)
 
     readonly property var actions: _displayActions(notif ? notif.actions : [])
@@ -37,7 +41,7 @@ Item {
     property real swipeOffset: 0
 
     Behavior on neighborOffset {
-        enabled: !root.dragInProgress
+        enabled: !root.directFollowActive
 
         SpringAnimation {
             spring: 4.2
@@ -92,13 +96,16 @@ Item {
 
         if (shouldDismiss) {
             root.dismissing = true;
+            if (root.notif)
+                root.dismissFlyoutStarted(root.notif.id, root.cardIndex);
             dismissAnimation.from = root.swipeOffset;
             dismissAnimation.to = root.width + Theme.spaceXl;
             dismissAnimation.start();
             return;
         }
 
-        root.dragStateChanged(id, root.cardIndex, false);
+        if (root.notif)
+            root.cancelReleaseRequested(root.notif.id, root.cardIndex);
         root.swipeOffset = 0;
     }
 
@@ -153,11 +160,11 @@ Item {
                 implicitHeight: summaryRow.implicitHeight
 
                 HoverHandler {
-                    cursorShape: Qt.PointingHandCursor
+                    cursorShape: root.motionLocked ? Qt.ArrowCursor : Qt.PointingHandCursor
                 }
 
                 TapHandler {
-                    enabled: !root.dismissing
+                    enabled: !root.motionLocked && !root.dismissing
                     onTapped: {
                         if (root.notif)
                             root.toggleExpandedRequested(root.notif.id);
@@ -167,6 +174,7 @@ Item {
                 DragHandler {
                     id: dragHandler
 
+                    enabled: !root.motionLocked || active
                     target: null
                     xAxis.enabled: true
                     yAxis.enabled: false
@@ -175,7 +183,7 @@ Item {
                         if (active) {
                             root.dragStartOffset = root.swipeOffset;
                             if (root.notif) {
-                                root.dragStateChanged(root.notif.id, root.cardIndex, true);
+                                root.dragStarted(root.notif.id, root.cardIndex);
                                 root.dragOffsetChanged(root.notif.id, root.cardIndex, root.swipeOffset);
                             }
                             return;
@@ -315,6 +323,7 @@ Item {
                                 required property var modelData
 
                                 accentColor: root.accentColor
+                                interactive: !root.motionLocked && !root.dismissing
                                 label: modelData.label || ""
                                 onClicked: {
                                     if (root.notif)
@@ -326,6 +335,7 @@ Item {
                         ActionChip {
                             accentColor: Theme.accentTeal
                             emphasized: true
+                            interactive: !root.motionLocked && !root.dismissing
                             label: "I got it"
                             onClicked: {
                                 if (root.notif)
@@ -346,8 +356,10 @@ Item {
         duration: Theme.motionNormal
         easing.type: Easing.OutCubic
         onStopped: {
-            if (root.dismissing && root.notif)
-                root.dismissRequested(root.notif.id);
+            if (root.dismissing && root.notif) {
+                root.dismissing = false;
+                root.dismissFlyoutCompleted(root.notif.id, root.cardIndex);
+            }
         }
     }
 
@@ -356,6 +368,7 @@ Item {
 
         property color accentColor: Theme.accentBlue
         property bool emphasized: false
+        property bool interactive: true
         property string label: ""
 
         signal clicked()
@@ -365,7 +378,7 @@ Item {
         radius: Theme.radiusSm
         border.color: emphasized ? Theme.withAlpha(accentColor, 0.44) : Theme.borderDefault
         border.width: 1
-        color: chipHover.containsMouse
+        color: chipHover.containsMouse && chip.interactive
                ? (emphasized
                   ? Theme.overlay(Theme.surfaceActive, accentColor, 0.32)
                   : Theme.surfaceHover)
@@ -386,12 +399,13 @@ Item {
 
         HoverHandler {
             id: chipHover
-            cursorShape: Qt.PointingHandCursor
+            cursorShape: chip.interactive ? Qt.PointingHandCursor : Qt.ArrowCursor
         }
 
         MouseArea {
             anchors.fill: parent
-            cursorShape: Qt.PointingHandCursor
+            enabled: chip.interactive
+            cursorShape: chip.interactive ? Qt.PointingHandCursor : Qt.ArrowCursor
             onClicked: chip.clicked()
         }
     }

@@ -9,12 +9,17 @@ import "../services"
 Item {
     id: root
 
-    property bool dragInProgress: false
-    property int draggedIndex: -1
-    property int draggedNotificationId: -1
-    property real dragOffset: 0
+    property string dragPhase: "idle"
+    property int leaderIndex: -1
+    property int leaderNotificationId: -1
+    property real leaderOffset: 0
+    property int pendingDismissId: -1
     property int expandedNotificationId: -1
     property double nowMs: Date.now()
+
+    readonly property bool directFollowActive: dragPhase === "dragging"
+                                             || dragPhase === "dismiss_flyout"
+    readonly property bool motionLocked: dragPhase !== "idle"
 
     width: parent ? parent.width : Theme.notificationPanelWidth
     implicitHeight: Math.min(
@@ -22,11 +27,39 @@ Item {
         Theme.notificationPanelMaxHeight
     )
 
-    function _clearDragState() {
-        root.dragInProgress = false;
-        root.draggedIndex = -1;
-        root.draggedNotificationId = -1;
-        root.dragOffset = 0;
+    function _beginCancelSettle(notificationId, cardIndex) {
+        if (!root._isLeader(notificationId, cardIndex) || root.dragPhase !== "dragging") return;
+
+        root.dragPhase = "cancel_settling";
+        root.leaderOffset = 0;
+        settleTimer.interval = Theme.statusDockRevealDuration;
+        settleTimer.restart();
+    }
+
+    function _beginDetachSettle(notificationId, cardIndex) {
+        if (!root._isLeader(notificationId, cardIndex) || root.dragPhase !== "dismiss_flyout") return;
+        if (root.pendingDismissId !== notificationId) return;
+
+        root.dragPhase = "detach_settling";
+        root.leaderOffset = 0;
+        settleTimer.interval = Theme.statusDockRevealDuration;
+        settleTimer.restart();
+    }
+
+    function _beginDismissFlyout(notificationId, cardIndex) {
+        if (!root._isLeader(notificationId, cardIndex) || root.dragPhase !== "dragging") return;
+
+        root.dragPhase = "dismiss_flyout";
+        root.pendingDismissId = notificationId;
+    }
+
+    function _enterDragging(notificationId, cardIndex) {
+        settleTimer.stop();
+        root.dragPhase = "dragging";
+        root.leaderIndex = cardIndex;
+        root.leaderNotificationId = notificationId;
+        root.leaderOffset = 0;
+        root.pendingDismissId = -1;
     }
 
     function _hasNotification(id) {
@@ -34,10 +67,27 @@ Item {
 
         for (var i = 0; i < Notification.notifications.length; ++i) {
             var notif = Notification.notifications[i];
-            if (notif && notif.id === id) return true;
+            if (notif && notif.id === id)
+                return true;
         }
 
         return false;
+    }
+
+    function _hasExpandedNotification() {
+        if (root.expandedNotificationId < 0 || !Notification.notifications) return false;
+
+        for (var i = 0; i < Notification.notifications.length; ++i) {
+            var notif = Notification.notifications[i];
+            if (notif && notif.id === root.expandedNotificationId)
+                return true;
+        }
+
+        return false;
+    }
+
+    function _isLeader(notificationId, cardIndex) {
+        return root.leaderNotificationId === notificationId && root.leaderIndex === cardIndex;
     }
 
     function _markVisibleAsRead() {
@@ -46,16 +96,15 @@ Item {
     }
 
     function _neighborOffsetForIndex(cardIndex) {
-        if (!root.dragInProgress || Math.abs(cardIndex - root.draggedIndex) !== 1) return 0;
+        if (!root.directFollowActive || Math.abs(cardIndex - root.leaderIndex) !== 1) return 0;
+
         var maxPull = Theme.spaceXl + Theme.spaceSm;
-        return maxPull * (1 - Math.exp(-root.dragOffset / 52));
+        return maxPull * (1 - Math.exp(-root.leaderOffset / 52));
     }
 
     function _pruneTransientState() {
-        if (!root._hasNotification(root.expandedNotificationId))
+        if (!root._hasExpandedNotification())
             root.expandedNotificationId = -1;
-        if (!root._hasNotification(root.draggedNotificationId))
-            root._clearDragState();
     }
 
     function _relativeTimeLabel(ts) {
@@ -73,22 +122,18 @@ Item {
         return Math.max(1, Math.floor(delta / day)) + "d";
     }
 
-    function _setDragOffset(notificationId, cardIndex, offset) {
-        if (!root.dragInProgress) return;
-        if (root.draggedNotificationId !== notificationId || root.draggedIndex !== cardIndex) return;
-        root.dragOffset = Math.max(0, offset);
+    function _resetMotionState() {
+        settleTimer.stop();
+        root.dragPhase = "idle";
+        root.leaderIndex = -1;
+        root.leaderNotificationId = -1;
+        root.leaderOffset = 0;
+        root.pendingDismissId = -1;
     }
 
-    function _setDragState(notificationId, cardIndex, active) {
-        if (active) {
-            root.dragInProgress = true;
-            root.draggedNotificationId = notificationId;
-            root.draggedIndex = cardIndex;
-            return;
-        }
-
-        if (root.draggedNotificationId === notificationId || root.draggedIndex === cardIndex)
-            root._clearDragState();
+    function _updateLeaderOffset(notificationId, cardIndex, offset) {
+        if (!root.directFollowActive || !root._isLeader(notificationId, cardIndex)) return;
+        root.leaderOffset = Math.max(0, offset);
     }
 
     Component.onCompleted: {
@@ -102,7 +147,7 @@ Item {
             root.nowMs = Date.now();
             root._markVisibleAsRead();
         } else {
-            root._clearDragState();
+            root._resetMotionState();
         }
     }
 
@@ -114,8 +159,37 @@ Item {
         }
 
         function onNotificationsChanged() {
-            root._clearDragState();
+            if (root.dragPhase === "dragging" || root.dragPhase === "dismiss_flyout") {
+                root._resetMotionState();
+            } else if (root.dragPhase !== "idle" && !root._hasNotification(root.leaderNotificationId)) {
+                root._resetMotionState();
+            }
             root._pruneTransientState();
+        }
+    }
+
+    Timer {
+        id: settleTimer
+
+        interval: Theme.statusDockRevealDuration
+        repeat: false
+        running: false
+
+        onTriggered: {
+            if (root.dragPhase === "cancel_settling") {
+                root._resetMotionState();
+                return;
+            }
+
+            if (root.dragPhase === "detach_settling") {
+                var dismissId = root.pendingDismissId;
+                root._resetMotionState();
+                if (dismissId >= 0) {
+                    if (root.expandedNotificationId === dismissId)
+                        root.expandedNotificationId = -1;
+                    Notification.dismiss(dismissId);
+                }
+            }
         }
     }
 
@@ -162,7 +236,7 @@ Item {
             model: Notification.notifications
             boundsBehavior: Flickable.StopAtBounds
             clip: true
-            interactive: !root.dragInProgress && contentHeight > height
+            interactive: !root.motionLocked && contentHeight > height
             spacing: Theme.spaceSm
 
             delegate: NotificationCard {
@@ -170,8 +244,9 @@ Item {
                 required property var modelData
 
                 cardIndex: index
-                dragInProgress: root.dragInProgress
+                directFollowActive: root.directFollowActive
                 expanded: root.expandedNotificationId === modelData.id
+                motionLocked: root.motionLocked
                 neighborOffset: root._neighborOffsetForIndex(index)
                 notif: modelData
                 relativeTime: root._relativeTimeLabel(modelData ? modelData.timestamp : 0)
@@ -180,17 +255,27 @@ Item {
                 onDismissRequested: notificationId => {
                     if (root.expandedNotificationId === notificationId)
                         root.expandedNotificationId = -1;
-                    if (root.draggedNotificationId === notificationId)
-                        root._clearDragState();
                     Notification.dismiss(notificationId);
                 }
 
-                onDragOffsetChanged: (notificationId, cardIndex, offset) => {
-                    root._setDragOffset(notificationId, cardIndex, offset);
+                onDragStarted: (notificationId, cardIndex) => {
+                    root._enterDragging(notificationId, cardIndex);
                 }
 
-                onDragStateChanged: (notificationId, cardIndex, active) => {
-                    root._setDragState(notificationId, cardIndex, active);
+                onDragOffsetChanged: (notificationId, cardIndex, offset) => {
+                    root._updateLeaderOffset(notificationId, cardIndex, offset);
+                }
+
+                onCancelReleaseRequested: (notificationId, cardIndex) => {
+                    root._beginCancelSettle(notificationId, cardIndex);
+                }
+
+                onDismissFlyoutStarted: (notificationId, cardIndex) => {
+                    root._beginDismissFlyout(notificationId, cardIndex);
+                }
+
+                onDismissFlyoutCompleted: (notificationId, cardIndex) => {
+                    root._beginDetachSettle(notificationId, cardIndex);
                 }
 
                 onToggleExpandedRequested: notificationId => {
