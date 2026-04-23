@@ -92,19 +92,20 @@ layer-rule {
 | 触发型 | hover 显示 tooltip，click 展开 popup | clock、tray item、battery、net、bt、vol、notif |
 
 **Popup / Dock 通用规则**：
-- `clock` family 仍从 bar 下方 `popup.gap_from_bar`（12px）处滑出
-- 右上角 `StatusDockHost` family 不使用 gap，直接 dock 在 `MainBar` 底边
-- 浮动 popup 的 x 对齐触发 widget 中心，超出屏幕时向内偏移，至少保留 `panel_edge_inset`（24px）
+- `MainBar` family 使用 `reservation window + full-screen overlay field` 双层拓扑
+- `clock` family 与右上角 status family 都直接 dock 在 `MainBar` 底边，不再保留 bar gap
+- popup shell 是 `MainBarOverlayWindow` 内的 child item，不再是独立 panel window
+- `clock` 的 x 对齐 bar 中央 trigger；status family 默认沿 bar 右缘展开；超出可用宽度时向内钳制，至少保留 `panel_edge_inset`（24px）
 - 同时最多一个 popup 打开；打开新的自动关闭旧的
 - Esc 或点击外部关闭
 - 展开：`popup_enter` (normal + decelerate)
 - 收起：`popup_exit` (fast + accelerate)
 - `battery` / `network` / `bluetooth` / `volume` / `notification` 统一使用紧凑型 `docked status panel family`
-- 右上角这组 panel 不再各自独立定位；它们共享一个 `StatusDockHost`
-- `StatusDockHost` 固定挂在 `MainBar` 下方，整体沿 bar 右缘对齐
+- 右上角这组 panel 不再各自独立定位；它们共享同一个 `DockedPanelShell` 宿主
+- 右上角 dock shell 固定挂在 `MainBar` 下方，整体沿 bar 右缘对齐
 - 右上角这组 panel 的 reveal 是单一 drawer vertical expansion，不是各自独立的浮层滑入
 - `clock` 使用更宽的 `clock panel family`
-- `MainBar` family 的 blur 由 `MainBar` 这个 `PanelWindow` 统一请求；popup 自己不重复附着协议
+- `MainBar` family 的 blur 由 `MainBarOverlayWindow` 统一请求；popup 自己不重复附着协议
 - blur region 是 `bar shell + 当前可见 popup shell / dock shell` 的并集
 - blur region 只覆盖 shell geometry；outside-click 捕获区与 shadow 不参与
 
@@ -162,12 +163,12 @@ layer-rule {
 **几何**：
 - 宽度目标 1040px；实际为 `min(1040, screen.width - 64)`
 - 高度目标 520px；实际为 `min(520, screen.height - barHeight - 96)`
-- 不再是轻量小 popup，而是从主屏顶部 bar 下方展开的**大 panel**
+- 不再是轻量小 popup，而是从主屏顶部 `MainBar` 底边直接抽出的**大 docked panel**
 
 **blur / shell 规则**：
-- `clock popup` 不是独立 window，而是 `MainBar` window 内的一块 shell
-- `MainBar` 会把 `clock popup` 的外壳圆角矩形加入统一 blur region
-- `clock popup` 外壳使用半透明 fill；内部 calendar / weather cards 继续使用更实的 surface
+- `clock popup` 不是独立 window，而是 `MainBarOverlayWindow` 内的一块 docked shell
+- `MainBarOverlayWindow` 会把 `clock popup` 的外壳几何加入统一 blur region
+- `clock popup` 外壳与 `bar shell` 使用同源玻璃材质；内部 calendar / weather cards 继续使用更实的 surface
 
 **结构**：
 - 左卡：月份标题 + Today / 月份切换按钮 + 6×7 month grid + 当前日期 footer
@@ -241,6 +242,7 @@ layer-rule {
 - status capsule 是触发控件，不是 dock shell 的一部分
 - docked panel 与 `MainBar` 连接，而不是与 `status capsule` 本体连接
 - 打开 panel 时，视觉重心应落在“bar 下方抽出一个 panel”，而不是“capsule 自身被拉长”
+- 这组 panel 的真实宿主是 `MainBarOverlayWindow` 内的共享 dock shell，而不是独立 popup family
 
 ### 3.7 battery
 
@@ -263,9 +265,9 @@ layer-rule {
 - 台式机 / 无电池设备仍允许展示 power profile 区，但必须弱化主状态区
 
 **shell / blur 规则**：
-- battery 页自己不绘制外壳；外壳由 `StatusDockHost` 统一负责
+- battery 页自己不绘制外壳；外壳由共享 `DockedPanelShell` 统一负责
 - dock host shell 使用半透明 fill
-- dock host shell geometry 由 `MainBar` 统一加入 blur region
+- dock host shell geometry 由 `MainBarOverlayWindow` 统一加入 blur region
 - 内部 metric / profile card 不直接承担 blur 语义
 
 ### 3.8 network

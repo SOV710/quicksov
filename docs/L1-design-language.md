@@ -238,6 +238,7 @@ QML 通过 `Image { source: ...svg; sourceSize: ... }` 加载，改色通过 `cu
 - 打开某个 panel 时，panel 必须被感知为从 `MainBar` 底部抽出，而不是从 `status capsule` 自身长出
 - 外壳展开动效是垂直 drawer reveal，使用 ease-out；起步快，结束减速
 - 切换 battery/network/bluetooth/volume/notification 时优先复用同一外壳，不闪烁重建整个 shell
+- 这组 panel 的宿主应是 `MainBar` 的 full-screen overlay field，而不是独立 panel window
 
 ### 3.5.2 Clock Panel family
 
@@ -246,12 +247,13 @@ QML 通过 `Image { source: ...svg; sourceSize: ... }` 加载，改色通过 `cu
 | `clock_panel_width` | 1040px |
 | `clock_panel_max_height` | 520px |
 
-clock popup 仍是独立 family，但需要与 status panel 共享同一套圆角与阴影语言。
+clock popup 仍是独立内容 family，但宿主拓扑与 status panel 一样，统一挂在 `MainBar` overlay field 下。
 
 补充规则：
 
 - `clock popup` 的 blur 也归属于 `MainBar` window
-- `clock panel` 只将自己的外壳圆角矩形加入 blur region
+- `clock panel` 直接 dock 在 `MainBar` 底边，不保留额外 gap
+- `clock panel` 只将自己的外壳几何加入 blur region
 
 ### 3.5.3 Segmented Clock geometry
 
