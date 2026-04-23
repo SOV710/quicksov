@@ -9,6 +9,7 @@ Item {
 
     property var primitives: null
     property color color: "white"
+    property real seamOverlap: 1
 
     Rectangle {
         x: root.primitives ? root.primitives.barX : 0
@@ -62,28 +63,31 @@ Item {
                  && width > 0
                  && height > 0
 
-        Rectangle {
-            id: leftEllipse
-            readonly property real baseRadius: Math.max(leftShoulder.width, leftShoulder.height)
-            x: -baseRadius
-            y: leftShoulder.height - baseRadius
-            width: baseRadius * 2
-            height: baseRadius * 2
-            radius: baseRadius
+        PanelShoulderFill {
+            anchors.fill: parent
             color: root.color
-            antialiasing: true
-
-            transform: Scale {
-                origin.x: leftEllipse.baseRadius
-                origin.y: leftEllipse.baseRadius
-                xScale: leftEllipse.baseRadius > 0
-                        ? leftShoulder.width / leftEllipse.baseRadius
-                        : 1
-                yScale: leftEllipse.baseRadius > 0
-                        ? leftShoulder.height / leftEllipse.baseRadius
-                        : 1
-            }
+            direction: "left"
         }
+    }
+
+    Rectangle {
+        x: leftShoulder.x
+        y: leftShoulder.y - Math.min(root.seamOverlap, leftShoulder.height)
+        width: leftShoulder.width
+        height: Math.min(root.seamOverlap, leftShoulder.height)
+        color: root.color
+        antialiasing: false
+        visible: leftShoulder.visible
+    }
+
+    Rectangle {
+        x: leftShoulder.x + leftShoulder.width
+        y: leftShoulder.y
+        width: root.seamOverlap
+        height: leftShoulder.height
+        color: root.color
+        antialiasing: false
+        visible: leftShoulder.visible
     }
 
     Item {
@@ -98,27 +102,30 @@ Item {
                  && width > 0
                  && height > 0
 
-        Rectangle {
-            id: rightEllipse
-            readonly property real baseRadius: Math.max(rightShoulder.width, rightShoulder.height)
-            x: rightShoulder.width - baseRadius
-            y: rightShoulder.height - baseRadius
-            width: baseRadius * 2
-            height: baseRadius * 2
-            radius: baseRadius
+        PanelShoulderFill {
+            anchors.fill: parent
             color: root.color
-            antialiasing: true
-
-            transform: Scale {
-                origin.x: rightEllipse.baseRadius
-                origin.y: rightEllipse.baseRadius
-                xScale: rightEllipse.baseRadius > 0
-                        ? rightShoulder.width / rightEllipse.baseRadius
-                        : 1
-                yScale: rightEllipse.baseRadius > 0
-                        ? rightShoulder.height / rightEllipse.baseRadius
-                        : 1
-            }
+            direction: "right"
         }
+    }
+
+    Rectangle {
+        x: rightShoulder.x
+        y: rightShoulder.y - Math.min(root.seamOverlap, rightShoulder.height)
+        width: rightShoulder.width
+        height: Math.min(root.seamOverlap, rightShoulder.height)
+        color: root.color
+        antialiasing: false
+        visible: rightShoulder.visible
+    }
+
+    Rectangle {
+        x: rightShoulder.x - root.seamOverlap
+        y: rightShoulder.y
+        width: root.seamOverlap
+        height: rightShoulder.height
+        color: root.color
+        antialiasing: false
+        visible: rightShoulder.visible
     }
 }

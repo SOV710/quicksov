@@ -64,7 +64,7 @@ Region {
            && root.primitives.panelActive
            && root.primitives.leftShoulderClipWidth > 0
            && root.primitives.leftShoulderClipHeight > 0
-           ? root.regionX(root.primitives.leftShoulderClipX - root.primitives.leftShoulderClipWidth)
+           ? root.regionX(root.primitives.leftShoulderClipX)
            : 0
         y: root.primitives
            && root.primitives.panelActive
@@ -77,8 +77,8 @@ Region {
                && root.primitives.leftShoulderClipWidth > 0
                && root.primitives.leftShoulderClipHeight > 0
                ? root.regionWidth(
-                     root.primitives.leftShoulderClipX - root.primitives.leftShoulderClipWidth,
-                     root.primitives.leftShoulderClipWidth * 2
+                     root.primitives.leftShoulderClipX,
+                     root.primitives.leftShoulderClipWidth
                  )
                : 0
         height: root.primitives
@@ -87,31 +87,33 @@ Region {
                 && root.primitives.leftShoulderClipHeight > 0
                 ? root.regionHeight(
                       root.primitives.leftShoulderClipY,
-                      root.primitives.leftShoulderClipHeight * 2
+                      root.primitives.leftShoulderClipHeight
                   )
                 : 0
-        shape: RegionShape.Ellipse
 
         Region {
             x: root.primitives && root.primitives.panelActive
-               ? root.regionX(root.primitives.leftShoulderClipX)
+               ? root.regionX(
+                     root.primitives.leftShoulderClipX - root.primitives.leftShoulderClipWidth
+                 )
                : 0
             y: root.primitives && root.primitives.panelActive
                ? root.regionY(root.primitives.leftShoulderClipY)
                : 0
             width: root.primitives && root.primitives.panelActive
                    ? root.regionWidth(
-                         root.primitives.leftShoulderClipX,
-                         root.primitives.leftShoulderClipWidth
+                         root.primitives.leftShoulderClipX - root.primitives.leftShoulderClipWidth,
+                         root.primitives.leftShoulderClipWidth * 2
                      )
                    : 0
             height: root.primitives && root.primitives.panelActive
                     ? root.regionHeight(
                           root.primitives.leftShoulderClipY,
-                          root.primitives.leftShoulderClipHeight
+                          root.primitives.leftShoulderClipHeight * 2
                       )
                     : 0
-            intersection: Intersection.Intersect
+            shape: RegionShape.Ellipse
+            intersection: Intersection.Subtract
         }
     }
 
@@ -134,7 +136,7 @@ Region {
                && root.primitives.rightShoulderClipHeight > 0
                ? root.regionWidth(
                      root.primitives.rightShoulderClipX,
-                     root.primitives.rightShoulderClipWidth * 2
+                     root.primitives.rightShoulderClipWidth
                  )
                : 0
         height: root.primitives
@@ -143,10 +145,9 @@ Region {
                 && root.primitives.rightShoulderClipHeight > 0
                 ? root.regionHeight(
                       root.primitives.rightShoulderClipY,
-                      root.primitives.rightShoulderClipHeight * 2
+                      root.primitives.rightShoulderClipHeight
                   )
                 : 0
-        shape: RegionShape.Ellipse
 
         Region {
             x: root.primitives && root.primitives.panelActive
@@ -158,16 +159,17 @@ Region {
             width: root.primitives && root.primitives.panelActive
                    ? root.regionWidth(
                          root.primitives.rightShoulderClipX,
-                         root.primitives.rightShoulderClipWidth
+                         root.primitives.rightShoulderClipWidth * 2
                      )
                    : 0
             height: root.primitives && root.primitives.panelActive
                     ? root.regionHeight(
                           root.primitives.rightShoulderClipY,
-                          root.primitives.rightShoulderClipHeight
+                          root.primitives.rightShoulderClipHeight * 2
                       )
                     : 0
-            intersection: Intersection.Intersect
+            shape: RegionShape.Ellipse
+            intersection: Intersection.Subtract
         }
     }
 }
