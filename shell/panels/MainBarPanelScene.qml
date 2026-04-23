@@ -17,7 +17,7 @@ Item {
     property real clockMaxBodyHeight: 0
     property real statusPreferredWidth: Theme.rightPopupWidth
     property real statusMaxBodyHeight: 0
-    property real statusPreferredXOffset: -(Theme.statusDockLowerRadius * 1.5)
+    property real statusPreferredXOffset: -Theme.statusDockLowerRadius
     property Component clockContentComponent: null
     property Component statusContentComponent: null
     readonly property var activePanelGeometry: {
