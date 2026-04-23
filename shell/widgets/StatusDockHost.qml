@@ -74,11 +74,15 @@ Item {
             return 0;
         }
     }
+    readonly property real _closeSnapEpsilon: 1
     property real panelBodyHeight: panelVisible
                                    ? Math.min(root.currentPanelImplicitHeight, root.maxPanelHeight)
                                    : 0
-    readonly property real panelOverflowHeight: panelBodyHeight > 0
-                                                ? Theme.statusDockShoulderDepth + panelBodyHeight
+    readonly property real _effectivePanelBodyHeight: !panelVisible && panelBodyHeight < root._closeSnapEpsilon
+                                                      ? 0
+                                                      : panelBodyHeight
+    readonly property real panelOverflowHeight: root._effectivePanelBodyHeight > 0
+                                                ? Theme.statusDockShoulderDepth + root._effectivePanelBodyHeight
                                                 : 0
     readonly property bool shellVisible: panelOverflowHeight > 0.5
 
@@ -255,7 +259,7 @@ Item {
             x: root._leftShoulderRadius
             y: Theme.statusDockShoulderDepth
             width: root.panelWidth
-            height: root.panelBodyHeight
+            height: root._effectivePanelBodyHeight
             clip: true
             visible: height > 0
 
