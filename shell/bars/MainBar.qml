@@ -69,15 +69,25 @@ Scope {
                     bottomRightRadius: Theme.statusDockLowerRadius
 
                     Region {
-                        item: statusDock.shellVisible ? statusDock.blurLeftCutoutItem : null
-                        shape: RegionShape.Ellipse
+                        item: statusDock.shellVisible ? statusDock.blurLeftCornerSquareItem : null
                         intersection: Intersection.Subtract
                     }
 
                     Region {
-                        item: statusDock.shellVisible ? statusDock.blurRightCutoutItem : null
-                        shape: RegionShape.Ellipse
+                        item: statusDock.shellVisible ? statusDock.blurRightCornerSquareItem : null
                         intersection: Intersection.Subtract
+                    }
+
+                    Region {
+                        item: statusDock.shellVisible ? statusDock.blurLeftShoulderArcItem : null
+                        shape: RegionShape.Ellipse
+                        intersection: Intersection.Combine
+                    }
+
+                    Region {
+                        item: statusDock.shellVisible ? statusDock.blurRightShoulderArcItem : null
+                        shape: RegionShape.Ellipse
+                        intersection: Intersection.Combine
                     }
                 }
             }

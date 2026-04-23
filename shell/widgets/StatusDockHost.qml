@@ -34,6 +34,29 @@ Item {
                                   : _preferredX
     readonly property color shellFill: Theme.statusDockFill
     readonly property color shellStroke: Theme.statusDockBorder
+    readonly property real _barLeft: {
+        if (barItem && root.parent) {
+            var p = barItem.mapToItem(root.parent, 0, 0);
+            return p.x;
+        }
+        return 0;
+    }
+    readonly property real _barRight: {
+        if (barItem && root.parent) {
+            var p = barItem.mapToItem(root.parent, 0, 0);
+            return p.x + barItem.width;
+        }
+        return root._panelX + root.panelWidth;
+    }
+    readonly property real _panelX: Math.max(root._minX, Math.min(root._maxX, root._preferredX))
+    readonly property real _leftShoulderRadius: Math.max(
+        0,
+        Math.min(Theme.statusDockShoulderDepth, root._panelX - root._barLeft)
+    )
+    readonly property real _rightShoulderRadius: Math.max(
+        0,
+        Math.min(Theme.statusDockShoulderDepth, root._barRight - (root._panelX + root.panelWidth))
+    )
 
     readonly property real currentPanelImplicitHeight: {
         switch (root.activePanel) {
@@ -60,12 +83,14 @@ Item {
     readonly property bool shellVisible: panelOverflowHeight > 0.5
 
     readonly property Item blurBodyItem: blurBody
-    readonly property Item blurLeftCutoutItem: blurLeftCutout
-    readonly property Item blurRightCutoutItem: blurRightCutout
+    readonly property Item blurLeftCornerSquareItem: blurLeftCornerSquare
+    readonly property Item blurRightCornerSquareItem: blurRightCornerSquare
+    readonly property Item blurLeftShoulderArcItem: blurLeftShoulderArc
+    readonly property Item blurRightShoulderArcItem: blurRightShoulderArc
 
-    x: Math.max(root._minX, Math.min(root._maxX, root._preferredX))
-    y: barItem ? barItem.y + barItem.height : 0
-    width: panelWidth
+    x: root._panelX - root._leftShoulderRadius
+    y: barItem ? barItem.y + barItem.height - Theme.statusDockSeamOverlap : 0
+    width: panelWidth + root._leftShoulderRadius + root._rightShoulderRadius
     height: panelOverflowHeight
     z: 2
 
@@ -82,6 +107,7 @@ Item {
     onShellFillChanged: shellCanvas.requestPaint()
     onShellStrokeChanged: shellCanvas.requestPaint()
     onWidthChanged: shellCanvas.requestPaint()
+    onXChanged: shellCanvas.requestPaint()
 
     Behavior on panelBodyHeight {
         NumberAnimation {
@@ -104,28 +130,46 @@ Item {
 
         Item {
             id: blurBody
-            x: 0
+            x: root._leftShoulderRadius
             y: 0
-            width: panelShell.width
+            width: root.panelWidth
             height: panelShell.height
             visible: false
         }
 
         Item {
-            id: blurLeftCutout
-            x: -Theme.statusDockShoulderDepth
-            y: -Theme.statusDockShoulderDepth
-            width: Theme.statusDockShoulderDepth * 2
-            height: Theme.statusDockShoulderDepth * 2
+            id: blurLeftCornerSquare
+            x: 0
+            y: 0
+            width: root._leftShoulderRadius
+            height: root._leftShoulderRadius
             visible: false
         }
 
         Item {
-            id: blurRightCutout
-            x: panelShell.width - Theme.statusDockShoulderDepth
-            y: -Theme.statusDockShoulderDepth
-            width: Theme.statusDockShoulderDepth * 2
-            height: Theme.statusDockShoulderDepth * 2
+            id: blurRightCornerSquare
+            x: panelShell.width - root._rightShoulderRadius
+            y: 0
+            width: root._rightShoulderRadius
+            height: root._rightShoulderRadius
+            visible: false
+        }
+
+        Item {
+            id: blurLeftShoulderArc
+            x: 0
+            y: 0
+            width: root._leftShoulderRadius * 2
+            height: root._leftShoulderRadius * 2
+            visible: false
+        }
+
+        Item {
+            id: blurRightShoulderArc
+            x: panelShell.width - (root._rightShoulderRadius * 2)
+            y: 0
+            width: root._rightShoulderRadius * 2
+            height: root._rightShoulderRadius * 2
             visible: false
         }
 
@@ -135,31 +179,71 @@ Item {
             visible: panelShell.visible
             antialiasing: true
 
-            function drawPath(ctx) {
+            function drawFillPath(ctx) {
                 var w = width;
                 var h = height;
-                var d = Math.min(Theme.statusDockShoulderDepth, Math.max(0, h));
-                var r = Math.min(Theme.statusDockLowerRadius, Math.max(0, h / 2));
+                var left = root._leftShoulderRadius;
+                var right = root._rightShoulderRadius;
+                var panelLeft = left;
+                var panelRight = left + root.panelWidth;
+                var leftR = Math.min(left, Theme.statusDockShoulderDepth, Math.max(0, h));
+                var rightR = Math.min(right, Theme.statusDockShoulderDepth, Math.max(0, h));
+                var r = Math.min(Theme.statusDockLowerRadius, Math.max(0, h / 2), Math.max(0, root.panelWidth / 2));
 
                 ctx.beginPath();
-                ctx.moveTo(d, 0);
-                ctx.lineTo(w - d, 0);
-                ctx.quadraticCurveTo(w, 0, w, d);
-                ctx.lineTo(w, h - r);
-                ctx.quadraticCurveTo(w, h, w - r, h);
-                ctx.lineTo(r, h);
-                ctx.quadraticCurveTo(0, h, 0, h - r);
-                ctx.lineTo(0, d);
-                ctx.quadraticCurveTo(0, 0, d, 0);
+                ctx.moveTo(0, 0);
+                if (leftR > 0)
+                    ctx.quadraticCurveTo(panelLeft, 0, panelLeft, leftR);
+                else
+                    ctx.lineTo(panelLeft, 0);
+                ctx.lineTo(panelLeft, h - r);
+                ctx.quadraticCurveTo(panelLeft, h, panelLeft + r, h);
+                ctx.lineTo(panelRight - r, h);
+                ctx.quadraticCurveTo(panelRight, h, panelRight, h - r);
+                ctx.lineTo(panelRight, rightR);
+                if (rightR > 0)
+                    ctx.quadraticCurveTo(panelRight, 0, w, 0);
+                else
+                    ctx.lineTo(w, 0);
+                ctx.lineTo(0, 0);
                 ctx.closePath();
+            }
+
+            function drawStrokePath(ctx) {
+                var w = width;
+                var h = height;
+                var left = root._leftShoulderRadius;
+                var right = root._rightShoulderRadius;
+                var panelLeft = left;
+                var panelRight = left + root.panelWidth;
+                var leftR = Math.min(left, Theme.statusDockShoulderDepth, Math.max(0, h));
+                var rightR = Math.min(right, Theme.statusDockShoulderDepth, Math.max(0, h));
+                var r = Math.min(Theme.statusDockLowerRadius, Math.max(0, h / 2), Math.max(0, root.panelWidth / 2));
+
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                if (leftR > 0)
+                    ctx.quadraticCurveTo(panelLeft, 0, panelLeft, leftR);
+                else
+                    ctx.lineTo(panelLeft, 0);
+                ctx.lineTo(panelLeft, h - r);
+                ctx.quadraticCurveTo(panelLeft, h, panelLeft + r, h);
+                ctx.lineTo(panelRight - r, h);
+                ctx.quadraticCurveTo(panelRight, h, panelRight, h - r);
+                ctx.lineTo(panelRight, rightR);
+                if (rightR > 0)
+                    ctx.quadraticCurveTo(panelRight, 0, w, 0);
+                else
+                    ctx.lineTo(w, 0);
             }
 
             onPaint: {
                 var ctx = getContext("2d");
                 ctx.clearRect(0, 0, width, height);
-                drawPath(ctx);
+                drawFillPath(ctx);
                 ctx.fillStyle = root.shellFill;
                 ctx.fill();
+                drawStrokePath(ctx);
                 ctx.lineWidth = 1;
                 ctx.strokeStyle = root.shellStroke;
                 ctx.stroke();
@@ -168,9 +252,9 @@ Item {
 
         Item {
             id: contentViewport
-            x: 0
+            x: root._leftShoulderRadius
             y: Theme.statusDockShoulderDepth
-            width: parent.width
+            width: root.panelWidth
             height: root.panelBodyHeight
             clip: true
             visible: height > 0

@@ -65,7 +65,8 @@ Singleton {
     readonly property int statusCapsuleRadius: 13
     readonly property int statusCapsulePadX: 8
     readonly property int statusCapsuleSlotWidth: 24
-    readonly property int statusDockShoulderDepth: 18
+    readonly property int statusDockShoulderDepth: 20
+    readonly property int statusDockSeamOverlap: 1
     readonly property int statusDockLowerRadius: 28
     readonly property int statusDockRevealDuration: 150
     readonly property int trayChipHeight: 24
