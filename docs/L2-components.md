@@ -329,13 +329,17 @@ layer-rule {
 | 数据源 | daemon `notification` service（实现 `org.freedesktop.Notifications` D-Bus server，完全取代 mako/dunst） |
 | bar 视觉 | `bell` icon；有未读时右上角小红点；不显示数量 |
 | Icon | Material notifications glyph family |
-| 几何 | click docked panel；内容加载到 `MainBarPanelScene` 的 status panel slot；通知列表区上限收回到紧凑规格 |
-| 交互 | click → 展开 NotificationCenter docked panel；长按或右键 → 清空全部 |
+| 几何 | click docked panel；内容加载到 `MainBarPanelScene` 的 status panel slot；保持 content-only panel，不额外绘制外壳；通知列表区上限收回到紧凑规格 |
+| 内容 | 纯 notification 列表，无标题、无 `Clear all`、无右上角关闭按钮；空态仅显示 muted `No notifications` |
+| 卡片 | flat card；左侧大 icon tile（优先本地图标路径，失败回退 bell glyph），右侧只保留 title + details 两层文本；右上角相对时间使用 `now / 1m / 2h / 3d` |
+| 展开 | click 卡片摘要区切换展开；同一时刻只允许一条展开；展开后显示完整 details、D-Bus action buttons、以及末尾固定 `I got it` 按钮 |
+| 删除/已读 | 不提供 clear-all；删除只保留两种方式：展开态 `I got it`，或向右拖拽超过阈值后 dismiss；panel 打开即对全部未读发送 `mark_read {}`，panel 打开期间新通知也立即标记为已读 |
+| 动效 | 右拖当前卡片时，前后相邻卡片按进度右移 `0..Theme.spaceMd`；释放或删除后通过 spring 回弹；本轮只做位移+弹簧，不做 shader/gooey 形变 |
 
 **shell / blur 规则**：
 - notification 页自己不绘制外壳；外壳由 `PanelBackgroundField` 统一负责
 
-**Toast 行为**：新 notification 到达时主屏右上角滑入 toast 卡片（`notification_in`），stay 5s 自动滑出，hover 暂停。最多堆叠 3 条。
+**Toast 行为**：toast 仍是后续工作；本轮只重构 NotificationCenter panel，不实现右上角 slide-in toast。
 
 ## 4. 主屏底部 auto-hide Power Menu
 
