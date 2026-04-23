@@ -14,6 +14,7 @@ Item {
     property var notif: null
     property bool expanded: false
     property int cardIndex: -1
+    property bool dragInProgress: false
     property real neighborOffset: 0
     property string relativeTime: ""
 
@@ -35,6 +36,8 @@ Item {
     property real swipeOffset: 0
 
     Behavior on neighborOffset {
+        enabled: !root.dragInProgress
+
         SpringAnimation {
             spring: 4.2
             damping: 0.24
@@ -91,7 +94,6 @@ Item {
     function _endDrag() {
         var id = root.notif ? root.notif.id : -1;
         var shouldDismiss = root.swipeOffset >= root.dismissThreshold;
-        root.dragStateChanged(id, root.cardIndex, false, 0);
 
         if (shouldDismiss) {
             root.dismissing = true;
@@ -101,6 +103,7 @@ Item {
             return;
         }
 
+        root.dragStateChanged(id, root.cardIndex, false, 0);
         root.swipeOffset = 0;
     }
 

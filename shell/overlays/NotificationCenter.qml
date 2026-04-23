@@ -164,6 +164,7 @@ Item {
                 required property var modelData
 
                 cardIndex: index
+                dragInProgress: root.dragInProgress
                 expanded: root.expandedNotificationId === modelData.id
                 neighborOffset: root._neighborOffsetForIndex(index)
                 notif: modelData
@@ -173,6 +174,8 @@ Item {
                 onDismissRequested: notificationId => {
                     if (root.expandedNotificationId === notificationId)
                         root.expandedNotificationId = -1;
+                    if (root.draggedNotificationId === notificationId)
+                        root._clearDragState();
                     Notification.dismiss(notificationId);
                 }
 
