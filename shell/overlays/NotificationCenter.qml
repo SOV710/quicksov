@@ -96,10 +96,15 @@ Item {
     }
 
     function _neighborOffsetForIndex(cardIndex) {
-        if (!root.directFollowActive || Math.abs(cardIndex - root.leaderIndex) !== 1) return 0;
+        if (!root.directFollowActive) return 0;
+
+        var distance = Math.abs(cardIndex - root.leaderIndex);
+        if (distance === 0) return 0;
 
         var maxPull = Theme.spaceXl + Theme.spaceSm;
-        return maxPull * (1 - Math.exp(-root.leaderOffset / 52));
+        var basePull = maxPull * (1 - Math.exp(-root.leaderOffset / 52));
+        var falloff = Math.pow(0.58, distance - 1);
+        return basePull * falloff;
     }
 
     function _pruneTransientState() {

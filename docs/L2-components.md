@@ -334,7 +334,7 @@ layer-rule {
 | 卡片 | flat card；左侧大 icon tile（优先本地图标路径，失败回退 bell glyph），右侧只保留 title + details 两层文本；右上角相对时间使用 `now / 1m / 2h / 3d` |
 | 展开 | click 卡片摘要区切换展开；同一时刻只允许一条展开；展开后显示完整 details、D-Bus action buttons、以及末尾固定 `I got it` 按钮 |
 | 删除/已读 | 不提供 clear-all；删除只保留两种方式：展开态 `I got it`，或向右拖拽超过阈值后 dismiss；panel 打开即对全部未读发送 `mark_read {}`，panel 打开期间新通知也立即标记为已读 |
-| 动效 | 右拖当前卡片时，前后相邻卡片按进度右移 `0..Theme.spaceMd`；释放或删除后通过 spring 回弹；本轮只做位移+弹簧，不做 shader/gooey 形变 |
+| 动效 | 右拖当前卡片时，其他卡片都会被带动，但随距离按梯度衰减；最邻近卡偏移最大，越远越弱；释放或删除后通过 spring 回弹；本轮只做位移+弹簧，不做 shader/gooey 形变 |
 
 **shell / blur 规则**：
 - notification 页自己不绘制外壳；外壳由 `PanelBackgroundField` 统一负责
