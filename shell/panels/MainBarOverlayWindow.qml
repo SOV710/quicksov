@@ -82,17 +82,17 @@ PanelWindow {
         radius: barRect.radius
 
         Region {
-            item: clockDock.shellVisible ? clockDock : null
-            topLeftRadius: clockDock.topLeftRadius
-            topRightRadius: clockDock.topRightRadius
+            item: panelScene.clockPanel.active ? panelScene.clockSurfaceItem : null
+            topLeftRadius: 0
+            topRightRadius: 0
             bottomLeftRadius: Theme.statusDockLowerRadius
             bottomRightRadius: Theme.statusDockLowerRadius
         }
 
         Region {
-            item: statusDock.shellVisible ? statusDock : null
-            topLeftRadius: statusDock.topLeftRadius
-            topRightRadius: statusDock.topRightRadius
+            item: panelScene.statusPanel.active ? panelScene.statusSurfaceItem : null
+            topLeftRadius: 0
+            topRightRadius: 0
             bottomLeftRadius: Theme.statusDockLowerRadius
             bottomRightRadius: Theme.statusDockLowerRadius
         }
@@ -104,17 +104,17 @@ PanelWindow {
         radius: barRect.radius
 
         Region {
-            item: clockDock.shellVisible ? clockDock : null
-            topLeftRadius: clockDock.topLeftRadius
-            topRightRadius: clockDock.topRightRadius
+            item: panelScene.clockPanel.active ? panelScene.clockSurfaceItem : null
+            topLeftRadius: 0
+            topRightRadius: 0
             bottomLeftRadius: Theme.statusDockLowerRadius
             bottomRightRadius: Theme.statusDockLowerRadius
         }
 
         Region {
-            item: statusDock.shellVisible ? statusDock : null
-            topLeftRadius: statusDock.topLeftRadius
-            topRightRadius: statusDock.topRightRadius
+            item: panelScene.statusPanel.active ? panelScene.statusSurfaceItem : null
+            topLeftRadius: 0
+            topRightRadius: 0
             bottomLeftRadius: Theme.statusDockLowerRadius
             bottomRightRadius: Theme.statusDockLowerRadius
         }
@@ -138,6 +138,33 @@ PanelWindow {
         color: Theme.barShadowColor
     }
 
+    MainBarPanelScene {
+        id: panelScene
+        z: 1
+        anchors.fill: parent
+        barItem: barRect
+        clockTriggerItem: clockWidget
+        statusTriggerItem: statusCapsule
+        controller: popupController
+        availableWidth: root._barAvailableWidth
+        clockPreferredWidth: root._clockPreferredWidth
+        clockMaxBodyHeight: root._clockMaxBodyHeight
+        statusPreferredWidth: Theme.rightPopupWidth
+        statusMaxBodyHeight: root._statusMaxBodyHeight
+        clockContentComponent: clockPopupComponent
+        statusContentComponent: popupController.statusPopup === "battery"
+                                ? batteryPopupComponent
+                                : popupController.statusPopup === "network"
+                                  ? networkPopupComponent
+                                  : popupController.statusPopup === "bluetooth"
+                                    ? bluetoothPopupComponent
+                                    : popupController.statusPopup === "volume"
+                                      ? volumePopupComponent
+                                      : popupController.statusPopup === "notification"
+                                        ? notificationPopupComponent
+                                        : null
+    }
+
     Rectangle {
         id: barRect
         z: 2
@@ -146,9 +173,8 @@ PanelWindow {
         width: root.width - Theme.barOuterMargin * 2
         height: Theme.barHeight
         radius: Theme.barRadius
-        color: Theme.barShellFill
-        border.color: Theme.barShellBorder
-        border.width: 1
+        color: "transparent"
+        border.width: 0
 
         Row {
             id: leftZone
@@ -242,49 +268,12 @@ PanelWindow {
         }
     }
 
-    DockedPanelShell {
-        id: clockDock
-        z: 3
-        barItem: barRect
-        triggerItem: clockWidget
-        alignmentMode: "center"
-        preferredWidth: root._clockPreferredWidth
-        availableWidth: root._barAvailableWidth
-        maxBodyHeight: root._clockMaxBodyHeight
-        open: popupController.clockOpen
-        fillColor: Theme.barShellFill
-        strokeColor: Theme.barShellBorder
-        contentComponent: Component {
-            ClockPopup {
-                width: parent ? parent.width : 0
-                height: parent ? parent.height : implicitHeight
-            }
+    Component {
+        id: clockPopupComponent
+        ClockPopup {
+            width: parent ? parent.width : Theme.clockPanelMaxWidth
+            height: parent ? parent.height : implicitHeight
         }
-    }
-
-    DockedPanelShell {
-        id: statusDock
-        z: 3
-        barItem: barRect
-        triggerItem: statusCapsule
-        alignmentMode: "right"
-        preferredWidth: Theme.rightPopupWidth
-        availableWidth: root._barAvailableWidth
-        maxBodyHeight: root._statusMaxBodyHeight
-        open: popupController.statusPopup !== ""
-        fillColor: Theme.barShellFill
-        strokeColor: Theme.barShellBorder
-        contentComponent: popupController.statusPopup === "battery"
-                          ? batteryPopupComponent
-                          : popupController.statusPopup === "network"
-                            ? networkPopupComponent
-                            : popupController.statusPopup === "bluetooth"
-                              ? bluetoothPopupComponent
-                              : popupController.statusPopup === "volume"
-                                ? volumePopupComponent
-                                : popupController.statusPopup === "notification"
-                                  ? notificationPopupComponent
-                                  : null
     }
 
     Component {

@@ -2,9 +2,11 @@
 #+author: SOV710
 #+date: 2026-04-23
 #+project: quicksov
-#+status: accepted
+#+status: superseded
 
 # ADR-012: Docked Status Panel Host
+
+> Superseded by [ADR-014](./014-mainbar-overlay-field.md) and [ADR-015](./015-mainbar-shared-panel-background-field.md).
 
 ## Context
 

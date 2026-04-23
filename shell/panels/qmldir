@@ -1,4 +1,7 @@
 MainBarPopupController 1.0 MainBarPopupController.qml
-DockedPanelShell 1.0 DockedPanelShell.qml
+PanelGeometryModel 1.0 PanelGeometryModel.qml
+PanelContentSlot 1.0 PanelContentSlot.qml
+PanelBackgroundField 1.0 PanelBackgroundField.qml
+MainBarPanelScene 1.0 MainBarPanelScene.qml
 MainBarExclusiveZoneWindow 1.0 MainBarExclusiveZoneWindow.qml
 MainBarOverlayWindow 1.0 MainBarOverlayWindow.qml

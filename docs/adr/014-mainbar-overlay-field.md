@@ -4,6 +4,8 @@
 
 Accepted
 
+Superseded in part by [ADR-015](./015-mainbar-shared-panel-background-field.md), which keeps this window topology and replaces the Phase 1 local shell with a shared panel background field.
+
 ## Context
 
 此前 `MainBar` popup 体系长期停留在“bar window + popup host + dismiss window”的修补式结构：
@@ -50,16 +52,16 @@ popup 不再建模为独立 panel window，而是 `MainBarOverlayWindow` 内的 
 - blur region 只有一个 owner，effect region 更容易收敛
 - outside-click dismiss 可以通过 overlay field 统一处理
 - panel 轮廓与 bar 的关系更接近 `caelestia`
-- 允许后续继续演进到 shared panel background field，而不必再拆旧 popup window
+- 允许继续演进到 shared panel background field，而不必再拆旧 popup window
 
 ### Negative
 
 - `MainBar` 的 QML 结构会发生 breaking change
 - popup 打开时 overlay mask 会切到 full-screen capture，这要求交互层与可见 shell 分离设计
-- 文档中所有“独立 popup window / StatusDockHost 宿主”表述都需要同步更新
+- ADR-012/013 的 `StatusDockHost` 方案被后续 ADR 保留为历史记录，不再代表当前实现
 
 ## Notes
 
 - 这次 ADR 不要求引入 shader / blob background
 - 这次 ADR 不改变 popup 的业务内容，只改变宿主拓扑与几何所有权
-- 未来若继续向 `caelestia` 的 shared panel background field 演化，应基于这个 overlay field 模型继续推进
+- shared panel background field 已在 ADR-015 中基于这个 overlay field 模型推进

@@ -94,15 +94,16 @@ layer-rule {
 **Popup / Dock 通用规则**：
 - `MainBar` family 使用 `reservation window + full-screen overlay field` 双层拓扑
 - `clock` family 与右上角 status family 都直接 dock 在 `MainBar` 底边，不再保留 bar gap
-- popup shell 是 `MainBarOverlayWindow` 内的 child item，不再是独立 panel window
+- popup content 是 `MainBarOverlayWindow` 内的 child item，不再是独立 panel window
+- popup 几何由 `PanelGeometryModel` 统一计算；背景由 `PanelBackgroundField` 统一绘制
 - `clock` 的 x 对齐 bar 中央 trigger；status family 默认沿 bar 右缘展开；超出可用宽度时向内钳制，至少保留 `panel_edge_inset`（24px）
 - 同时最多一个 popup 打开；打开新的自动关闭旧的
 - Esc 或点击外部关闭
 - 展开：`popup_enter` (normal + decelerate)
 - 收起：`popup_exit` (fast + accelerate)
 - `battery` / `network` / `bluetooth` / `volume` / `notification` 统一使用紧凑型 `docked status panel family`
-- 右上角这组 panel 不再各自独立定位；它们共享同一个 `DockedPanelShell` 宿主
-- 右上角 dock shell 固定挂在 `MainBar` 下方，整体沿 bar 右缘对齐
+- 右上角这组 panel 不再各自独立定位；它们共享 `MainBarPanelScene` 中的 status panel slot
+- 右上角 status panel geometry 固定挂在 `MainBar` 下方，整体沿 bar 右缘对齐
 - 右上角这组 panel 的 reveal 是单一 drawer vertical expansion，不是各自独立的浮层滑入
 - `clock` 使用更宽的 `clock panel family`
 - `MainBar` family 的 blur 由 `MainBarOverlayWindow` 统一请求；popup 自己不重复附着协议
@@ -251,7 +252,7 @@ layer-rule {
 | 数据源 | daemon `battery` service via UPower D-Bus |
 | bar 显示逻辑 | status capsule 内只显示 icon，不显示 `%`；充电时进入绿色语义 |
 | Icon | Material battery glyph family |
-| 几何 | click docked panel；内容加载到 `StatusDockHost` 的 battery 页；默认保持较低高度 |
+| 几何 | click docked panel；内容加载到 `MainBarPanelScene` 的 status panel slot；默认保持较低高度 |
 | popup 头部 | 左侧大号 battery icon；右侧主读数 `87%` + 状态词 `Charging/Discharging/Fully charged` |
 | popup 次级信息 | 第二行显示 `3h 12m remaining` / `54m until full` / `Time estimate unavailable` |
 | popup 指标卡 | `Power Source`、`Battery Health`、`Charge Rate`、`Capacity` 四张信息卡 |
@@ -265,9 +266,9 @@ layer-rule {
 - 台式机 / 无电池设备仍允许展示 power profile 区，但必须弱化主状态区
 
 **shell / blur 规则**：
-- battery 页自己不绘制外壳；外壳由共享 `DockedPanelShell` 统一负责
-- dock host shell 使用半透明 fill
-- dock host shell geometry 由 `MainBarOverlayWindow` 统一加入 blur region
+- battery 页自己不绘制外壳；外壳由 `PanelBackgroundField` 统一负责
+- shared panel background field 使用半透明 fill
+- panel geometry 由 `MainBarOverlayWindow` 统一加入 blur region
 - 内部 metric / profile card 不直接承担 blur 语义
 
 ### 3.8 network
@@ -277,7 +278,7 @@ layer-rule {
 | 数据源 | daemon `net.link`（netlink，接口/IP/路由） + `net.wifi`（wpa_supplicant ctrl socket） |
 | 监听接口 | `wlo1`、`enp109s0` |
 | bar 视觉 | status capsule 内 icon-only；Wi-Fi 状态优先用 Material Wi-Fi glyph family；有线连接时允许切换为 ethernet glyph；扫描时允许蓝色呼吸语义 |
-| 几何 | click docked panel；内容加载到 `StatusDockHost` 的 network 页；列表区按内容增长，不默认展开成宽大 panel |
+| 几何 | click docked panel；内容加载到 `MainBarPanelScene` 的 status panel slot；列表区按内容增长，不默认展开成宽大 panel |
 | 头部 | 左侧 `Network` 标题 + 副标题；右侧 `Refresh`、`Wi-Fi On/Off`、`Flight` 三个 chip |
 | 状态归约 | daemon 额外提供 `availability` / `availability_reason` / `rfkill_*` / `airplane_mode`，区分 ready / disabled / unavailable |
 | 列表分组 | `Current` → `Saved` → `Available`；每行显示 SSID、状态副标题（Connected / Saved / Open / WPA2 / 频段 / 信号） |
@@ -290,7 +291,7 @@ layer-rule {
 - dhcpcd 的租约变化通过 netlink ADDR 消息观察
 
 **shell / blur 规则**：
-- network 页自己不绘制外壳；外壳由 `StatusDockHost` 统一负责
+- network 页自己不绘制外壳；外壳由 `PanelBackgroundField` 统一负责
 - 列表增长不改变 blur attachment owner，只改变当前 dock shell 几何
 
 ### 3.9 bluetooth
@@ -298,14 +299,14 @@ layer-rule {
 | 属性 | 值 |
 |---|---|
 | 数据源 | daemon `bluetooth` service via BlueZ D-Bus |
-| bar 几何 | status capsule 内 icon-only；内容加载到 `StatusDockHost` 的 bluetooth 页 |
+| bar 几何 | status capsule 内 icon-only；内容加载到 `MainBarPanelScene` 的 status panel slot |
 | 视觉状态 | unavailable：`bluetooth-off`；disabled：`bluetooth-off`；enabled idle：`bluetooth`；已连：保持统一色但切到 connected glyph/state；扫描中：蓝色呼吸语义 |
 | 头部 | 左侧 `Bluetooth` 标题 + 状态副标题；右侧 `Refresh/Stop` 与 `On/Off` 控件 |
 | 列表分组 | `Connected` → `Paired` → `Available`；每行显示 name/address、状态文案、电量（若有） |
 | 交互 | click bar icon → 打开/关闭 docked panel；`Refresh` 开始扫描、扫描中切为 `Stop`；不在打开时自动扫描；点击 panel 外关闭 |
 
 **shell / blur 规则**：
-- bluetooth 页自己不绘制外壳；外壳由 `StatusDockHost` 统一负责
+- bluetooth 页自己不绘制外壳；外壳由 `PanelBackgroundField` 统一负责
 
 ### 3.10 volume
 
@@ -314,11 +315,11 @@ layer-rule {
 | 数据源 | daemon `audio` service via PipeWire |
 | bar 视觉 | status capsule 内 icon-only，不显示百分比 |
 | Icon | Material volume glyph family |
-| 几何 | click docked panel；内容加载到 `StatusDockHost` 的 volume 页；Applications 列表区上限收回到紧凑规格，避免默认面板过长 |
+| 几何 | click docked panel；内容加载到 `MainBarPanelScene` 的 status panel slot；Applications 列表区上限收回到紧凑规格，避免默认面板过长 |
 | 交互 | click → docked panel：大音量 slider、默认 sink 切换、per-app 音量列表；hover 滚轮 → ±5% |
 
 **shell / blur 规则**：
-- volume 页自己不绘制外壳；外壳由 `StatusDockHost` 统一负责
+- volume 页自己不绘制外壳；外壳由 `PanelBackgroundField` 统一负责
 
 ### 3.11 notification-center
 
@@ -328,11 +329,11 @@ layer-rule {
 | 数据源 | daemon `notification` service（实现 `org.freedesktop.Notifications` D-Bus server，完全取代 mako/dunst） |
 | bar 视觉 | `bell` icon；有未读时右上角小红点；不显示数量 |
 | Icon | Material notifications glyph family |
-| 几何 | click docked panel；内容加载到 `StatusDockHost` 的 notification 页；通知列表区上限收回到紧凑规格 |
+| 几何 | click docked panel；内容加载到 `MainBarPanelScene` 的 status panel slot；通知列表区上限收回到紧凑规格 |
 | 交互 | click → 展开 NotificationCenter docked panel；长按或右键 → 清空全部 |
 
 **shell / blur 规则**：
-- notification 页自己不绘制外壳；外壳由 `StatusDockHost` 统一负责
+- notification 页自己不绘制外壳；外壳由 `PanelBackgroundField` 统一负责
 
 **Toast 行为**：新 notification 到达时主屏右上角滑入 toast 卡片（`notification_in`），stay 5s 自动滑出，hover 暂停。最多堆叠 3 条。
 
