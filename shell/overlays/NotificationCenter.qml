@@ -16,6 +16,7 @@ Item {
     property int pendingDismissId: -1
     property int expandedNotificationId: -1
     property double nowMs: Date.now()
+    readonly property real dismissReboundEpsilon: 0.35
 
     readonly property bool directFollowActive: dragPhase === "dragging"
                                              || dragPhase === "dismiss_flyout"
@@ -32,17 +33,7 @@ Item {
 
         root.dragPhase = "cancel_settling";
         root.leaderOffset = 0;
-        settleTimer.interval = Theme.statusDockRevealDuration;
-        settleTimer.restart();
-    }
-
-    function _beginDetachSettle(notificationId, cardIndex) {
-        if (!root._isLeader(notificationId, cardIndex) || root.dragPhase !== "dismiss_flyout") return;
-        if (root.pendingDismissId !== notificationId) return;
-
-        root.dragPhase = "detach_settling";
-        root.leaderOffset = 0;
-        settleTimer.interval = Theme.statusDockRevealDuration;
+        settleTimer.interval = Theme.motionFast;
         settleTimer.restart();
     }
 
@@ -51,6 +42,62 @@ Item {
 
         root.dragPhase = "dismiss_flyout";
         root.pendingDismissId = notificationId;
+    }
+
+    function _beginDismissRebound(notificationId, cardIndex) {
+        if (!root._isLeader(notificationId, cardIndex) || root.dragPhase !== "dismiss_flyout") return;
+        if (root.pendingDismissId !== notificationId) return;
+
+        root.dragPhase = "dismiss_rebounding";
+        root.leaderOffset = 0;
+        dismissMonitor.restart();
+    }
+
+    function _commitPendingDismiss() {
+        if (root.dragPhase !== "dismiss_rebounding" || root.pendingDismissId < 0) return;
+
+        dismissMonitor.stop();
+        root.dragPhase = "dismiss_committing";
+
+        var dismissId = root.pendingDismissId;
+        if (root.expandedNotificationId === dismissId)
+            root.expandedNotificationId = -1;
+        Notification.dismiss(dismissId);
+    }
+
+    function _dismissVisualSettled() {
+        if (root.pendingDismissId < 0 || !notifList.contentItem) return true;
+
+        var children = notifList.contentItem.children;
+        for (var i = 0; i < children.length; ++i) {
+            var item = children[i];
+            if (!item || item.cardIndex === undefined || item.notif === undefined) continue;
+
+            if (item.notif && item.notif.id === root.pendingDismissId) {
+                if (item.height > root.dismissReboundEpsilon)
+                    return false;
+                continue;
+            }
+
+            if (Math.abs(item.neighborOffset) > root.dismissReboundEpsilon)
+                return false;
+        }
+
+        return true;
+    }
+
+    function _completeDismiss(notificationId, cardIndex) {
+        if (!root._isLeader(notificationId, cardIndex)) return;
+        if (root.pendingDismissId !== notificationId) return;
+
+        if (root.dragPhase === "dismiss_flyout")
+            root._beginDismissRebound(notificationId, cardIndex);
+    }
+
+    function _isPendingDismissCollapsed(notificationId) {
+        return notificationId >= 0
+            && notificationId === root.pendingDismissId
+            && (root.dragPhase === "dismiss_rebounding" || root.dragPhase === "dismiss_committing");
     }
 
     function _enterDragging(notificationId, cardIndex) {
@@ -129,6 +176,7 @@ Item {
 
     function _resetMotionState() {
         settleTimer.stop();
+        dismissMonitor.stop();
         root.dragPhase = "idle";
         root.leaderIndex = -1;
         root.leaderNotificationId = -1;
@@ -166,6 +214,12 @@ Item {
         function onNotificationsChanged() {
             if (root.dragPhase === "dragging" || root.dragPhase === "dismiss_flyout") {
                 root._resetMotionState();
+            } else if (root.dragPhase === "dismiss_rebounding") {
+                if (!root._hasNotification(root.pendingDismissId))
+                    root._resetMotionState();
+            } else if (root.dragPhase === "dismiss_committing") {
+                if (!root._hasNotification(root.pendingDismissId))
+                    root._resetMotionState();
             } else if (root.dragPhase !== "idle" && !root._hasNotification(root.leaderNotificationId)) {
                 root._resetMotionState();
             }
@@ -176,25 +230,37 @@ Item {
     Timer {
         id: settleTimer
 
-        interval: Theme.statusDockRevealDuration
+        interval: Theme.motionFast
         repeat: false
         running: false
 
         onTriggered: {
             if (root.dragPhase === "cancel_settling") {
                 root._resetMotionState();
+            }
+        }
+    }
+
+    Timer {
+        id: dismissMonitor
+
+        interval: 16
+        repeat: true
+        running: false
+
+        onTriggered: {
+            if (root.dragPhase === "dismiss_rebounding") {
+                if (!root._hasNotification(root.pendingDismissId)) {
+                    root._resetMotionState();
+                    return;
+                }
+
+                if (root._dismissVisualSettled())
+                    root._commitPendingDismiss();
                 return;
             }
 
-            if (root.dragPhase === "detach_settling") {
-                var dismissId = root.pendingDismissId;
-                root._resetMotionState();
-                if (dismissId >= 0) {
-                    if (root.expandedNotificationId === dismissId)
-                        root.expandedNotificationId = -1;
-                    Notification.dismiss(dismissId);
-                }
-            }
+            stop();
         }
     }
 
@@ -249,6 +315,7 @@ Item {
                 required property var modelData
 
                 cardIndex: index
+                collapsedOut: root._isPendingDismissCollapsed(modelData.id)
                 directFollowActive: root.directFollowActive
                 expanded: root.expandedNotificationId === modelData.id
                 motionLocked: root.motionLocked
@@ -280,7 +347,7 @@ Item {
                 }
 
                 onDismissFlyoutCompleted: (notificationId, cardIndex) => {
-                    root._beginDetachSettle(notificationId, cardIndex);
+                    root._completeDismiss(notificationId, cardIndex);
                 }
 
                 onToggleExpandedRequested: notificationId => {

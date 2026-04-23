@@ -14,6 +14,7 @@ Item {
     property var notif: null
     property bool expanded: false
     property int cardIndex: -1
+    property bool collapsedOut: false
     property bool directFollowActive: false
     property bool motionLocked: false
     property real neighborOffset: 0
@@ -63,7 +64,7 @@ Item {
     }
 
     implicitHeight: cardFrame.implicitHeight
-    height: implicitHeight
+    height: root.collapsedOut ? 0 : implicitHeight
     width: parent ? parent.width : 0
 
     Behavior on height {
