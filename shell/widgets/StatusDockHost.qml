@@ -157,7 +157,7 @@ Item {
 
         Item {
             id: blurLeftShoulderArc
-            x: 0
+            x: -root._leftShoulderRadius
             y: 0
             width: root._leftShoulderRadius * 2
             height: root._leftShoulderRadius * 2
@@ -166,7 +166,7 @@ Item {
 
         Item {
             id: blurRightShoulderArc
-            x: panelShell.width - (root._rightShoulderRadius * 2)
+            x: panelShell.width - root._rightShoulderRadius
             y: 0
             width: root._rightShoulderRadius * 2
             height: root._rightShoulderRadius * 2
