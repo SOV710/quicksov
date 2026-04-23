@@ -160,8 +160,8 @@ QML 通过 `Image { source: ...svg; sourceSize: ... }` 加载，改色通过 `cu
 | `group_container_radius` | 16px（= `radius.md`） |
 | `leaf_chip_height` | 12-20px（视组件而定；workspace spot 优先 14px） |
 | `leaf_chip_radius` | 12px（= `radius.sm`） |
-| `status_capsule_height` | 26px |
-| `status_capsule_radius` | 13px |
+| `status_capsule_height` | 32px（与 bar 等高） |
+| `status_capsule_radius` | 16px |
 
 这些 token 只定义视觉层级，不强制所有组件做完全相同的内部布局；但必须遵守 `bar shell -> group container -> leaf item` 的层级关系。
 
@@ -169,7 +169,8 @@ QML 通过 `Image { source: ...svg; sourceSize: ... }` 加载，改色通过 `cu
 
 - `workspace-strip` 的 inactive spot 不得暗到接近 bar 底色，至少需要维持清晰轮廓
 - `window-info` 文本块必须在其 container 中严格竖直居中
-- `status capsule` 可以比普通 group container 更高，但必须通过内边距表现为“嵌入 bar”，而不是撑高 bar 本体
+- `status capsule` 在本轮改为**上下顶住 bar**的整块 dock trigger surface，用于与下方 docked panel 直接拼接
+- `status capsule` 不得再表现为 bar 内部漂浮的小胶囊；它现在是右侧系统状态对象的上半部分
 
 ### 3.4 副屏 auto-hide left-bar 几何
 
@@ -198,14 +199,17 @@ QML 通过 `Image { source: ...svg; sourceSize: ... }` 加载，改色通过 `cu
 - popup 外壳 fill 必须带 alpha，但正文与 icon 在稳态下保持正常不透明度
 - blur region 只覆盖 popup 外壳圆角矩形，不覆盖 shadow 和透明留白
 
-### 3.5.1 Status Panel family
+### 3.5.1 Docked Status Panel family
 
 | 参数 | 值 |
 |---|---|
 | `status_panel_width` | 440px |
 | `status_panel_max_height` | 380px |
 | `panel_edge_inset` | 24px |
-| `status_panel_right_inset` | 8px |
+| `status_panel_right_inset` | 16px |
+| `status_panel_gap_from_bar` | 0px |
+| `status_panel_shoulder_depth` | 18px |
+| `status_panel_lower_corner_radius` | 28px（= `radius.xl`） |
 
 适用范围：
 
@@ -215,14 +219,25 @@ QML 通过 `Image { source: ...svg; sourceSize: ... }` 加载，改色通过 `cu
 - volume popup
 - notification center
 
-目标是统一成**紧凑型 anchored utility panel**：
+目标是统一成**紧凑型 docked utility panel**：
 
 - 默认尺寸克制
 - 高度随内容增长
 - 需要列表时优先增长内容区，而不是默认做成大面板
 - 与 top bar 保持轻量、精确、贴近触发源的视觉关系
-- 右上角这组 panel 默认贴近 bar 右缘展开，减少无意义右侧留白
+- 右上角这组 panel 不再是彼此独立漂浮的 popup，而是一个与 `status capsule` 融合的 **single dock host**
+- dock host 与 bar 之间**无 gap**
+- panel 顶部 junction 使用 inverse-radius / concave shoulder，从 `status capsule` 自然过渡到更宽的下方 panel body
+- panel 下缘维持常规大圆角
+- 默认沿 bar 右侧展开，减少无意义右侧留白
 - 这组 panel 的 blur 不单独各挂一套协议，而是由 `MainBar` window 统一请求
+
+补充规则：
+
+- 右上角这组 panel 的 steady-state fill 必须与 `status capsule` 同源同色
+- 打开某个 panel 时，不允许再看到“上方独立胶囊 + 下方独立浮层”的断裂结构
+- 外壳展开动效是垂直 drawer reveal，使用 ease-out；起步快，结束减速
+- 切换 battery/network/bluetooth/volume/notification 时优先复用同一外壳，不闪烁重建整个 shell
 
 ### 3.5.2 Clock Panel family
 
