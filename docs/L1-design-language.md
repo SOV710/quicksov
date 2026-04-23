@@ -34,6 +34,21 @@
 - 主屏 top bar 的第一优先级是**从桌面背景中被清晰识别出来**；不得把 bar、group container、inactive spot 压暗到接近背景
 - 当前设计方向是“浅 bar + 浅容器 + 局部实色高亮”，不是深色厚玻璃条
 
+### 1.2 MainBar Glass Material
+
+主屏 `MainBar` family 现在采用 client-side background effect：
+
+- `MainBar` window 请求 blur
+- bar shell 与 popup shell 的 fill 自身带 alpha
+- 文本、icon、内部 card 保持正常稳态不透明度
+
+约束：
+
+- frosted glass 的语义来自“**blur behind shell region + 半透明 shell fill**”，不是把整个组件常态设成 `< 1.0` 的整体 opacity
+- shadow 只负责景深，不参与 blur region
+- shell 外的透明点击捕获区不参与 blur
+- blur 强度由 compositor 控制；shell 只能定义几何区域与表层材质
+
 ## 2. 排版系统
 
 ### 2.1 字体族
@@ -177,6 +192,12 @@ QML 通过 `Image { source: ...svg; sourceSize: ... }` 加载，改色通过 `cu
 | `corner_radius` | 28px（= `radius.xl`） |
 | `shadow` | `0 12px 40px rgba(0,0,0,0.24)` |
 
+补充规则：
+
+- popup 外壳是 glass shell，而不是纯实色板
+- popup 外壳 fill 必须带 alpha，但正文与 icon 在稳态下保持正常不透明度
+- blur region 只覆盖 popup 外壳圆角矩形，不覆盖 shadow 和透明留白
+
 ### 3.5.1 Status Panel family
 
 | 参数 | 值 |
@@ -201,6 +222,7 @@ QML 通过 `Image { source: ...svg; sourceSize: ... }` 加载，改色通过 `cu
 - 需要列表时优先增长内容区，而不是默认做成大面板
 - 与 top bar 保持轻量、精确、贴近触发源的视觉关系
 - 右上角这组 panel 默认贴近 bar 右缘展开，减少无意义右侧留白
+- 这组 panel 的 blur 不单独各挂一套协议，而是由 `MainBar` window 统一请求
 
 ### 3.5.2 Clock Panel family
 
@@ -210,6 +232,11 @@ QML 通过 `Image { source: ...svg; sourceSize: ... }` 加载，改色通过 `cu
 | `clock_panel_max_height` | 520px |
 
 clock popup 仍是独立 family，但需要与 status panel 共享同一套圆角与阴影语言。
+
+补充规则：
+
+- `clock popup` 的 blur 也归属于 `MainBar` window
+- `clock panel` 只将自己的外壳圆角矩形加入 blur region
 
 ### 3.5.3 Segmented Clock geometry
 

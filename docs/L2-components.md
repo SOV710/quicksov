@@ -82,6 +82,7 @@ layer-rule {
 - bar 高度固定为 32px，保持紧凑，不再使用放大的厚条形态
 - 阴影只作为外部投影存在，不得让 bar 看起来多出一层实体厚度
 - clock 必须是一个共享轮廓的 segmented capsule，而不是三颗分离胶囊
+- bar shell 采用半透明 glass shell；稳态可读性依靠 shell fill、描边与内层容器，而不是整体降低文字透明度
 
 ### 2.2 交互层次
 
@@ -100,6 +101,9 @@ layer-rule {
 - `battery` / `network` / `bluetooth` / `volume` / `notification` 统一使用紧凑型 `status panel family`
 - 右上角这组 panel 在展开时共享统一的右侧对齐逻辑：视觉上贴近 `status capsule` 与屏幕右缘，而不是分别对每个 icon 做居中漂浮
 - `clock` 使用更宽的 `clock panel family`
+- `MainBar` family 的 blur 由 `MainBar` 这个 `PanelWindow` 统一请求；popup 自己不重复附着协议
+- blur region 是 `bar shell + 当前可见 popup shell` 的并集
+- blur region 只覆盖 shell geometry；outside-click 捕获区与 shadow 不参与
 
 ## 3. 主屏组件清单
 
@@ -156,6 +160,11 @@ layer-rule {
 - 宽度目标 1040px；实际为 `min(1040, screen.width - 64)`
 - 高度目标 520px；实际为 `min(520, screen.height - barHeight - 96)`
 - 不再是轻量小 popup，而是从主屏顶部 bar 下方展开的**大 panel**
+
+**blur / shell 规则**：
+- `clock popup` 不是独立 window，而是 `MainBar` window 内的一块 shell
+- `MainBar` 会把 `clock popup` 的外壳圆角矩形加入统一 blur region
+- `clock popup` 外壳使用半透明 fill；内部 calendar / weather cards 继续使用更实的 surface
 
 **结构**：
 - 左卡：月份标题 + Today / 月份切换按钮 + 6×7 month grid + 当前日期 footer
@@ -248,6 +257,11 @@ layer-rule {
 - Power Profile 仅在 daemon 报告 `power_profile_available=true` 时允许交互
 - 台式机 / 无电池设备仍允许展示 power profile 区，但必须弱化主状态区
 
+**shell / blur 规则**：
+- 外层 popup shell 使用半透明 fill
+- shell 圆角矩形由 `MainBar` 统一加入 blur region
+- 内部 metric / profile card 不直接承担 blur 语义
+
 ### 3.8 network
 
 | 属性 | 值 |
@@ -267,6 +281,11 @@ layer-rule {
 - 链路状态（载体、IP、路由）全部通过 netlink，不依赖 NetworkManager
 - dhcpcd 的租约变化通过 netlink ADDR 消息观察
 
+**shell / blur 规则**：
+- 外层 popup shell 使用半透明 fill
+- shell 圆角矩形由 `MainBar` 统一加入 blur region
+- 列表增长不改变 blur attachment owner，只改变当前 shell 几何
+
 ### 3.9 bluetooth
 
 | 属性 | 值 |
@@ -278,6 +297,10 @@ layer-rule {
 | 列表分组 | `Connected` → `Paired` → `Available`；每行显示 name/address、状态文案、电量（若有） |
 | 交互 | click bar icon → 打开/关闭 popup；`Refresh` 开始扫描、扫描中切为 `Stop`；不在打开时自动扫描；点击 popup 外关闭 |
 
+**shell / blur 规则**：
+- 外层 popup shell 使用半透明 fill
+- shell 圆角矩形由 `MainBar` 统一加入 blur region
+
 ### 3.10 volume
 
 | 属性 | 值 |
@@ -287,6 +310,10 @@ layer-rule {
 | Icon | Material volume glyph family |
 | 几何 | click popup；使用紧凑型 `status panel family`；Applications 列表区上限收回到紧凑规格，避免默认面板过长 |
 | 交互 | click → popup：大音量 slider、默认 sink 切换、per-app 音量列表；hover 滚轮 → ±5% |
+
+**shell / blur 规则**：
+- 外层 popup shell 使用半透明 fill
+- shell 圆角矩形由 `MainBar` 统一加入 blur region
 
 ### 3.11 notification-center
 
@@ -298,6 +325,10 @@ layer-rule {
 | Icon | Material notifications glyph family |
 | 几何 | click popup；使用紧凑型 `status panel family`；通知列表区上限收回到紧凑规格 |
 | 交互 | click → 展开 NotificationCenter popup；长按或右键 → 清空全部 |
+
+**shell / blur 规则**：
+- 外层 popup shell 使用半透明 fill
+- shell 圆角矩形由 `MainBar` 统一加入 blur region
 
 **Toast 行为**：新 notification 到达时主屏右上角滑入 toast 卡片（`notification_in`），stay 5s 自动滑出，hover 暂停。最多堆叠 3 条。
 
