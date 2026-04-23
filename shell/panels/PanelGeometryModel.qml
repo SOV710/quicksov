@@ -12,6 +12,7 @@ QtObject {
     property Item triggerItem: null
     property Item coordinateItem: null
     property string alignmentMode: "right"
+    property real preferredXOffset: 0
     property real preferredWidth: 0
     property real availableWidth: 0
     property real maxBodyHeight: 0
@@ -84,10 +85,10 @@ QtObject {
     readonly property real preferredX: {
         if (hasTriggerMapping) {
             if (alignmentMode === "center")
-                return _triggerSceneX + (_triggerSceneWidth - panelWidth) / 2;
-            return _triggerSceneX + _triggerSceneWidth - panelWidth;
+                return _triggerSceneX + (_triggerSceneWidth - panelWidth) / 2 + preferredXOffset;
+            return _triggerSceneX + _triggerSceneWidth - panelWidth + preferredXOffset;
         }
-        return barRight - panelWidth;
+        return barRight - panelWidth + preferredXOffset;
     }
     readonly property real x: Math.max(barLeft, Math.min(barRight - panelWidth, preferredX))
     readonly property real y: Math.max(0, attachY - seamOverlap)
