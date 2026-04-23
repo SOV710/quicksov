@@ -2,6 +2,9 @@ MainBarPopupController 1.0 MainBarPopupController.qml
 PanelGeometryModel 1.0 PanelGeometryModel.qml
 PanelContentSlot 1.0 PanelContentSlot.qml
 PanelBackgroundField 1.0 PanelBackgroundField.qml
+PanelShellModel 1.0 PanelShellModel.qml
+PanelShellLayer 1.0 PanelShellLayer.qml
+PanelShellRegion 1.0 PanelShellRegion.qml
 MainBarPanelScene 1.0 MainBarPanelScene.qml
 MainBarExclusiveZoneWindow 1.0 MainBarExclusiveZoneWindow.qml
 MainBarOverlayWindow 1.0 MainBarOverlayWindow.qml

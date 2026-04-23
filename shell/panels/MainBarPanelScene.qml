@@ -19,21 +19,26 @@ Item {
     property real statusMaxBodyHeight: 0
     property Component clockContentComponent: null
     property Component statusContentComponent: null
+    readonly property var activePanelGeometry: {
+        if (clockModel.open)
+            return clockModel;
+        if (statusModel.open)
+            return statusModel;
+        if (clockModel.active)
+            return clockModel;
+        if (statusModel.active)
+            return statusModel;
+        return null;
+    }
 
     readonly property alias clockPanel: clockModel
     readonly property alias statusPanel: statusModel
-    readonly property alias clockSurfaceItem: clockSurfaceItem
-    readonly property alias statusSurfaceItem: statusSurfaceItem
-
-    function repaintBackground() {
-        backgroundField.requestPaint();
-    }
+    readonly property alias shellRegion: shellRegionItem
 
     PanelBackgroundField {
         id: backgroundField
         anchors.fill: parent
-        barItem: root.barItem
-        panelModels: [clockModel, statusModel]
+        shellModel: shellModel
     }
 
     PanelGeometryModel {
@@ -62,22 +67,16 @@ Item {
         open: root.controller ? root.controller.statusPopup !== "" : false
     }
 
-    Item {
-        id: clockSurfaceItem
-        x: clockModel.x - clockModel.topLeftRadius
-        y: clockModel.y
-        width: clockModel.width + clockModel.topLeftRadius + clockModel.topRightRadius
-        height: clockModel.height
-        visible: false
+    PanelShellModel {
+        id: shellModel
+        coordinateItem: root
+        barItem: root.barItem
+        geometry: root.activePanelGeometry
     }
 
-    Item {
-        id: statusSurfaceItem
-        x: statusModel.x - statusModel.topLeftRadius
-        y: statusModel.y
-        width: statusModel.width + statusModel.topLeftRadius + statusModel.topRightRadius
-        height: statusModel.height
-        visible: false
+    PanelShellRegion {
+        id: shellRegionItem
+        shellModel: shellModel
     }
 
     PanelContentSlot {
@@ -92,29 +91,5 @@ Item {
         z: 2
         geometry: statusModel
         contentComponent: root.statusContentComponent
-    }
-
-    Connections {
-        target: clockModel
-        function onXChanged() { root.repaintBackground(); }
-        function onYChanged() { root.repaintBackground(); }
-        function onWidthChanged() { root.repaintBackground(); }
-        function onHeightChanged() { root.repaintBackground(); }
-        function onBodyHeightChanged() { root.repaintBackground(); }
-        function onActiveChanged() { root.repaintBackground(); }
-        function onTopLeftRadiusChanged() { root.repaintBackground(); }
-        function onTopRightRadiusChanged() { root.repaintBackground(); }
-    }
-
-    Connections {
-        target: statusModel
-        function onXChanged() { root.repaintBackground(); }
-        function onYChanged() { root.repaintBackground(); }
-        function onWidthChanged() { root.repaintBackground(); }
-        function onHeightChanged() { root.repaintBackground(); }
-        function onBodyHeightChanged() { root.repaintBackground(); }
-        function onActiveChanged() { root.repaintBackground(); }
-        function onTopLeftRadiusChanged() { root.repaintBackground(); }
-        function onTopRightRadiusChanged() { root.repaintBackground(); }
     }
 }

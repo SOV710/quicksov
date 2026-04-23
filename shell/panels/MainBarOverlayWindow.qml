@@ -26,9 +26,9 @@ PanelWindow {
     aboveWindows: true
     focusable: false
     color: "transparent"
-    mask: popupController.anyOpen ? captureMask : surfaceMask
+    mask: popupController.anyOpen ? captureMask : panelScene.shellRegion
 
-    BackgroundEffect.blurRegion: blurRegion
+    BackgroundEffect.blurRegion: panelScene.shellRegion
 
     MainBarPopupController {
         id: popupController
@@ -74,50 +74,6 @@ PanelWindow {
     Region {
         id: captureMask
         item: windowBounds
-    }
-
-    Region {
-        id: surfaceMask
-        item: barRect
-        radius: barRect.radius
-
-        Region {
-            item: panelScene.clockPanel.active ? panelScene.clockSurfaceItem : null
-            topLeftRadius: 0
-            topRightRadius: 0
-            bottomLeftRadius: Theme.statusDockLowerRadius
-            bottomRightRadius: Theme.statusDockLowerRadius
-        }
-
-        Region {
-            item: panelScene.statusPanel.active ? panelScene.statusSurfaceItem : null
-            topLeftRadius: 0
-            topRightRadius: 0
-            bottomLeftRadius: Theme.statusDockLowerRadius
-            bottomRightRadius: Theme.statusDockLowerRadius
-        }
-    }
-
-    Region {
-        id: blurRegion
-        item: barRect
-        radius: barRect.radius
-
-        Region {
-            item: panelScene.clockPanel.active ? panelScene.clockSurfaceItem : null
-            topLeftRadius: 0
-            topRightRadius: 0
-            bottomLeftRadius: Theme.statusDockLowerRadius
-            bottomRightRadius: Theme.statusDockLowerRadius
-        }
-
-        Region {
-            item: panelScene.statusPanel.active ? panelScene.statusSurfaceItem : null
-            topLeftRadius: 0
-            topRightRadius: 0
-            bottomLeftRadius: Theme.statusDockLowerRadius
-            bottomRightRadius: Theme.statusDockLowerRadius
-        }
     }
 
     MouseArea {
