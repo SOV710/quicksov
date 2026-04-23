@@ -12,7 +12,7 @@ Item {
     property bool dragInProgress: false
     property int draggedIndex: -1
     property int draggedNotificationId: -1
-    property real dragProgress: 0
+    property real dragOffset: 0
     property int expandedNotificationId: -1
     property double nowMs: Date.now()
 
@@ -26,7 +26,7 @@ Item {
         root.dragInProgress = false;
         root.draggedIndex = -1;
         root.draggedNotificationId = -1;
-        root.dragProgress = 0;
+        root.dragOffset = 0;
     }
 
     function _hasNotification(id) {
@@ -47,7 +47,8 @@ Item {
 
     function _neighborOffsetForIndex(cardIndex) {
         if (!root.dragInProgress || Math.abs(cardIndex - root.draggedIndex) !== 1) return 0;
-        return Theme.spaceLg * root.dragProgress;
+        var maxPull = Theme.spaceXl + Theme.spaceSm;
+        return maxPull * (1 - Math.exp(-root.dragOffset / 52));
     }
 
     function _pruneTransientState() {
@@ -72,12 +73,17 @@ Item {
         return Math.max(1, Math.floor(delta / day)) + "d";
     }
 
-    function _setDragState(notificationId, cardIndex, active, progress) {
+    function _setDragOffset(notificationId, cardIndex, offset) {
+        if (!root.dragInProgress) return;
+        if (root.draggedNotificationId !== notificationId || root.draggedIndex !== cardIndex) return;
+        root.dragOffset = Math.max(0, offset);
+    }
+
+    function _setDragState(notificationId, cardIndex, active) {
         if (active) {
             root.dragInProgress = true;
             root.draggedNotificationId = notificationId;
             root.draggedIndex = cardIndex;
-            root.dragProgress = progress;
             return;
         }
 
@@ -179,8 +185,12 @@ Item {
                     Notification.dismiss(notificationId);
                 }
 
-                onDragStateChanged: (notificationId, cardIndex, active, progress) => {
-                    root._setDragState(notificationId, cardIndex, active, progress);
+                onDragOffsetChanged: (notificationId, cardIndex, offset) => {
+                    root._setDragOffset(notificationId, cardIndex, offset);
+                }
+
+                onDragStateChanged: (notificationId, cardIndex, active) => {
+                    root._setDragState(notificationId, cardIndex, active);
                 }
 
                 onToggleExpandedRequested: notificationId => {

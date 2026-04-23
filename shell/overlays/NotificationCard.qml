@@ -19,7 +19,8 @@ Item {
     property string relativeTime: ""
 
     signal dismissRequested(int notificationId)
-    signal dragStateChanged(int notificationId, int cardIndex, bool active, real progress)
+    signal dragOffsetChanged(int notificationId, int cardIndex, real offset)
+    signal dragStateChanged(int notificationId, int cardIndex, bool active)
     signal toggleExpandedRequested(int notificationId)
 
     readonly property var actions: _displayActions(notif ? notif.actions : [])
@@ -85,12 +86,6 @@ Item {
         });
     }
 
-    function _dragProgressFor(offset) {
-        if (root.dismissThreshold <= 0) return 0;
-        var linear = Math.max(0, Math.min(1, offset / root.dismissThreshold));
-        return 1 - Math.pow(1 - linear, 1.85);
-    }
-
     function _endDrag() {
         var id = root.notif ? root.notif.id : -1;
         var shouldDismiss = root.swipeOffset >= root.dismissThreshold;
@@ -103,7 +98,7 @@ Item {
             return;
         }
 
-        root.dragStateChanged(id, root.cardIndex, false, 0);
+        root.dragStateChanged(id, root.cardIndex, false);
         root.swipeOffset = 0;
     }
 
@@ -137,6 +132,11 @@ Item {
 
         HoverHandler {
             id: cardHover
+        }
+
+        onXChanged: {
+            if ((dragHandler.active || root.dismissing) && root.notif)
+                root.dragOffsetChanged(root.notif.id, root.cardIndex, root.swipeOffset);
         }
 
         Column {
@@ -174,13 +174,10 @@ Item {
                     onActiveChanged: {
                         if (active) {
                             root.dragStartOffset = root.swipeOffset;
-                            if (root.notif)
-                                root.dragStateChanged(
-                                    root.notif.id,
-                                    root.cardIndex,
-                                    true,
-                                    root._dragProgressFor(root.swipeOffset)
-                                );
+                            if (root.notif) {
+                                root.dragStateChanged(root.notif.id, root.cardIndex, true);
+                                root.dragOffsetChanged(root.notif.id, root.cardIndex, root.swipeOffset);
+                            }
                             return;
                         }
 
@@ -195,14 +192,6 @@ Item {
                         if (rawOffset > root.dismissThreshold)
                             rawOffset = root.dismissThreshold + (rawOffset - root.dismissThreshold) * 0.32;
                         root.swipeOffset = rawOffset;
-
-                        if (root.notif)
-                            root.dragStateChanged(
-                                root.notif.id,
-                                root.cardIndex,
-                                true,
-                                root._dragProgressFor(root.swipeOffset)
-                            );
                     }
                 }
 
