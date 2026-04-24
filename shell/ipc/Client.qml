@@ -22,9 +22,11 @@ Singleton {
 
     property var _pending: ({})
     property var _subscribers: ({})
+    property var _eventSubscribers: ({})
 
     signal connectionChanged(bool isConnected)
     signal pubReceived(string topic, var payload)
+    signal eventReceived(string topic, string eventName, var payload)
 
     property var _socket: socketLoader.item
 
@@ -158,17 +160,29 @@ Singleton {
             for (var i = 0; i < topics.length; i++) {
                 root._sendRaw(Protocol.makeSub(topics[i]));
             }
+            var eventTopics = Object.keys(root._eventSubscribers);
+            for (var j = 0; j < eventTopics.length; j++) {
+                root._sendRaw(Protocol.makeSubEvents(eventTopics[j]));
+            }
             root.connectionChanged(true);
             return;
         }
         if (!root.handshakeDone) return;
 
         if (msg.kind === 3) {
-            var subs = root._subscribers[msg.topic];
-            if (subs) {
-                for (var j = 0; j < subs.length; j++) subs[j](msg.payload);
+            if (msg.action && msg.action.length > 0) {
+                var eventSubs = root._eventSubscribers[msg.topic];
+                if (eventSubs) {
+                    for (var j = 0; j < eventSubs.length; j++) eventSubs[j](msg.action, msg.payload);
+                }
+                root.eventReceived(msg.topic, msg.action, msg.payload);
+            } else {
+                var subs = root._subscribers[msg.topic];
+                if (subs) {
+                    for (var k = 0; k < subs.length; k++) subs[k](msg.payload);
+                }
+                root.pubReceived(msg.topic, msg.payload);
             }
-            root.pubReceived(msg.topic, msg.payload);
         } else if (msg.kind === 1 || msg.kind === 2) {
             var cb = root._pending[msg.id];
             if (cb) {
@@ -204,6 +218,27 @@ Singleton {
         if (subs.length === 0) {
             delete root._subscribers[topic];
             if (root.handshakeDone) root._sendRaw(Protocol.makeUnsub(topic));
+        }
+    }
+
+    function subscribeEvents(topic, callback) {
+        if (!root._eventSubscribers[topic]) root._eventSubscribers[topic] = [];
+        var subs = root._eventSubscribers[topic];
+        if (subs.indexOf(callback) >= 0) return;
+
+        var wasEmpty = subs.length === 0;
+        subs.push(callback);
+        if (wasEmpty && root.handshakeDone) root._sendRaw(Protocol.makeSubEvents(topic));
+    }
+
+    function unsubscribeEvents(topic, callback) {
+        var subs = root._eventSubscribers[topic];
+        if (!subs) return;
+        var idx = subs.indexOf(callback);
+        if (idx >= 0) subs.splice(idx, 1);
+        if (subs.length === 0) {
+            delete root._eventSubscribers[topic];
+            if (root.handshakeDone) root._sendRaw(Protocol.makeUnsubEvents(topic));
         }
     }
 

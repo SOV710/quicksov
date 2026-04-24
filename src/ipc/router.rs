@@ -23,6 +23,22 @@ pub struct ForwarderRegistry {
     handles: HashMap<String, AbortHandle>,
 }
 
+#[derive(Clone, Copy)]
+enum SubscriptionChannel {
+    State,
+    Events,
+}
+
+impl SubscriptionChannel {
+    fn key(self, topic: &str) -> String {
+        let prefix = match self {
+            Self::State => "state",
+            Self::Events => "events",
+        };
+        format!("{prefix}:{topic}")
+    }
+}
+
 impl ForwarderRegistry {
     pub fn new() -> Self {
         Self {
@@ -32,15 +48,16 @@ impl ForwarderRegistry {
     }
 
     /// Insert a new forwarder task and record its abort handle under `topic`.
-    pub fn insert(&mut self, topic: String, abort: AbortHandle) {
-        if let Some(existing) = self.handles.insert(topic, abort) {
+    fn insert(&mut self, channel: SubscriptionChannel, topic: String, abort: AbortHandle) {
+        let key = channel.key(&topic);
+        if let Some(existing) = self.handles.insert(key, abort) {
             existing.abort();
         }
     }
 
     /// Abort the forwarder for `topic` (UNSUB).  No-op if not subscribed.
-    pub fn remove(&mut self, topic: &str) {
-        if let Some(h) = self.handles.remove(topic) {
+    fn remove(&mut self, channel: SubscriptionChannel, topic: &str) {
+        if let Some(h) = self.handles.remove(&channel.key(topic)) {
             h.abort();
         }
     }
@@ -103,6 +120,8 @@ impl Router {
             Kind::Oneshot => self.handle_oneshot(envelope).await,
             Kind::Sub => self.handle_sub(envelope, outbound_tx, fwd).await,
             Kind::Unsub => self.handle_unsub(&envelope.topic, fwd),
+            Kind::SubEvents => self.handle_sub_events(envelope, outbound_tx, fwd).await,
+            Kind::UnsubEvents => self.handle_unsub_events(&envelope.topic, fwd),
             Kind::Rep | Kind::Err | Kind::Pub => {
                 warn!(kind = kind as u8, topic = %envelope.topic, "unexpected client-to-server kind; ignoring");
             }
@@ -234,7 +253,69 @@ impl Router {
             }
         });
 
-        fwd.insert(envelope.topic, abort);
+        fwd.insert(SubscriptionChannel::State, envelope.topic, abort);
+    }
+
+    // -----------------------------------------------------------------------
+    // SUB_EVENTS — subscribe to discrete broadcast events
+    // -----------------------------------------------------------------------
+
+    async fn handle_sub_events(
+        &self,
+        envelope: Envelope,
+        outbound_tx: &mpsc::Sender<String>,
+        fwd: &mut ForwarderRegistry,
+    ) {
+        let Some(handle) = self.services.get(&envelope.topic) else {
+            debug!(topic = %envelope.topic, "SUB_EVENTS to unknown topic");
+            send_err_envelope(
+                outbound_tx,
+                0,
+                &envelope.topic,
+                E_TOPIC_UNKNOWN,
+                &format!("unknown topic: {}", envelope.topic),
+            )
+            .await;
+            return;
+        };
+
+        let Some(events_tx) = handle.events_tx.as_ref() else {
+            debug!(topic = %envelope.topic, "SUB_EVENTS to topic without event stream");
+            send_err_envelope(
+                outbound_tx,
+                0,
+                &envelope.topic,
+                E_SERVICE_UNAVAILABLE,
+                &format!("topic '{}' does not publish events", envelope.topic),
+            )
+            .await;
+            return;
+        };
+
+        let mut events_rx = events_tx.subscribe();
+        let topic = envelope.topic.clone();
+        let tx = outbound_tx.clone();
+
+        let abort = fwd.set_mut().spawn(async move {
+            loop {
+                match events_rx.recv().await {
+                    Ok(event) => {
+                        let Some(action) = event.get("type").and_then(|value| value.as_str()) else {
+                            warn!(topic = %topic, event = %event, "broadcast event missing type");
+                            continue;
+                        };
+                        let payload = event.get("payload").cloned().unwrap_or(serde_json::Value::Null);
+                        send_pub_event_envelope(&tx, &topic, action, payload).await;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                        warn!(topic = %topic, skipped, "event subscriber lagged; dropping old events");
+                    }
+                }
+            }
+        });
+
+        fwd.insert(SubscriptionChannel::Events, envelope.topic, abort);
     }
 
     // -----------------------------------------------------------------------
@@ -243,7 +324,12 @@ impl Router {
 
     fn handle_unsub(&self, topic: &str, fwd: &mut ForwarderRegistry) {
         debug!(topic = %topic, "UNSUB");
-        fwd.remove(topic);
+        fwd.remove(SubscriptionChannel::State, topic);
+    }
+
+    fn handle_unsub_events(&self, topic: &str, fwd: &mut ForwarderRegistry) {
+        debug!(topic = %topic, "UNSUB_EVENTS");
+        fwd.remove(SubscriptionChannel::Events, topic);
     }
 }
 
@@ -303,6 +389,23 @@ pub async fn send_pub_envelope(
         kind: Kind::Pub as u8,
         topic: topic.to_string(),
         action: String::new(),
+        payload,
+    };
+    enqueue_envelope(outbound_tx, &env).await;
+}
+
+/// Encode and enqueue an event `PUB` envelope.
+pub async fn send_pub_event_envelope(
+    outbound_tx: &mpsc::Sender<String>,
+    topic: &str,
+    action: &str,
+    payload: serde_json::Value,
+) {
+    let env = Envelope {
+        id: 0,
+        kind: Kind::Pub as u8,
+        topic: topic.to_string(),
+        action: action.to_string(),
         payload,
     };
     enqueue_envelope(outbound_tx, &env).await;

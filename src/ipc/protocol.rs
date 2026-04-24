@@ -23,6 +23,8 @@ pub enum Kind {
     Oneshot = 4,
     Sub = 5,
     Unsub = 6,
+    SubEvents = 7,
+    UnsubEvents = 8,
 }
 
 impl TryFrom<u8> for Kind {
@@ -37,6 +39,8 @@ impl TryFrom<u8> for Kind {
             4 => Ok(Kind::Oneshot),
             5 => Ok(Kind::Sub),
             6 => Ok(Kind::Unsub),
+            7 => Ok(Kind::SubEvents),
+            8 => Ok(Kind::UnsubEvents),
             _ => Err(ProtocolError::UnknownKind(v)),
         }
     }

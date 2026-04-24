@@ -3,9 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import QtQuick
-import QtQuick.Layouts
 import ".."
-import "../components"
 import "../services"
 
 Item {
@@ -28,14 +26,7 @@ Item {
     signal dismissFlyoutCompleted(int notificationId, int cardIndex)
     signal toggleExpandedRequested(int notificationId)
 
-    readonly property var actions: _displayActions(notif ? notif.actions : [])
-    readonly property color accentColor: _accentFor(notif ? notif.urgency : "normal")
     readonly property real dismissThreshold: Math.max(80, width * 0.28)
-    readonly property string detailsText: notif && typeof notif.body === "string" ? notif.body : ""
-    readonly property real contentColumnX: root.iconColumnWidth + Theme.spaceMd
-    readonly property string iconSource: notif && typeof notif.icon === "string" ? notif.icon : ""
-    readonly property int iconColumnWidth: 52
-    readonly property string titleText: _titleFor(notif)
 
     property bool dismissing: false
     property real dragStartOffset: 0
@@ -74,23 +65,6 @@ Item {
         }
     }
 
-    function _accentFor(urgency) {
-        if (urgency === "critical") return Theme.colorError;
-        if (urgency === "low") return Theme.fgMuted;
-        return Theme.accentBlue;
-    }
-
-    function _displayActions(actions) {
-        if (!actions || !actions.length) return [];
-
-        return actions.filter(function(action) {
-            return action
-                && typeof action.id === "string"
-                && typeof action.label === "string"
-                && action.label.trim().length > 0;
-        });
-    }
-
     function _endDrag() {
         var id = root.notif ? root.notif.id : -1;
         var shouldDismiss = root.swipeOffset >= root.dismissThreshold;
@@ -110,22 +84,15 @@ Item {
         root.swipeOffset = 0;
     }
 
-    function _titleFor(notif) {
-        if (!notif) return "Notification";
-        if (notif.summary && notif.summary.length > 0) return notif.summary;
-        if (notif.app_name && notif.app_name.length > 0) return notif.app_name;
-        return "Notification";
-    }
-
     Rectangle {
         id: cardFrame
 
         width: root.width
         height: root.height
         x: root.swipeOffset + root.neighborOffset
-        implicitHeight: contentCol.implicitHeight + Theme.spaceMd * 2
+        implicitHeight: cardContent.implicitHeight + Theme.spaceMd * 2
         radius: Theme.radiusMd
-        color: cardHover.containsMouse ? Theme.surfaceHover : Theme.chromeSubtleFill
+        color: cardHover.hovered ? Theme.surfaceHover : Theme.chromeSubtleFill
         border.color: root.notif && root.notif.urgency === "critical"
                       ? Theme.dangerBorderSoft
                       : (root.expanded ? Theme.borderDefault : Theme.borderSubtle)
@@ -147,212 +114,78 @@ Item {
                 root.dragOffsetChanged(root.notif.id, root.cardIndex, root.swipeOffset);
         }
 
-        Column {
-            id: contentCol
+        NotificationCardContent {
+            id: cardContent
 
             anchors.fill: parent
             anchors.margins: Theme.spaceMd
-            spacing: Theme.spaceSm
+            expanded: root.expanded
+            interactive: !root.motionLocked && !root.dismissing
+            notif: root.notif
+            relativeTime: root.relativeTime
 
-            Item {
-                id: summaryArea
-
-                width: parent.width
-                implicitHeight: summaryRow.implicitHeight
-                property bool tapBlockedForCurrentGesture: false
-
-                HoverHandler {
-                    cursorShape: root.motionLocked ? Qt.ArrowCursor : Qt.PointingHandCursor
-                }
-
-                TapHandler {
-                    enabled: !root.motionLocked && !root.dismissing
-                    onPressedChanged: {
-                        if (pressed)
-                            summaryArea.tapBlockedForCurrentGesture = false;
-                    }
-                    onTapped: {
-                        if (summaryArea.tapBlockedForCurrentGesture)
-                            return;
-                        if (root.notif)
-                            root.toggleExpandedRequested(root.notif.id);
-                    }
-                }
-
-                DragHandler {
-                    id: dragHandler
-
-                    enabled: !root.motionLocked || active
-                    target: null
-                    xAxis.enabled: true
-                    yAxis.enabled: false
-
-                    onActiveChanged: {
-                        if (active) {
-                            summaryArea.tapBlockedForCurrentGesture = true;
-                            root.dragStartOffset = root.swipeOffset;
-                            if (root.notif) {
-                                root.dragStarted(root.notif.id, root.cardIndex);
-                                root.dragOffsetChanged(root.notif.id, root.cardIndex, root.swipeOffset);
-                            }
-                            return;
-                        }
-
-                        if (!root.dismissing)
-                            root._endDrag();
-                    }
-
-                    onTranslationChanged: {
-                        if (!active) return;
-
-                        var rawOffset = Math.max(0, root.dragStartOffset + translation.x);
-                        if (rawOffset > root.dismissThreshold)
-                            rawOffset = root.dismissThreshold + (rawOffset - root.dismissThreshold) * 0.32;
-                        root.swipeOffset = rawOffset;
-                    }
-                }
-
-                RowLayout {
-                    id: summaryRow
-
-                    width: parent.width
-                    spacing: Theme.spaceMd
-
-                    Rectangle {
-                        Layout.alignment: Qt.AlignTop
-                        Layout.preferredHeight: root.iconColumnWidth
-                        Layout.preferredWidth: root.iconColumnWidth
-                        radius: Theme.radiusMd
-                        color: Theme.overlay(Theme.chromeSubtleFillMuted, root.accentColor, 0.22)
-                        border.color: Theme.withAlpha(root.accentColor, 0.26)
-                        border.width: 1
-
-                        Image {
-                            id: iconImage
-
-                            anchors.centerIn: parent
-                            width: 30
-                            height: 30
-                            asynchronous: true
-                            fillMode: Image.PreserveAspectFit
-                            mipmap: true
-                            smooth: true
-                            source: root.iconSource
-                            visible: root.iconSource !== "" && status === Image.Ready
-                        }
-
-                        SvgIcon {
-                            anchors.centerIn: parent
-                            iconPath: Theme.iconNotificationStatus
-                            size: 24
-                            color: root.accentColor
-                            visible: !iconImage.visible
-                        }
-                    }
-
-                    ColumnLayout {
-                        Layout.alignment: Qt.AlignTop
-                        Layout.fillWidth: true
-                        spacing: 6
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: Theme.spaceSm
-
-                            Text {
-                                Layout.fillWidth: true
-                                color: Theme.fgPrimary
-                                elide: Text.ElideRight
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.fontBody
-                                font.weight: Theme.weightSemibold
-                                text: root.titleText
-                            }
-
-                            Text {
-                                color: Theme.fgMuted
-                                font.family: Theme.fontFamily
-                                font.features: { "tnum": 1 }
-                                font.pixelSize: Theme.fontSmall
-                                text: root.relativeTime
-                                visible: text !== ""
-                            }
-
-                            SvgIcon {
-                                iconPath: "lucide/chevron-down.svg"
-                                size: 16
-                                color: Theme.fgMuted
-                                rotation: root.expanded ? 180 : 0
-
-                                Behavior on rotation {
-                                    NumberAnimation {
-                                        duration: Theme.motionFast
-                                        easing.type: Easing.OutCubic
-                                    }
-                                }
-                            }
-                        }
-
-                        Text {
-                            Layout.fillWidth: true
-                            visible: root.detailsText !== ""
-                            color: Theme.fgSecondary
-                            elide: Text.ElideRight
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontBody
-                            maximumLineCount: root.expanded ? 0 : 2
-                            text: root.detailsText
-                            wrapMode: Text.WordWrap
-                        }
-                    }
-                }
+            onActionRequested: actionId => {
+                if (root.notif)
+                    Notification.invokeAction(root.notif.id, actionId);
             }
 
-            Item {
-                visible: root.expanded
-                width: parent.width
-                implicitHeight: actionsContainer.implicitHeight
+            onDismissRequested: {
+                if (root.notif)
+                    root.dismissRequested(root.notif.id);
+            }
+        }
 
-                Item {
-                    id: actionsContainer
+        HoverHandler {
+            parent: cardContent.summaryArea
+            cursorShape: root.motionLocked ? Qt.ArrowCursor : Qt.PointingHandCursor
+        }
 
-                    x: root.contentColumnX
-                    width: Math.max(0, parent.width - root.contentColumnX)
-                    implicitHeight: actionsRow.implicitHeight
+        TapHandler {
+            parent: cardContent.summaryArea
+            enabled: !root.motionLocked && !root.dismissing
+            onPressedChanged: {
+                if (pressed)
+                    cardContent.summaryArea.tapBlockedForCurrentGesture = false;
+            }
+            onTapped: {
+                if (cardContent.summaryArea.tapBlockedForCurrentGesture)
+                    return;
+                if (root.notif)
+                    root.toggleExpandedRequested(root.notif.id);
+            }
+        }
 
-                    Row {
-                        id: actionsRow
+        DragHandler {
+            id: dragHandler
 
-                        spacing: Theme.spaceXs
+            parent: cardContent.summaryArea
+            enabled: !root.motionLocked || active
+            target: null
+            xAxis.enabled: true
+            yAxis.enabled: false
 
-                        Repeater {
-                            model: root.actions
-
-                            delegate: ActionChip {
-                                required property var modelData
-
-                                accentColor: root.accentColor
-                                interactive: !root.motionLocked && !root.dismissing
-                                label: modelData.label || ""
-                                onClicked: {
-                                    if (root.notif)
-                                        Notification.invokeAction(root.notif.id, modelData.id);
-                                }
-                            }
-                        }
-
-                        ActionChip {
-                            accentColor: Theme.accentTeal
-                            emphasized: true
-                            interactive: !root.motionLocked && !root.dismissing
-                            label: "I got it"
-                            onClicked: {
-                                if (root.notif)
-                                    root.dismissRequested(root.notif.id);
-                            }
-                        }
+            onActiveChanged: {
+                if (active) {
+                    cardContent.summaryArea.tapBlockedForCurrentGesture = true;
+                    root.dragStartOffset = root.swipeOffset;
+                    if (root.notif) {
+                        root.dragStarted(root.notif.id, root.cardIndex);
+                        root.dragOffsetChanged(root.notif.id, root.cardIndex, root.swipeOffset);
                     }
+                    return;
                 }
+
+                if (!root.dismissing)
+                    root._endDrag();
+            }
+
+            onTranslationChanged: {
+                if (!active) return;
+
+                var rawOffset = Math.max(0, root.dragStartOffset + translation.x);
+                if (rawOffset > root.dismissThreshold)
+                    rawOffset = root.dismissThreshold + (rawOffset - root.dismissThreshold) * 0.32;
+                root.swipeOffset = rawOffset;
             }
         }
     }
@@ -369,53 +202,6 @@ Item {
                 root.dismissing = false;
                 root.dismissFlyoutCompleted(root.notif.id, root.cardIndex);
             }
-        }
-    }
-
-    component ActionChip: Rectangle {
-        id: chip
-
-        property color accentColor: Theme.accentBlue
-        property bool emphasized: false
-        property bool interactive: true
-        property string label: ""
-
-        signal clicked()
-
-        implicitHeight: 28
-        implicitWidth: chipLabel.implicitWidth + Theme.spaceMd * 2
-        radius: Theme.radiusSm
-        border.color: emphasized ? Theme.withAlpha(accentColor, 0.44) : Theme.borderDefault
-        border.width: 1
-        color: chipHover.containsMouse && chip.interactive
-               ? (emphasized
-                  ? Theme.overlay(Theme.surfaceActive, accentColor, 0.32)
-                  : Theme.surfaceHover)
-               : (emphasized
-                  ? Theme.overlay(Theme.chromeSubtleFill, accentColor, 0.20)
-                  : Theme.bgSurfaceRaised)
-
-        Text {
-            id: chipLabel
-
-            anchors.centerIn: parent
-            color: emphasized ? Theme.fgPrimary : Theme.fgSecondary
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontBody
-            font.weight: emphasized ? Theme.weightMedium : Theme.weightRegular
-            text: chip.label
-        }
-
-        HoverHandler {
-            id: chipHover
-            cursorShape: chip.interactive ? Qt.PointingHandCursor : Qt.ArrowCursor
-        }
-
-        MouseArea {
-            anchors.fill: parent
-            enabled: chip.interactive
-            cursorShape: chip.interactive ? Qt.PointingHandCursor : Qt.ArrowCursor
-            onClicked: chip.clicked()
         }
     }
 }

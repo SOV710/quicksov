@@ -15,6 +15,7 @@ Item {
     property real leaderOffset: 0
     property int pendingDismissId: -1
     property int expandedNotificationId: -1
+    property string _uiVisibilityKey: "notification-center-" + Math.random().toString(36).slice(2)
     property double nowMs: Date.now()
     readonly property real dismissReboundEpsilon: 0.35
 
@@ -193,9 +194,13 @@ Item {
         root.nowMs = Date.now();
         root._markVisibleAsRead();
         root._pruneTransientState();
+        NotificationUiState.setNotificationCenterVisible(root._uiVisibilityKey, root.visible);
     }
 
+    Component.onDestruction: NotificationUiState.setNotificationCenterVisible(root._uiVisibilityKey, false)
+
     onVisibleChanged: {
+        NotificationUiState.setNotificationCenterVisible(root._uiVisibilityKey, visible);
         if (visible) {
             root.nowMs = Date.now();
             root._markVisibleAsRead();

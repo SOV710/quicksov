@@ -21,9 +21,9 @@
     "required": ["id", "kind", "topic"],
     "properties": {
       "id": { "type": "integer", "minimum": 0 },
-      "kind": { "type": "integer", "enum": [0, 1, 2, 3, 4, 5, 6] },
+      "kind": { "type": "integer", "enum": [0, 1, 2, 3, 4, 5, 6, 7, 8] },
       "topic": { "type": "string" },
-      "action": { "type": "string" },
+      "action": { "type": "string", "description": "REQ/ONESHOT action name, or event name for event PUB frames" },
       "payload": {}
     },
     "kind_table": {
@@ -33,7 +33,9 @@
       "3": "PUB",
       "4": "ONESHOT",
       "5": "SUB",
-      "6": "UNSUB"
+      "6": "UNSUB",
+      "7": "SUB_EVENTS",
+      "8": "UNSUB_EVENTS"
     }
   },
 
@@ -651,6 +653,17 @@
       },
       "actions": {
         "invoke_action": {
+          "request": {
+            "type": "object",
+            "required": ["id", "action_id"],
+            "properties": {
+              "id": { "type": "integer" },
+              "action_id": { "type": "string" }
+            }
+          },
+          "response": { "type": "null" }
+        },
+        "invoke_action_and_dismiss": {
           "request": {
             "type": "object",
             "required": ["id", "action_id"],

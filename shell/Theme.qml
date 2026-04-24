@@ -108,6 +108,10 @@ Singleton {
     readonly property int notificationPanelWidth: rightPopupWidth
     readonly property int notificationPanelMaxHeight: rightPopupMaxHeight
     readonly property int notificationListMaxHeight: 300
+    readonly property int notificationToastColumnWidth: 360
+    readonly property int notificationToastColumnGap: 10
+    readonly property int notificationToastColumnTopInset: spaceXs
+    readonly property int notificationToastColumnBottomInset: 32
     readonly property int volumePanelWidth: rightPopupWidth
     readonly property int volumePanelMaxHeight: rightPopupMaxHeight
     readonly property int volumeStreamsMaxHeight: 220

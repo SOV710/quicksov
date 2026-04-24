@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 
 from _qsov_testlib import (
+    REQ,
     ERR,
     PUB,
     REP,
@@ -36,6 +37,12 @@ def run() -> int:
     try:
         sub = client.sub("notification")
         env = expect_envelope(h, sub, kind=PUB, topic="notification")
+        client.sub_events("notification")
+        immediate_events = client.drain_async(timeout=0.1, limit=1)
+        if not immediate_events:
+            h.ok("notification SUB_EVENTS does not emit an initial snapshot")
+        else:
+            h.error(f"notification SUB_EVENTS unexpectedly produced immediate messages: {immediate_events!r}")
         snapshot = None
         selected_id = args.id
         selected_action_id = args.action_id
@@ -68,7 +75,7 @@ def run() -> int:
         if expect_envelope(h, bad_action, kind=ERR, topic="notification", code="E_ACTION_UNKNOWN"):
             h.ok("notification unknown action returns E_ACTION_UNKNOWN")
 
-        for action in ["dismiss", "invoke_action"]:
+        for action in ["dismiss", "invoke_action", "invoke_action_and_dismiss"]:
             reply = client.req("notification", action, {})
             if expect_envelope(h, reply, kind=ERR, topic="notification", code="E_ACTION_PAYLOAD"):
                 h.ok(f"notification {action} {{}} returns E_ACTION_PAYLOAD")
@@ -107,10 +114,55 @@ def run() -> int:
                         h.ok(
                             f"notification invoke_action {{id:{selected_id}, action_id:{selected_action_id!r}}} returned REP"
                         )
+
+                    if not args.dismiss_first:
+                        req_id = client.send_envelope(
+                            REQ,
+                            "notification",
+                            "invoke_action_and_dismiss",
+                            {"id": selected_id, "action_id": selected_action_id},
+                        )
+                        reply = None
+                        events = []
+                        for _ in range(6):
+                            msg = client.recv_obj()
+                            if not isinstance(msg, dict):
+                                h.error(f"invoke_action_and_dismiss yielded non-map message: {msg!r}")
+                                break
+                            if msg.get("id") == req_id:
+                                reply = msg
+                            elif msg.get("kind") == PUB and msg.get("topic") == "notification":
+                                events.append(msg)
+                            if reply is not None and len(events) >= 2:
+                                break
+
+                        env = expect_envelope(h, reply, kind=REP, topic="notification") if reply is not None else None
+                        if env:
+                            h.ok(
+                                "notification invoke_action_and_dismiss returned REP"
+                            )
+                        event_names = [event.get("action") for event in events]
+                        if event_names[:2] == ["action_invoked", "closed"]:
+                            h.ok("notification invoke_action_and_dismiss published action_invoked then closed")
+                        else:
+                            h.error(
+                                "notification invoke_action_and_dismiss event order mismatch: "
+                                f"{event_names!r}"
+                            )
+                        if len(events) >= 2 and isinstance(events[1].get("payload"), dict):
+                            closed_payload = events[1]["payload"]
+                            if closed_payload.get("id") == selected_id and closed_payload.get("reason") == "dismissed":
+                                h.ok("notification closed event uses symbolic dismissed reason")
+                            else:
+                                h.error(
+                                    "notification closed event payload unexpected: "
+                                    f"{closed_payload!r}"
+                                )
+                        selected_id = None
                 else:
                     h.warn("skipping invoke_action test: no action id available")
 
-                if args.dismiss_first:
+                if args.dismiss_first and selected_id is not None:
                     reply = client.req("notification", "dismiss", {"id": selected_id})
                     env = expect_envelope(h, reply, kind=REP, topic="notification")
                     if env:

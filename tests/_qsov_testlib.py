@@ -16,6 +16,8 @@ PUB = 3
 ONESHOT = 4
 SUB = 5
 UNSUB = 6
+SUB_EVENTS = 7
+UNSUB_EVENTS = 8
 PROTO_VERSION = "qsov/1"
 
 
@@ -190,6 +192,12 @@ class QsovClient:
 
     def unsub(self, topic: str, msg_id: int = 0) -> None:
         self.send_envelope(UNSUB, topic, payload=None, msg_id=msg_id)
+
+    def sub_events(self, topic: str, msg_id: int = 0) -> None:
+        self.send_envelope(SUB_EVENTS, topic, payload=None, msg_id=msg_id)
+
+    def unsub_events(self, topic: str, msg_id: int = 0) -> None:
+        self.send_envelope(UNSUB_EVENTS, topic, payload=None, msg_id=msg_id)
 
     def drain_async(self, *, timeout: float = 0.05, limit: int = 64) -> list[Any]:
         sock = self._ensure_sock()

@@ -11,7 +11,9 @@ var Kind = {
     PUB:     3,
     ONESHOT: 4,
     SUB:     5,
-    UNSUB:   6
+    UNSUB:   6,
+    SUB_EVENTS: 7,
+    UNSUB_EVENTS: 8
 };
 
 var _nextId = 1;
@@ -28,6 +30,14 @@ function makeSub(topic) {
 
 function makeUnsub(topic) {
     return { id: 0, kind: Kind.UNSUB, topic: topic, action: "", payload: {} };
+}
+
+function makeSubEvents(topic) {
+    return { id: 0, kind: Kind.SUB_EVENTS, topic: topic, action: "", payload: {} };
+}
+
+function makeUnsubEvents(topic) {
+    return { id: 0, kind: Kind.UNSUB_EVENTS, topic: topic, action: "", payload: {} };
 }
 
 function makeReq(topic, action, payload) {

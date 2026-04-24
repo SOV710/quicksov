@@ -31,6 +31,10 @@ const NOTIFICATION_SPEC_VERSION: &str = "1.2";
 const NOTIFICATION_SERVER_VENDOR: &str = env!("CARGO_PKG_NAME");
 const NOTIFICATION_SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 const NOTIFICATION_CAPABILITIES: &[&str] = &["body", "actions", "persistence"];
+const CLOSED_REASON_EXPIRED: &str = "expired";
+const CLOSED_REASON_DISMISSED: &str = "dismissed";
+const CLOSED_REASON_CLOSED: &str = "closed";
+const CLOSED_REASON_UNDEFINED: &str = "undefined";
 
 fn notification_server_name() -> &'static str {
     option_env!("CARGO_BIN_NAME").unwrap_or("qsovd")
@@ -198,15 +202,14 @@ impl NotifServer {
         };
 
         let snap = state_to_snapshot(&state);
+        let event_payload = state
+            .notifications
+            .iter()
+            .find(|notification| notification.id == id)
+            .map(notif_to_value)
+            .unwrap_or(Value::Null);
         self.state_tx.send_replace(snap);
-
-        let event = json_map([
-            ("type", Value::from("new")),
-            ("id", Value::from(id as i64)),
-            ("app_name", Value::from(app_name)),
-            ("summary", Value::from(summary)),
-        ]);
-        let _ = self.events_tx.send(event);
+        broadcast_event(&self.events_tx, "new", event_payload);
 
         id
     }
@@ -216,13 +219,7 @@ impl NotifServer {
         state.notifications.retain(|n| n.id != id);
         let snap = state_to_snapshot(&state);
         self.state_tx.send_replace(snap);
-
-        let event = json_map([
-            ("type", Value::from("closed")),
-            ("id", Value::from(id as i64)),
-            ("reason", Value::from(3_i64)), // dismissed by call
-        ]);
-        let _ = self.events_tx.send(event);
+        broadcast_closed(&self.events_tx, id, 3);
     }
 
     async fn get_server_information(&self) -> (String, String, String, String) {
@@ -492,6 +489,31 @@ fn non_empty(value: &str) -> Option<String> {
     }
 }
 
+fn broadcast_closed(events_tx: &broadcast::Sender<Value>, id: u32, reason: u32) {
+    broadcast_event(events_tx, "closed", closed_payload(id, reason));
+}
+
+fn broadcast_event(events_tx: &broadcast::Sender<Value>, event_type: &str, payload: Value) {
+    let event = json_map([("type", Value::from(event_type)), ("payload", payload)]);
+    let _ = events_tx.send(event);
+}
+
+fn closed_payload(id: u32, reason: u32) -> Value {
+    json_map([
+        ("id", Value::from(id as i64)),
+        ("reason", Value::from(closed_reason_name(reason))),
+    ])
+}
+
+fn closed_reason_name(reason: u32) -> &'static str {
+    match reason {
+        1 => CLOSED_REASON_EXPIRED,
+        2 => CLOSED_REASON_DISMISSED,
+        3 => CLOSED_REASON_CLOSED,
+        _ => CLOSED_REASON_UNDEFINED,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Snapshot builder
 // ---------------------------------------------------------------------------
@@ -546,6 +568,10 @@ async fn handle_request(
 ) {
     let result = match req.action.as_str() {
         "invoke_action" => handle_invoke_action(&req.payload, shared, events_tx, dbus_conn).await,
+        "invoke_action_and_dismiss" => {
+            handle_invoke_action_and_dismiss(&req.payload, shared, state_tx, events_tx, dbus_conn)
+                .await
+        }
         "dismiss" => handle_dismiss(&req.payload, shared, state_tx, events_tx, dbus_conn).await,
         "dismiss_all" => handle_dismiss_all(shared, state_tx).await,
         "mark_read" => handle_mark_read(&req.payload, shared, state_tx).await,
@@ -569,32 +595,59 @@ async fn handle_invoke_action(
         extract_str(payload, "action_id").ok_or_else(|| ServiceError::ActionPayload {
             msg: "missing 'action_id' field".to_string(),
         })?;
-    let state = shared.read().await;
-    let Some(notification) = state.notifications.iter().find(|n| n.id == id) else {
-        return Err(ServiceError::ActionPayload {
-            msg: format!("notification {id} not found"),
-        });
-    };
-    if !notification.actions.iter().any(|a| a.id == action_id) {
-        return Err(ServiceError::ActionPayload {
-            msg: format!("notification {id} action '{action_id}' not found"),
-        });
+    validate_action(shared, id, action_id).await?;
+    emit_action_signal(dbus_conn, id, action_id).await?;
+    broadcast_event(
+        events_tx,
+        "action_invoked",
+        json_map([
+            ("id", Value::from(id as i64)),
+            ("action_id", Value::from(action_id)),
+        ]),
+    );
+    Ok(Value::Null)
+}
+
+async fn handle_invoke_action_and_dismiss(
+    payload: &Value,
+    shared: &Arc<RwLock<NotifState>>,
+    state_tx: &watch::Sender<Value>,
+    events_tx: &broadcast::Sender<Value>,
+    dbus_conn: Option<&zbus::Connection>,
+) -> Result<Value, ServiceError> {
+    let id = extract_u64(payload, "id").ok_or_else(|| ServiceError::ActionPayload {
+        msg: "missing 'id' field".to_string(),
+    })? as u32;
+    let action_id =
+        extract_str(payload, "action_id").ok_or_else(|| ServiceError::ActionPayload {
+            msg: "missing 'action_id' field".to_string(),
+        })?;
+
+    validate_action(shared, id, action_id).await?;
+    emit_action_signal(dbus_conn, id, action_id).await?;
+    broadcast_event(
+        events_tx,
+        "action_invoked",
+        json_map([
+            ("id", Value::from(id as i64)),
+            ("action_id", Value::from(action_id)),
+        ]),
+    );
+
+    {
+        let mut state = shared.write().await;
+        state.notifications.retain(|n| n.id != id);
+        state_tx.send_replace(state_to_snapshot(&state));
     }
-    drop(state);
 
-    let conn = dbus_conn.ok_or(ServiceError::Unavailable)?;
-    let emitter = zbus::object_server::SignalEmitter::new(conn, "/org/freedesktop/Notifications")
-        .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
-    NotifServer::action_invoked(&emitter, id, action_id.to_string())
-        .await
-        .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
+    broadcast_closed(events_tx, id, 2);
 
-    let event = json_map([
-        ("type", Value::from("action_invoked")),
-        ("id", Value::from(id as i64)),
-        ("action_id", Value::from(action_id)),
-    ]);
-    let _ = events_tx.send(event);
+    if let Some(conn) = dbus_conn {
+        if let Ok(emitter) = zbus::object_server::SignalEmitter::new(conn, NOTIFICATION_DBUS_PATH) {
+            let _ = NotifServer::notification_closed(&emitter, id, 2).await;
+        }
+    }
+
     Ok(Value::Null)
 }
 
@@ -611,13 +664,7 @@ async fn handle_dismiss(
     let mut state = shared.write().await;
     state.notifications.retain(|n| n.id != id);
     state_tx.send_replace(state_to_snapshot(&state));
-
-    let event = json_map([
-        ("type", Value::from("closed")),
-        ("id", Value::from(id as i64)),
-        ("reason", Value::from(2_i64)), // dismissed by user
-    ]);
-    let _ = events_tx.send(event);
+    broadcast_closed(events_tx, id, 2);
 
     if let Some(conn) = dbus_conn {
         if let Ok(emitter) = zbus::object_server::SignalEmitter::new(conn, NOTIFICATION_DBUS_PATH) {
@@ -625,6 +672,38 @@ async fn handle_dismiss(
         }
     }
     Ok(Value::Null)
+}
+
+async fn validate_action(
+    shared: &Arc<RwLock<NotifState>>,
+    id: u32,
+    action_id: &str,
+) -> Result<(), ServiceError> {
+    let state = shared.read().await;
+    let Some(notification) = state.notifications.iter().find(|n| n.id == id) else {
+        return Err(ServiceError::ActionPayload {
+            msg: format!("notification {id} not found"),
+        });
+    };
+    if notification.actions.iter().any(|a| a.id == action_id) {
+        return Ok(());
+    }
+    Err(ServiceError::ActionPayload {
+        msg: format!("notification {id} action '{action_id}' not found"),
+    })
+}
+
+async fn emit_action_signal(
+    dbus_conn: Option<&zbus::Connection>,
+    id: u32,
+    action_id: &str,
+) -> Result<(), ServiceError> {
+    let conn = dbus_conn.ok_or(ServiceError::Unavailable)?;
+    let emitter = zbus::object_server::SignalEmitter::new(conn, NOTIFICATION_DBUS_PATH)
+        .map_err(|e| ServiceError::Internal { msg: e.to_string() })?;
+    NotifServer::action_invoked(&emitter, id, action_id.to_string())
+        .await
+        .map_err(|e| ServiceError::Internal { msg: e.to_string() })
 }
 
 async fn handle_dismiss_all(

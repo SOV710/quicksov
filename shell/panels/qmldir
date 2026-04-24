@@ -8,3 +8,4 @@ PanelShellRegion 1.0 PanelShellRegion.qml
 MainBarPanelScene 1.0 MainBarPanelScene.qml
 MainBarExclusiveZoneWindow 1.0 MainBarExclusiveZoneWindow.qml
 MainBarOverlayWindow 1.0 MainBarOverlayWindow.qml
+NotificationToastWindow 1.0 NotificationToastWindow.qml

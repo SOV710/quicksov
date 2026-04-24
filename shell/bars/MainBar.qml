@@ -22,6 +22,10 @@ Scope {
             MainBarOverlayWindow {
                 screenModel: root.modelData
             }
+
+            NotificationToastWindow {
+                screenModel: root.modelData
+            }
         }
     }
 }

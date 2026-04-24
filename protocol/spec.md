@@ -34,9 +34,9 @@
   "required": ["id", "kind", "topic"],
   "properties": {
     "id":      { "type": "integer", "minimum": 0, "description": "u64; REQ/REP 配对; PUB/ONESHOT 固定为 0" },
-    "kind":    { "type": "integer", "enum": [0,1,2,3,4,5,6], "description": "0=REQ 1=REP 2=ERR 3=PUB 4=ONESHOT 5=SUB 6=UNSUB" },
+    "kind":    { "type": "integer", "enum": [0,1,2,3,4,5,6,7,8], "description": "0=REQ 1=REP 2=ERR 3=PUB 4=ONESHOT 5=SUB 6=UNSUB 7=SUB_EVENTS 8=UNSUB_EVENTS" },
     "topic":   { "type": "string" },
-    "action":  { "type": "string", "description": "REQ/ONESHOT 必填; REP/ERR/PUB 为空串" },
+    "action":  { "type": "string", "description": "REQ/ONESHOT 必填; state PUB/REP/ERR 为空串; event PUB 为 event name" },
     "payload": { "description": "任意 JSON 值, schema 由 (topic, action) 决定" }
   }
 }
@@ -108,7 +108,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 
 ## 5. Topics
 
-每个 topic 定义：**State Snapshot**（SUB 时和状态变化时推送的完整快照）、**Actions**（REQ/ONESHOT 可执行的动作清单）、可选的 **Events**（不可合并的离散事件，仅 `notification` 使用）。
+每个 topic 定义：**State Snapshot**（`SUB` 时和状态变化时推送的完整快照）、**Actions**（REQ/ONESHOT 可执行的动作清单）、可选的 **Events**（通过 `SUB_EVENTS` / `UNSUB_EVENTS` 订阅的不可合并离散事件，仅 `notification` 使用）。
 
 本骨架只给出 state snapshot 的核心字段，action 列表完整但 payload schema 部分标记为 `TBD`，在首版实现前逐步填充。
 
@@ -436,6 +436,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 
 **Actions**:
 - `invoke_action` — payload `{ id: int, action_id: string }`
+- `invoke_action_and_dismiss` — payload `{ id: int, action_id: string }`
 - `dismiss` — payload `{ id: int }`
 - `dismiss_all` — payload `{}`
 - `mark_read` — payload `{ id?: int }`（省略即全部）

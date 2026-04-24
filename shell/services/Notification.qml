@@ -34,6 +34,9 @@ Singleton {
     function invokeAction(id, actionKey) {
         Client.request("notification", "invoke_action", { id: id, action_id: actionKey }, null);
     }
+    function invokeActionAndDismiss(id, actionKey) {
+        Client.request("notification", "invoke_action_and_dismiss", { id: id, action_id: actionKey }, null);
+    }
 
     function _onSnapshot(payload) {
         var unread = payload.unread_count || 0;
