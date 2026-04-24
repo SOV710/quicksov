@@ -11,7 +11,7 @@ Item {
 
     property double nowMs: Date.now()
 
-    readonly property bool pauseAll: columnHover.hovered || toastList.dragging
+    readonly property bool pauseAll: columnHover.hovered || toastFlick.dragging
 
     function _relativeTimeLabel(ts) {
         if (!ts) return "";
@@ -39,114 +39,81 @@ Item {
         onTriggered: root.nowMs = Date.now()
     }
 
-    ListView {
-        id: toastList
-
+    Flickable {
+        id: toastFlick
         anchors.fill: parent
         clip: true
         boundsBehavior: Flickable.StopAtBounds
+        contentWidth: width
+        contentHeight: toastContent.implicitHeight
+        flickableDirection: Flickable.VerticalFlick
         interactive: contentHeight > height
-        model: NotificationUiState.toastModel
-        spacing: Theme.notificationToastColumnGap
-        topMargin: Theme.notificationToastColumnTopInset
-        bottomMargin: Theme.notificationToastColumnBottomInset
 
-        add: Transition {
-            ParallelAnimation {
-                NumberAnimation {
-                    property: "x"
-                    from: toastList.width + Theme.spaceXl
-                    duration: Theme.motionSlow
-                    easing.type: Easing.OutCubic
+        Item {
+            id: toastContent
+
+            width: toastFlick.width
+            implicitHeight: Theme.notificationToastColumnTopInset
+                            + toastColumn.height
+                            + Theme.notificationToastColumnBottomInset
+
+            Column {
+                id: toastColumn
+
+                y: Theme.notificationToastColumnTopInset
+                width: parent.width
+                height: childrenRect.height
+                spacing: Theme.notificationToastColumnGap
+
+                Repeater {
+                    model: NotificationUiState.toastModel
+
+                    delegate: Item {
+                        property int notificationId: notification_id
+                        property string appName: app_name
+                        property string summaryText: summary
+                        property string bodyText: body
+                        property string iconPath: icon
+                        property string urgencyLevel: urgency
+                        property double notificationTimestamp: timestamp
+                        property var notificationActions: actions
+                        property int timerRevisionValue: timer_revision
+                        property string lifecycleStateValue: lifecycle_state
+                        property int lifecycleRevisionValue: lifecycle_revision
+
+                        function syncCardLifecycle() {
+                            toastCard.toastLifecycleRevision = lifecycleRevisionValue;
+                            toastCard.toastLifecycleState = lifecycleStateValue;
+                        }
+
+                        width: toastColumn.width
+                        implicitHeight: toastCard.height
+                        height: toastCard.height
+
+                        Component.onCompleted: syncCardLifecycle()
+                        onLifecycleRevisionValueChanged: syncCardLifecycle()
+                        onLifecycleStateValueChanged: syncCardLifecycle()
+
+                        NotificationToastCard {
+                            id: toastCard
+
+                            notif: ({
+                                id: parent.notificationId,
+                                app_name: parent.appName,
+                                summary: parent.summaryText,
+                                body: parent.bodyText,
+                                icon: parent.iconPath,
+                                urgency: parent.urgencyLevel,
+                                timestamp: parent.notificationTimestamp,
+                                actions: parent.notificationActions || []
+                            })
+                            pauseAll: root.pauseAll
+                            relativeTime: root._relativeTimeLabel(parent.notificationTimestamp)
+                            timerRevision: parent.timerRevisionValue
+                            width: parent.width
+                        }
+                    }
                 }
-                NumberAnimation {
-                    property: "opacity"
-                    from: 0
-                    to: 1
-                    duration: Theme.motionNormal
-                    easing.type: Easing.OutCubic
-                }
-            }
-        }
-
-        addDisplaced: Transition {
-            NumberAnimation {
-                properties: "y"
-                duration: Theme.motionNormal
-                easing.type: Easing.OutCubic
-            }
-        }
-
-        moveDisplaced: Transition {
-            NumberAnimation {
-                properties: "y"
-                duration: Theme.motionNormal
-                easing.type: Easing.OutCubic
-            }
-        }
-
-        move: Transition {
-            NumberAnimation {
-                properties: "y"
-                duration: Theme.motionNormal
-                easing.type: Easing.OutCubic
-            }
-        }
-
-        remove: Transition {
-            ParallelAnimation {
-                NumberAnimation {
-                    property: "x"
-                    to: toastList.width + Theme.spaceLg
-                    duration: Theme.motionFast
-                    easing.type: Easing.InCubic
-                }
-                NumberAnimation {
-                    property: "opacity"
-                    to: 0
-                    duration: Theme.motionFast
-                    easing.type: Easing.InCubic
-                }
-            }
-        }
-
-        removeDisplaced: Transition {
-            NumberAnimation {
-                properties: "y"
-                duration: Theme.motionNormal
-                easing.type: Easing.OutCubic
-            }
-        }
-
-        delegate: NotificationToastCard {
-            required property int notification_id
-            required property string app_name
-            required property string summary
-            required property string body
-            required property string icon
-            required property string urgency
-            required property double timestamp
-            required property var actions
-            required property int timer_revision
-
-            expanded: NotificationUiState.expandedToastId === notification_id
-            notif: ({
-                id: notification_id,
-                app_name: app_name,
-                summary: summary,
-                body: body,
-                icon: icon,
-                urgency: urgency,
-                timestamp: timestamp,
-                actions: actions || []
-            })
-            pauseAll: root.pauseAll
-            relativeTime: root._relativeTimeLabel(timestamp)
-            timerRevision: timer_revision
-            width: toastList.width
-
-            onToggleExpandedRequested: notificationId => {
-                NotificationUiState.toggleToastExpanded(notificationId);
             }
         }
     }

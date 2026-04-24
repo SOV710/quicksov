@@ -14,6 +14,7 @@ Item {
     property bool expanded: false
     property bool interactive: true
     property bool showChevron: true
+    property bool showDismissAction: true
     property string relativeTime: ""
     property int iconColumnWidth: 52
 
@@ -27,6 +28,8 @@ Item {
     readonly property real contentColumnX: root.iconColumnWidth + Theme.spaceMd
     readonly property string detailsText: notif && typeof notif.body === "string" ? notif.body : ""
     readonly property string iconSource: notif && typeof notif.icon === "string" ? notif.icon : ""
+    readonly property bool showActionsRow: root.expanded
+                                           && (root.actions.length > 0 || root.showDismissAction)
     readonly property string titleText: _titleFor(notif)
 
     implicitHeight: contentCol.implicitHeight
@@ -166,7 +169,7 @@ Item {
         }
 
         Item {
-            visible: root.expanded
+            visible: root.showActionsRow
             width: parent.width
             implicitHeight: actionsContainer.implicitHeight
 
@@ -200,6 +203,7 @@ Item {
                         emphasized: true
                         interactive: root.interactive
                         label: "I got it"
+                        visible: root.showDismissAction
                         onClicked: root.dismissRequested()
                     }
                 }

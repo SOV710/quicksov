@@ -10,23 +10,33 @@ Item {
     id: root
 
     property var notif: null
-    property bool expanded: false
+    property string toastLifecycleState: ""
     property bool pauseAll: false
     property string relativeTime: ""
     property int timerRevision: 0
-
-    readonly property int notificationId: notif && notif.id !== undefined ? notif.id : -1
-    readonly property int autoDismissMs: _autoDismissDuration()
-    readonly property bool countdownPaused: root.pauseAll || root.expanded
+    property int toastLifecycleRevision: 0
 
     property int remainingMs: 0
     property double countdownStartedAtMs: 0
+    property real cardOffsetX: root._offscreenX
+    property real cardOpacity: 0
+    property int _animatedLifecycleRevision: -1
+    property bool _componentReady: false
 
-    signal toggleExpandedRequested(int notificationId)
+    readonly property int notificationId: notif && notif.id !== undefined ? notif.id : -1
+    readonly property int autoDismissMs: _autoDismissDuration()
+    readonly property bool countdownPaused: root.pauseAll || root.toastLifecycleState !== "open"
+    readonly property real _offscreenX: root.width + Theme.spaceXl
 
     implicitHeight: cardFrame.implicitHeight
-    height: implicitHeight
+    height: 0
     width: parent ? parent.width : 0
+
+    function _applyOpenVisualState() {
+        root.height = root.implicitHeight;
+        root.cardOffsetX = 0;
+        root.cardOpacity = 1;
+    }
 
     function _autoDismissDuration() {
         if (!root.notif) return 0;
@@ -55,6 +65,45 @@ Item {
         root.remainingMs = Math.max(0, root.remainingMs - elapsed);
         root.countdownStartedAtMs = 0;
         expiryTimer.stop();
+    }
+
+    function _playCloseAnimation() {
+        if (!root._componentReady)
+            return;
+
+        enterAnimation.stop();
+
+        closeHeightAnimation.from = root.height;
+        closeHeightAnimation.to = 0;
+        closeSlideAnimation.from = root.cardOffsetX;
+        closeSlideAnimation.to = root._offscreenX;
+        closeOpacityAnimation.from = root.cardOpacity;
+        closeOpacityAnimation.to = 0;
+        root._animatedLifecycleRevision = root.toastLifecycleRevision;
+        closeAnimation.restart();
+    }
+
+    function _playEnterAnimation() {
+        if (!root._componentReady || root.width <= 0)
+            return;
+
+        closeAnimation.stop();
+
+        if (root.height <= 0.5)
+            root.height = 0;
+        if (root.cardOpacity <= 0.01) {
+            root.cardOffsetX = root._offscreenX;
+            root.cardOpacity = 0;
+        }
+
+        enterHeightAnimation.from = root.height;
+        enterHeightAnimation.to = root.implicitHeight;
+        enterSlideAnimation.from = root.cardOffsetX;
+        enterSlideAnimation.to = 0;
+        enterOpacityAnimation.from = root.cardOpacity;
+        enterOpacityAnimation.to = 1;
+        root._animatedLifecycleRevision = root.toastLifecycleRevision;
+        enterAnimation.restart();
     }
 
     function _resetCountdown() {
@@ -91,19 +140,55 @@ Item {
             root._resumeCountdown();
     }
 
-    Component.onCompleted: root._resetCountdown()
+    function _syncLifecycleAnimation() {
+        if (!root._componentReady)
+            return;
+
+        if (root.toastLifecycleState === "")
+            return;
+
+        if (root.toastLifecycleState === "entering") {
+            root._playEnterAnimation();
+            return;
+        }
+
+        if (root.toastLifecycleState === "closing") {
+            root._playCloseAnimation();
+            return;
+        }
+
+        enterAnimation.stop();
+        closeAnimation.stop();
+        root._applyOpenVisualState();
+    }
+
+    Component.onCompleted: {
+        root._componentReady = true;
+        root._resetCountdown();
+        if (root.toastLifecycleState === "entering") {
+            Qt.callLater(function() {
+                root._syncLifecycleAnimation();
+            });
+        } else if (root.toastLifecycleState !== "") {
+            root._syncLifecycleAnimation();
+        }
+    }
 
     onCountdownPausedChanged: root._syncCountdown()
-    onExpandedChanged: root._syncCountdown()
+    onImplicitHeightChanged: {
+        if (root._componentReady && root.toastLifecycleState === "open")
+            root.height = root.implicitHeight;
+    }
+    onToastLifecycleStateChanged: {
+        root._syncLifecycleAnimation();
+        root._syncCountdown();
+    }
+    onNotificationIdChanged: root._resetCountdown()
     onPauseAllChanged: root._syncCountdown()
     onTimerRevisionChanged: root._resetCountdown()
-    onNotificationIdChanged: root._resetCountdown()
-
-    Behavior on height {
-        NumberAnimation {
-            duration: Theme.motionNormal
-            easing.type: Easing.OutCubic
-        }
+    onWidthChanged: {
+        if (root._componentReady && root.toastLifecycleState === "entering" && !enterAnimation.running)
+            root._syncLifecycleAnimation();
     }
 
     Timer {
@@ -115,61 +200,133 @@ Item {
         onTriggered: root._expireToast()
     }
 
-    Rectangle {
-        id: cardFrame
-
-        width: root.width
-        implicitHeight: cardContent.implicitHeight + Theme.spaceMd * 2
-        radius: Theme.radiusMd
-        color: cardHover.hovered ? Theme.surfaceHover : Theme.chromeSubtleFill
-        border.color: root.notif && root.notif.urgency === "critical"
-                      ? Theme.dangerBorderSoft
-                      : (root.expanded ? Theme.borderDefault : Theme.borderSubtle)
-        border.width: 1
+    Item {
+        anchors.fill: parent
         clip: true
 
-        Behavior on color {
-            ColorAnimation {
+        Rectangle {
+            id: cardFrame
+
+            x: root.cardOffsetX
+            width: root.width
+            height: implicitHeight
+            implicitHeight: cardContent.implicitHeight + Theme.spaceMd * 2
+            opacity: root.cardOpacity
+            radius: Theme.radiusMd
+            color: cardHover.hovered ? Theme.surfaceHover : Theme.chromeSubtleFill
+            border.color: root.notif && root.notif.urgency === "critical"
+                          ? Theme.dangerBorderSoft
+                          : Theme.borderDefault
+            border.width: 1
+            clip: true
+
+            Behavior on color {
+                ColorAnimation {
+                    duration: Theme.motionFast
+                }
+            }
+
+            HoverHandler {
+                id: cardHover
+            }
+
+            NotificationCardContent {
+                id: cardContent
+
+                anchors.fill: parent
+                anchors.margins: Theme.spaceMd
+                expanded: true
+                interactive: root.toastLifecycleState !== "closing"
+                notif: root.notif
+                relativeTime: root.relativeTime
+                showChevron: false
+                showDismissAction: false
+
+                onActionRequested: actionId => {
+                    if (root.notif)
+                        NotificationUiState.invokeToastAction(root.notif.id, actionId);
+                }
+            }
+
+            HoverHandler {
+                parent: cardContent.summaryArea
+                cursorShape: root.toastLifecycleState === "closing" ? Qt.ArrowCursor : Qt.PointingHandCursor
+            }
+
+            TapHandler {
+                parent: cardContent.summaryArea
+                enabled: root.toastLifecycleState !== "closing"
+                onTapped: {
+                    if (root.notificationId >= 0)
+                        NotificationUiState.dismissToastPreview(root.notificationId);
+                }
+            }
+        }
+    }
+
+    SequentialAnimation {
+        id: enterAnimation
+        running: false
+
+        NumberAnimation {
+            id: enterHeightAnimation
+            target: root
+            property: "height"
+            duration: Theme.motionFast
+            easing.type: Easing.OutCubic
+        }
+
+        ParallelAnimation {
+            NumberAnimation {
+                id: enterSlideAnimation
+                target: root
+                property: "cardOffsetX"
+                duration: Theme.motionSlow
+                easing.type: Easing.OutCubic
+            }
+
+            NumberAnimation {
+                id: enterOpacityAnimation
+                target: root
+                property: "cardOpacity"
+                duration: Theme.motionNormal
+                easing.type: Easing.OutCubic
+            }
+        }
+
+        onFinished: NotificationUiState.markToastEntered(root.notificationId, root._animatedLifecycleRevision)
+    }
+
+    SequentialAnimation {
+        id: closeAnimation
+        running: false
+
+        ParallelAnimation {
+            NumberAnimation {
+                id: closeSlideAnimation
+                target: root
+                property: "cardOffsetX"
                 duration: Theme.motionFast
+                easing.type: Easing.InCubic
+            }
+
+            NumberAnimation {
+                id: closeOpacityAnimation
+                target: root
+                property: "cardOpacity"
+                duration: Theme.motionFast
+                easing.type: Easing.InCubic
             }
         }
 
-        HoverHandler {
-            id: cardHover
+        NumberAnimation {
+            id: closeHeightAnimation
+            target: root
+            property: "height"
+            duration: Theme.motionNormal
+            easing.type: Easing.OutCubic
         }
 
-        NotificationCardContent {
-            id: cardContent
-
-            anchors.fill: parent
-            anchors.margins: Theme.spaceMd
-            expanded: root.expanded
-            interactive: true
-            notif: root.notif
-            relativeTime: root.relativeTime
-
-            onActionRequested: actionId => {
-                if (root.notif)
-                    Notification.invokeActionAndDismiss(root.notif.id, actionId);
-            }
-
-            onDismissRequested: {
-                if (root.notif)
-                    Notification.dismiss(root.notif.id);
-            }
-        }
-
-        HoverHandler {
-            parent: cardContent.summaryArea
-            cursorShape: Qt.PointingHandCursor
-        }
-
-        TapHandler {
-            parent: cardContent.summaryArea
-            onTapped: {
-                if (root.notificationId >= 0)
-                    root.toggleExpandedRequested(root.notificationId);
-            }
-        }
+        onFinished: NotificationUiState.finalizeToastRemoval(root.notificationId, root._animatedLifecycleRevision)
     }
 }

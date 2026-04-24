@@ -17,7 +17,6 @@ PanelWindow {
                                           && Meta.hasScreenRoles
                                           && Meta.screenRoles[screenModel.name] === "main"
     readonly property real rightInset: Theme.barOuterMargin
-                                       + Theme.barPadX
                                        + Theme.statusDockLowerRadius
     readonly property real topOffset: Theme.barOuterMargin
                                       + Theme.barHeight
@@ -25,7 +24,7 @@ PanelWindow {
                                       - Theme.statusDockSeamOverlap
 
     screen: screenModel
-    visible: root.isMainScreen && NotificationUiState.toastModel.count > 0
+    visible: root.isMainScreen && NotificationUiState.toastSurfaceVisible
 
     anchors.top: true
     anchors.right: true
