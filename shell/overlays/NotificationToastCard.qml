@@ -22,21 +22,59 @@ Item {
     property real cardOpacity: 0
     property int _animatedLifecycleRevision: -1
     property bool _componentReady: false
+    property real _settledCardHeight: 0
+    property bool _enterReady: false
 
     readonly property int notificationId: notif && notif.id !== undefined ? notif.id : -1
     readonly property int autoDismissMs: _autoDismissDuration()
     readonly property real cardFullHeight: cardContent.implicitHeight + Theme.spaceMd * 2
     readonly property bool countdownPaused: root.pauseAll || root.toastLifecycleState !== "open"
     readonly property real _offscreenX: root.width + Theme.spaceXl
+    readonly property string surfaceName: root.notificationId >= 0 ? "toast#" + root.notificationId : "toast"
+    readonly property real effectiveCardRadius: DebugVisuals.forceZeroBodyRadius ? 0 : Theme.radiusMd
+    readonly property real effectiveCardHeight: root._settledCardHeight > 0 ? root._settledCardHeight : root.cardFullHeight
 
-    implicitHeight: root.cardFullHeight
+    implicitHeight: root.effectiveCardHeight
     height: 0
     width: parent ? parent.width : 0
+
+    function _phaseForLifecycleState(state) {
+        return state === "closing" ? "toast-exit" : "toast-enter";
+    }
+
+    function _logGeometry(eventName) {
+        DebugVisuals.logTransition(root.surfaceName, root._phaseForLifecycleState(root.toastLifecycleState), {
+            cardFullHeight: root.cardFullHeight,
+            cardOffsetX: root.cardOffsetX,
+            cardOpacity: root.cardOpacity,
+            countdownPaused: root.countdownPaused,
+            disableToastClip: DebugVisuals.disableToastClip,
+            disableToastEnterHeightAnimation: DebugVisuals.disableToastEnterHeightAnimation,
+            effectiveCardHeight: root.effectiveCardHeight,
+            event: eventName,
+            height: root.height,
+            implicitHeight: root.implicitHeight,
+            lifecycle: root.toastLifecycleState,
+            radius: root.effectiveCardRadius
+        });
+    }
 
     function _applyOpenVisualState() {
         root.height = root.implicitHeight;
         root.cardOffsetX = 0;
         root.cardOpacity = 1;
+        root._logGeometry("apply-open-visual-state");
+    }
+
+    function _scheduleEnterAnimation() {
+        if (!root._componentReady || root.width <= 0 || root.cardFullHeight <= 0)
+            return;
+
+        root._enterReady = false;
+        root._settledCardHeight = 0;
+        enterAnimation.stop();
+        enterSettleTimer.restart();
+        root._logGeometry("enter-animation-scheduled");
     }
 
     function _autoDismissDuration() {
@@ -72,6 +110,7 @@ Item {
         if (!root._componentReady)
             return;
 
+        enterSettleTimer.stop();
         enterAnimation.stop();
 
         closeHeightAnimation.from = root.height;
@@ -81,11 +120,12 @@ Item {
         closeOpacityAnimation.from = root.cardOpacity;
         closeOpacityAnimation.to = 0;
         root._animatedLifecycleRevision = root.toastLifecycleRevision;
+        root._logGeometry("close-animation-requested");
         closeAnimation.restart();
     }
 
     function _playEnterAnimation() {
-        if (!root._componentReady || root.width <= 0)
+        if (!root._componentReady || root.width <= 0 || !root._enterReady)
             return;
 
         closeAnimation.stop();
@@ -97,13 +137,20 @@ Item {
             root.cardOpacity = 0;
         }
 
-        enterHeightAnimation.from = root.height;
-        enterHeightAnimation.to = root.implicitHeight;
+        if (DebugVisuals.disableToastEnterHeightAnimation) {
+            root.height = root.implicitHeight;
+            enterHeightAnimation.from = root.implicitHeight;
+            enterHeightAnimation.to = root.implicitHeight;
+        } else {
+            enterHeightAnimation.from = root.height;
+            enterHeightAnimation.to = root.implicitHeight;
+        }
         enterSlideAnimation.from = root.cardOffsetX;
         enterSlideAnimation.to = 0;
         enterOpacityAnimation.from = root.cardOpacity;
         enterOpacityAnimation.to = 1;
         root._animatedLifecycleRevision = root.toastLifecycleRevision;
+        root._logGeometry("enter-animation-requested");
         enterAnimation.restart();
     }
 
@@ -149,7 +196,7 @@ Item {
             return;
 
         if (root.toastLifecycleState === "entering") {
-            root._playEnterAnimation();
+            root._scheduleEnterAnimation();
             return;
         }
 
@@ -158,6 +205,9 @@ Item {
             return;
         }
 
+        enterSettleTimer.stop();
+        root._enterReady = false;
+        root._settledCardHeight = root.cardFullHeight;
         enterAnimation.stop();
         closeAnimation.stop();
         root._applyOpenVisualState();
@@ -166,6 +216,7 @@ Item {
     Component.onCompleted: {
         root._componentReady = true;
         root._resetCountdown();
+        root._logGeometry("component-completed");
         if (root.toastLifecycleState === "entering") {
             Qt.callLater(function() {
                 root._syncLifecycleAnimation();
@@ -176,21 +227,39 @@ Item {
     }
 
     onCountdownPausedChanged: root._syncCountdown()
-    onImplicitHeightChanged: {
-        if (root._componentReady && root.toastLifecycleState !== "closing")
+    onCardFullHeightChanged: {
+        root._logGeometry("implicit-height-changed");
+        if (!root._componentReady)
+            return;
+
+        if (root.toastLifecycleState === "entering") {
+            root._scheduleEnterAnimation();
+            return;
+        }
+
+        if (root.toastLifecycleState !== "closing") {
+            root._settledCardHeight = root.cardFullHeight;
             root.height = root.implicitHeight;
+        }
     }
     onToastLifecycleStateChanged: {
+        root._logGeometry("toast-lifecycle-changed");
         root._syncLifecycleAnimation();
         root._syncCountdown();
     }
-    onNotificationIdChanged: root._resetCountdown()
+    onNotificationIdChanged: {
+        root._settledCardHeight = 0;
+        root._enterReady = false;
+        root._resetCountdown();
+    }
     onPauseAllChanged: root._syncCountdown()
     onTimerRevisionChanged: root._resetCountdown()
     onWidthChanged: {
-        if (root._componentReady && root.toastLifecycleState === "entering" && !enterAnimation.running)
-            root._syncLifecycleAnimation();
+        root._logGeometry("width-changed");
+        if (root._componentReady && root.toastLifecycleState === "entering")
+            root._scheduleEnterAnimation();
     }
+    onHeightChanged: root._logGeometry("height-changed")
 
     Timer {
         id: expiryTimer
@@ -201,29 +270,46 @@ Item {
         onTriggered: root._expireToast()
     }
 
+    Timer {
+        id: enterSettleTimer
+
+        interval: 24
+        repeat: false
+        running: false
+
+        onTriggered: {
+            if (root.toastLifecycleState !== "entering" || root.width <= 0 || root.cardFullHeight <= 0)
+                return;
+
+            root._settledCardHeight = root.cardFullHeight;
+            root._enterReady = true;
+            root._playEnterAnimation();
+        }
+    }
+
     Item {
         anchors.fill: parent
-        clip: true
+        clip: !DebugVisuals.disableToastClip
 
         Rectangle {
             id: cardFrame
 
             x: root.cardOffsetX
             width: root.width
-            height: root.cardFullHeight
-            implicitHeight: root.cardFullHeight
+            height: root.effectiveCardHeight
+            implicitHeight: root.effectiveCardHeight
             opacity: root.cardOpacity
-            radius: Theme.radiusMd
+            radius: root.effectiveCardRadius
             color: cardHover.hovered ? Theme.surfaceHover : Theme.chromeSubtleFill
             border.color: root.notif && root.notif.urgency === "critical"
                           ? Theme.dangerBorderSoft
                           : Theme.borderDefault
             border.width: 1
-            clip: true
+            clip: !DebugVisuals.disableToastClip
 
             Behavior on color {
                 ColorAnimation {
-                    duration: Theme.motionFast
+                    duration: DebugVisuals.duration(Theme.motionFast)
                 }
             }
 
@@ -277,7 +363,9 @@ Item {
             id: enterHeightAnimation
             target: root
             property: "height"
-            duration: Theme.motionFast
+            duration: DebugVisuals.disableToastEnterHeightAnimation
+                      ? 0
+                      : DebugVisuals.duration(Theme.motionFast)
             easing.type: Easing.OutCubic
         }
 
@@ -286,7 +374,7 @@ Item {
                 id: enterSlideAnimation
                 target: root
                 property: "cardOffsetX"
-                duration: Theme.motionSlow
+                duration: DebugVisuals.duration(Theme.motionSlow)
                 easing.type: Easing.OutCubic
             }
 
@@ -294,12 +382,15 @@ Item {
                 id: enterOpacityAnimation
                 target: root
                 property: "cardOpacity"
-                duration: Theme.motionNormal
+                duration: DebugVisuals.duration(Theme.motionNormal)
                 easing.type: Easing.OutCubic
             }
         }
 
-        onFinished: NotificationUiState.markToastEntered(root.notificationId, root._animatedLifecycleRevision)
+        onFinished: {
+            root._logGeometry("enter-animation-finished");
+            NotificationUiState.markToastEntered(root.notificationId, root._animatedLifecycleRevision);
+        }
     }
 
     SequentialAnimation {
@@ -311,7 +402,7 @@ Item {
                 id: closeSlideAnimation
                 target: root
                 property: "cardOffsetX"
-                duration: Theme.motionFast
+                duration: DebugVisuals.duration(Theme.motionFast)
                 easing.type: Easing.InCubic
             }
 
@@ -319,7 +410,7 @@ Item {
                 id: closeOpacityAnimation
                 target: root
                 property: "cardOpacity"
-                duration: Theme.motionFast
+                duration: DebugVisuals.duration(Theme.motionFast)
                 easing.type: Easing.InCubic
             }
         }
@@ -328,10 +419,13 @@ Item {
             id: closeHeightAnimation
             target: root
             property: "height"
-            duration: Theme.motionNormal
+            duration: DebugVisuals.duration(Theme.motionNormal)
             easing.type: Easing.OutCubic
         }
 
-        onFinished: NotificationUiState.finalizeToastRemoval(root.notificationId, root._animatedLifecycleRevision)
+        onFinished: {
+            root._logGeometry("close-animation-finished");
+            NotificationUiState.finalizeToastRemoval(root.notificationId, root._animatedLifecycleRevision);
+        }
     }
 }

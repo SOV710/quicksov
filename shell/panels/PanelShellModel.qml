@@ -57,6 +57,7 @@ QtObject {
     readonly property real barWidth: _barSceneWidth
     readonly property real barHeight: _barSceneHeight
     readonly property real barRadius: clampRadius(Theme.barRadius, barWidth, barHeight)
+    readonly property string surfaceName: geometry && geometry.surfaceName ? geometry.surfaceName : "panel"
 
     readonly property bool panelActive: geometry
                                        && geometry.active
@@ -72,14 +73,43 @@ QtObject {
     readonly property real bodyY: panelActive ? geometry.bodyY : shoulderBottomY
     readonly property real bodyHeight: panelActive ? geometry.contentHeight : 0
     readonly property real bodyWidth: panelActive ? geometry.width : 0
+    readonly property real unclampedBodyRadius: panelActive ? geometry.lowerRadius : 0
     readonly property real bodyRadius: panelActive
-                                     ? clampRadius(geometry.lowerRadius, bodyWidth, bodyHeight)
+                                     ? clampRadius(
+                                           DebugVisuals.forceZeroBodyRadius ? 0 : unclampedBodyRadius,
+                                           bodyWidth,
+                                           bodyHeight
+                                       )
                                      : 0
+    readonly property bool bodyVisualVisible: panelActive && geometry && geometry.bodyVisualVisible
+    readonly property real visualBodyHeight: bodyVisualVisible ? bodyHeight : 0
+    readonly property real visualBodyRadius: bodyVisualVisible ? bodyRadius : 0
     readonly property real neckX: panelX
     readonly property real neckY: attachY
     readonly property real neckWidth: panelWidth
     readonly property real neckHeight: panelActive ? positive(bodyY - attachY) : 0
     readonly property real innerBorder: Math.max(0, borderThickness)
+
+    onBodyHeightChanged: {
+        DebugVisuals.logTransition(root.surfaceName, root.geometry && root.geometry.open ? "popup-open" : "popup-close", {
+            bodyHeight: root.bodyHeight,
+            bodyRadius: root.bodyRadius,
+            bodyVisualVisible: root.bodyVisualVisible,
+            event: "shell-body-height-changed",
+            panelActive: root.panelActive,
+            rawBodyRadius: root.unclampedBodyRadius
+        });
+    }
+    onBodyRadiusChanged: {
+        DebugVisuals.logTransition(root.surfaceName, root.geometry && root.geometry.open ? "popup-open" : "popup-close", {
+            bodyHeight: root.bodyHeight,
+            bodyRadius: root.bodyRadius,
+            bodyVisualVisible: root.bodyVisualVisible,
+            event: "shell-body-radius-changed",
+            panelActive: root.panelActive,
+            rawBodyRadius: root.unclampedBodyRadius
+        });
+    }
 
     readonly property QtObject outer: QtObject {
         readonly property bool panelActive: root.panelActive
@@ -97,8 +127,8 @@ QtObject {
         readonly property real bodyX: root.panelActive ? root.panelX : 0
         readonly property real bodyY: root.panelActive ? root.bodyY : 0
         readonly property real bodyWidth: root.panelActive ? root.bodyWidth : 0
-        readonly property real bodyHeight: root.panelActive ? root.bodyHeight : 0
-        readonly property real bodyRadius: root.panelActive ? root.bodyRadius : 0
+        readonly property real bodyHeight: root.panelActive ? root.visualBodyHeight : 0
+        readonly property real bodyRadius: root.panelActive ? root.visualBodyRadius : 0
 
         readonly property real leftShoulderClipX: root.panelActive
                                                   ? root.panelX - root.leftShoulderWidth
@@ -142,11 +172,11 @@ QtObject {
                                           ? root.positive(root.bodyWidth - root.innerBorder * 2)
                                           : 0
         readonly property real bodyHeight: root.panelActive
-                                           ? root.positive(root.bodyHeight - root.innerBorder)
+                                           ? root.positive(root.visualBodyHeight - root.innerBorder)
                                            : 0
         readonly property real bodyRadius: root.panelActive
                                            ? root.clampRadius(
-                                                 root.bodyRadius - root.innerBorder,
+                                                 root.visualBodyRadius - root.innerBorder,
                                                  bodyWidth,
                                                  bodyHeight
                                              )

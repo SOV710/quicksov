@@ -26,12 +26,43 @@ PanelWindow {
     aboveWindows: true
     focusable: false
     color: "transparent"
-    mask: popupController.anyOpen ? captureMask : panelScene.shellRegion
+    mask: popupController.anyOpen
+          ? (DebugVisuals.forceShellRegionMaskWhilePopupOpen ? panelScene.shellRegion : captureMask)
+          : panelScene.shellRegion
 
-    BackgroundEffect.blurRegion: panelScene.shellRegion
+    BackgroundEffect.blurRegion: DebugVisuals.disablePanelBlurRegion ? null : panelScene.shellRegion
 
     MainBarPopupController {
         id: popupController
+    }
+
+    readonly property string activeSurfaceName: popupController.activePopup !== ""
+                                               ? popupController.activePopup
+                                               : (popupController.lastActivePopup !== "" ? popupController.lastActivePopup : "overlay")
+    readonly property string maskMode: popupController.anyOpen
+                                       ? (DebugVisuals.forceShellRegionMaskWhilePopupOpen ? "shellRegion" : "captureMask")
+                                       : "shellRegion"
+
+    onMaskModeChanged: {
+        DebugVisuals.logTransition(root.activeSurfaceName, popupController.anyOpen ? "popup-open" : "popup-close", {
+            blurDisabled: DebugVisuals.disablePanelBlurRegion,
+            event: "mask-mode-changed",
+            forceCaptureMaskWhilePopupOpen: DebugVisuals.forceCaptureMaskWhilePopupOpen,
+            forceShellRegionMaskWhilePopupOpen: DebugVisuals.forceShellRegionMaskWhilePopupOpen,
+            maskMode: root.maskMode,
+            shellDisabled: DebugVisuals.disablePanelShell
+        });
+    }
+
+    onActiveSurfaceNameChanged: {
+        DebugVisuals.logTransition(root.activeSurfaceName, popupController.anyOpen ? "popup-open" : "popup-close", {
+            blurDisabled: DebugVisuals.disablePanelBlurRegion,
+            event: "active-surface-changed",
+            forceCaptureMaskWhilePopupOpen: DebugVisuals.forceCaptureMaskWhilePopupOpen,
+            forceShellRegionMaskWhilePopupOpen: DebugVisuals.forceShellRegionMaskWhilePopupOpen,
+            maskMode: root.maskMode,
+            shellDisabled: DebugVisuals.disablePanelShell
+        });
     }
 
     readonly property real _barAvailableWidth: Math.max(0, barRect.width - Theme.panelEdgeInset * 2)

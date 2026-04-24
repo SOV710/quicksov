@@ -8,6 +8,7 @@ import ".."
 QtObject {
     id: root
 
+    property string surfaceName: "panel"
     property Item barItem: null
     property Item triggerItem: null
     property Item coordinateItem: null
@@ -29,6 +30,26 @@ QtObject {
     property real _triggerSceneY: 0
     property real _triggerSceneWidth: 0
     property real _triggerSceneHeight: 0
+    property bool _revealReady: false
+    property real _settledBodyTarget: 0
+
+    function _reset_reveal_state() {
+        _revealReady = false;
+        _settledBodyTarget = 0;
+        _revealSettleTimer.stop();
+    }
+
+    function _schedule_reveal() {
+        if (!open || measuredBodyTarget <= 0)
+            return;
+
+        _revealReady = false;
+        _revealSettleTimer.restart();
+        DebugVisuals.logTransition(root.surfaceName, "popup-open", {
+            event: "reveal-settle-scheduled",
+            measuredBodyTarget: root.measuredBodyTarget
+        });
+    }
 
     function map_item(item) {
         if (!item || !coordinateItem)
@@ -75,8 +96,19 @@ QtObject {
     }
 
     readonly property real panelWidth: Math.max(0, Math.min(preferredWidth, availableWidth))
-    property real bodyHeight: open ? Math.min(contentImplicitHeight, maxBodyHeight) : 0
+    readonly property real measuredBodyTarget: Math.min(contentImplicitHeight, maxBodyHeight)
+    readonly property real targetBodyHeight: open ? (_revealReady ? measuredBodyTarget : 0) : 0
+    property real bodyHeight: targetBodyHeight
     readonly property bool active: open || bodyHeight > 0.5 || bodyHeightAnimation.running
+    readonly property real visualRevealThreshold: Math.min(_settledBodyTarget, lowerRadius * 2)
+    readonly property bool bodyVisualVisible: active
+                                             && _settledBodyTarget > 0.5
+                                             && bodyHeight >= Math.max(1, visualRevealThreshold - 0.5)
+    readonly property bool contentVisible: active
+                                           && (open
+                                                   ? (_settledBodyTarget > 0.5
+                                                          && bodyHeight >= _settledBodyTarget - 0.5)
+                                                   : bodyHeight > Math.max(1, visualRevealThreshold - 0.5))
     readonly property bool hasBarMapping: barItem !== null && coordinateItem !== null
     readonly property bool hasTriggerMapping: triggerItem !== null && coordinateItem !== null
 
@@ -121,15 +153,135 @@ QtObject {
     Behavior on bodyHeight {
         NumberAnimation {
             id: bodyHeightAnimation
-            duration: Theme.statusDockRevealDuration
+            duration: DebugVisuals.freezePanelBodyHeightToFinal
+                      ? 0
+                      : DebugVisuals.duration(Theme.statusDockRevealDuration)
             easing.type: Easing.OutCubic
+
+            onRunningChanged: {
+                DebugVisuals.logTransition(root.surfaceName, root.open ? "popup-open" : "popup-close", {
+                    event: running ? "body-height-animation-start" : "body-height-animation-stop",
+                    active: root.active,
+                    bodyHeight: root.bodyHeight,
+                    contentImplicitHeight: root.contentImplicitHeight,
+                    maxBodyHeight: root.maxBodyHeight,
+                    measuredBodyTarget: root.measuredBodyTarget,
+                    revealReady: root._revealReady,
+                    settledBodyTarget: root._settledBodyTarget,
+                    targetBodyHeight: root.targetBodyHeight
+                });
+            }
         }
     }
 
     onBarItemChanged: refresh_mappings()
     onTriggerItemChanged: refresh_mappings()
     onCoordinateItemChanged: refresh_mappings()
-    Component.onCompleted: refresh_mappings()
+    onOpenChanged: {
+        if (root.open)
+            root._schedule_reveal();
+        else
+            root._revealSettleTimer.stop();
+
+        DebugVisuals.logTransition(root.surfaceName, root.open ? "popup-open" : "popup-close", {
+            active: root.active,
+            bodyHeight: root.bodyHeight,
+            contentImplicitHeight: root.contentImplicitHeight,
+            event: root.open ? "open-changed-true" : "open-changed-false",
+            maxBodyHeight: root.maxBodyHeight,
+            measuredBodyTarget: root.measuredBodyTarget,
+            revealReady: root._revealReady,
+            settledBodyTarget: root._settledBodyTarget,
+            targetBodyHeight: root.targetBodyHeight
+        });
+    }
+    onContentImplicitHeightChanged: {
+        DebugVisuals.logTransition(root.surfaceName, root.open ? "popup-open" : "popup-close", {
+            active: root.active,
+            bodyHeight: root.bodyHeight,
+            contentImplicitHeight: root.contentImplicitHeight,
+            event: "content-implicit-height-changed",
+            maxBodyHeight: root.maxBodyHeight,
+            measuredBodyTarget: root.measuredBodyTarget,
+            revealReady: root._revealReady,
+            settledBodyTarget: root._settledBodyTarget,
+            targetBodyHeight: root.targetBodyHeight
+        });
+    }
+    onMeasuredBodyTargetChanged: {
+        if (root.open) {
+            if (root._revealReady)
+                root._settledBodyTarget = root.measuredBodyTarget;
+            else
+                root._schedule_reveal();
+        }
+
+        DebugVisuals.logTransition(root.surfaceName, root.open ? "popup-open" : "popup-close", {
+            active: root.active,
+            bodyHeight: root.bodyHeight,
+            contentImplicitHeight: root.contentImplicitHeight,
+            event: "measured-body-target-changed",
+            maxBodyHeight: root.maxBodyHeight,
+            measuredBodyTarget: root.measuredBodyTarget,
+            revealReady: root._revealReady,
+            settledBodyTarget: root._settledBodyTarget,
+            targetBodyHeight: root.targetBodyHeight
+        });
+    }
+    onBodyHeightChanged: {
+        DebugVisuals.logTransition(root.surfaceName, root.open ? "popup-open" : "popup-close", {
+            active: root.active,
+            bodyVisualVisible: root.bodyVisualVisible,
+            bodyHeight: root.bodyHeight,
+            contentVisible: root.contentVisible,
+            contentImplicitHeight: root.contentImplicitHeight,
+            event: "body-height-changed",
+            maxBodyHeight: root.maxBodyHeight,
+            measuredBodyTarget: root.measuredBodyTarget,
+            revealReady: root._revealReady,
+            settledBodyTarget: root._settledBodyTarget,
+            targetBodyHeight: root.targetBodyHeight
+        });
+    }
+    onActiveChanged: {
+        if (!root.active && !root.open)
+            root._reset_reveal_state();
+    }
+    Component.onCompleted: {
+        refresh_mappings();
+        if (root.open)
+            root._schedule_reveal();
+        DebugVisuals.logTransition(root.surfaceName, root.open ? "popup-open" : "popup-close", {
+            active: root.active,
+            bodyHeight: root.bodyHeight,
+            contentImplicitHeight: root.contentImplicitHeight,
+            event: "component-completed",
+            maxBodyHeight: root.maxBodyHeight,
+            measuredBodyTarget: root.measuredBodyTarget,
+            revealReady: root._revealReady,
+            settledBodyTarget: root._settledBodyTarget,
+            targetBodyHeight: root.targetBodyHeight
+        });
+    }
+
+    property var _revealSettleTimer: Timer {
+        interval: 24
+        repeat: false
+        running: false
+
+        onTriggered: {
+            if (!root.open || root.measuredBodyTarget <= 0)
+                return;
+
+            root._settledBodyTarget = root.measuredBodyTarget;
+            root._revealReady = true;
+            DebugVisuals.logTransition(root.surfaceName, "popup-open", {
+                event: "reveal-settle-ready",
+                measuredBodyTarget: root.measuredBodyTarget,
+                settledBodyTarget: root._settledBodyTarget
+            });
+        }
+    }
 
     property var _barItemConnections: Connections {
         target: root.barItem

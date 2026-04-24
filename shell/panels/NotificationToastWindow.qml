@@ -43,7 +43,17 @@ PanelWindow {
     color: "transparent"
     implicitWidth: Theme.notificationToastColumnWidth
 
-    NotificationToastColumn {
+    Loader {
         anchors.fill: parent
+        active: root.visible
+        sourceComponent: toastColumnComponent
+    }
+
+    Component {
+        id: toastColumnComponent
+
+        NotificationToastColumn {
+            anchors.fill: parent
+        }
     }
 }

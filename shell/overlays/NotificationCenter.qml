@@ -22,6 +22,7 @@ Item {
     readonly property bool directFollowActive: dragPhase === "dragging"
                                              || dragPhase === "dismiss_flyout"
     readonly property bool motionLocked: dragPhase !== "idle"
+    readonly property bool revealReady: Notification.ready
 
     width: parent ? parent.width : Theme.notificationPanelWidth
     implicitHeight: Math.min(

@@ -40,10 +40,12 @@ Item {
         id: backgroundField
         anchors.fill: parent
         shellModel: shellModel
+        visible: !DebugVisuals.disablePanelShell
     }
 
     PanelGeometryModel {
         id: clockModel
+        surfaceName: "clock"
         coordinateItem: root
         barItem: root.barItem
         triggerItem: root.clockTriggerItem
@@ -57,6 +59,7 @@ Item {
 
     PanelGeometryModel {
         id: statusModel
+        surfaceName: root.controller ? root.controller.statusPopupLabel : "status"
         coordinateItem: root
         barItem: root.barItem
         triggerItem: root.statusTriggerItem
@@ -84,6 +87,7 @@ Item {
     PanelContentSlot {
         id: clockSlot
         z: 2
+        surfaceName: "clock"
         geometry: clockModel
         contentComponent: root.clockContentComponent
     }
@@ -91,6 +95,7 @@ Item {
     PanelContentSlot {
         id: statusSlot
         z: 2
+        surfaceName: root.controller ? root.controller.statusPopupLabel : "status"
         geometry: statusModel
         contentComponent: root.statusContentComponent
     }
