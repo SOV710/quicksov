@@ -25,10 +25,11 @@ Item {
 
     readonly property int notificationId: notif && notif.id !== undefined ? notif.id : -1
     readonly property int autoDismissMs: _autoDismissDuration()
+    readonly property real cardFullHeight: cardContent.implicitHeight + Theme.spaceMd * 2
     readonly property bool countdownPaused: root.pauseAll || root.toastLifecycleState !== "open"
     readonly property real _offscreenX: root.width + Theme.spaceXl
 
-    implicitHeight: cardFrame.implicitHeight
+    implicitHeight: root.cardFullHeight
     height: 0
     width: parent ? parent.width : 0
 
@@ -176,7 +177,7 @@ Item {
 
     onCountdownPausedChanged: root._syncCountdown()
     onImplicitHeightChanged: {
-        if (root._componentReady && root.toastLifecycleState === "open")
+        if (root._componentReady && root.toastLifecycleState !== "closing")
             root.height = root.implicitHeight;
     }
     onToastLifecycleStateChanged: {
@@ -209,8 +210,8 @@ Item {
 
             x: root.cardOffsetX
             width: root.width
-            height: implicitHeight
-            implicitHeight: cardContent.implicitHeight + Theme.spaceMd * 2
+            height: root.cardFullHeight
+            implicitHeight: root.cardFullHeight
             opacity: root.cardOpacity
             radius: Theme.radiusMd
             color: cardHover.hovered ? Theme.surfaceHover : Theme.chromeSubtleFill
@@ -233,8 +234,12 @@ Item {
             NotificationCardContent {
                 id: cardContent
 
-                anchors.fill: parent
-                anchors.margins: Theme.spaceMd
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.leftMargin: Theme.spaceMd
+                anchors.rightMargin: Theme.spaceMd
+                anchors.topMargin: Theme.spaceMd
                 expanded: true
                 interactive: root.toastLifecycleState !== "closing"
                 notif: root.notif
