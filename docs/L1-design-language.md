@@ -204,7 +204,7 @@ QML 通过 `Image { source: ...svg; sourceSize: ... }` 加载，改色通过 `cu
 | 参数 | 值 |
 |---|---|
 | `status_panel_width` | 440px |
-| `status_panel_max_height` | 380px |
+| `status_panel_max_height` | 动态；取 bar 下方剩余可用高度，避免内容被固定高度截断 |
 | `panel_edge_inset` | 24px |
 | `status_panel_right_inset` | 16px |
 | `status_panel_gap_from_bar` | 0px |

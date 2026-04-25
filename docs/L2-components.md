@@ -257,11 +257,14 @@ layer-rule {
 | popup 信息行 | hero 下方只保留大号 `87%` 与 source icon group；source 仅区分 `battery` / `power`，charging / fully charged 用小号 charge badge 叠加，不显示 `AC/Battery` 文本 |
 | popup 次卡 | 第二张卡片为并排双仪表盘 mini radial gauges，仅显示 `Battery Health` 与 `Capacity`；中心主值优先，外围使用简化环形 gauge |
 | popup 次要信息 | `Battery Health` 使用 health percent；`Capacity` 使用当前 `energy_now_wh` 主值与 `energy_now_wh / energy_full_wh` 进度 |
+| popup 控制卡 | 第三张卡片为 `Power Mode` snap slider：三档 `Saver / Balanced / Performance`，每档使用 icon + label，thumb 在三档之间吸附滑动 |
 | 空状态 | 区分 `No battery detected` 与 `Battery backend unavailable`；空状态下省略 hero 与 gauges，仅保留状态卡 |
-| 交互 | click bar icon → 打开/关闭 docked panel；点击 panel 外关闭；Esc 关闭 |
+| 控制不可用 | 若 power profile 不可用或 backend 离线，控制卡保留但整体变灰，并显示 warning message |
+| 交互 | click bar icon → 打开/关闭 docked panel；点击 panel 外关闭；Esc 关闭；power mode 通过点击/拖动 snap slider 切换 |
 
 **实现约束**：
 - battery health 优先由 daemon 统一归约，不在 QML 端自行推导
+- Power Profile 仅在 daemon 报告 `power_profile_available=true` 且 backend 在线时允许交互
 - 台式机 / 无电池设备不伪造 gauge 数值，保持空状态卡即可
 
 **shell / blur 规则**：
