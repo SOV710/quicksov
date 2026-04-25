@@ -255,15 +255,14 @@ layer-rule {
 | 几何 | click docked panel；内容加载到 `MainBarPanelScene` 的 status panel slot；默认保持较低高度 |
 | popup 首卡 | 顶部为 full-width liquid hero card；液体场只在 `hasBattery=true` 时显示，fill 从左向右推进，front edge 需要柔和且上下不对称 |
 | popup 信息行 | hero 下方只保留大号 `87%` 与 source icon group；source 仅区分 `battery` / `power`，charging / fully charged 用小号 charge badge 叠加，不显示 `AC/Battery` 文本 |
-| popup 指标卡 | `Power Source`、`Battery Health`、`Charge Rate`、`Capacity` 四张信息卡 |
-| power profile | 底部 3-way segmented selector：`Saver` / `Balanced` / `Performance`，segment 内使用 icon + label |
-| 空状态 | 区分 `No battery detected` 与 `Battery backend unavailable`；前者仍可显示 power profile，后者整体禁用 |
-| 交互 | click bar icon → 打开/关闭 docked panel；点击 panel 外关闭；Esc 关闭；click segmented selector → daemon `set_power_profile` |
+| popup 次卡 | 第二张卡片为并排双仪表盘 mini radial gauges，仅显示 `Battery Health` 与 `Capacity`；中心主值优先，外围使用简化环形 gauge |
+| popup 次要信息 | `Battery Health` 使用 health percent；`Capacity` 使用当前 `energy_now_wh` 主值与 `energy_now_wh / energy_full_wh` 进度 |
+| 空状态 | 区分 `No battery detected` 与 `Battery backend unavailable`；空状态下省略 hero 与 gauges，仅保留状态卡 |
+| 交互 | click bar icon → 打开/关闭 docked panel；点击 panel 外关闭；Esc 关闭 |
 
 **实现约束**：
 - battery health 优先由 daemon 统一归约，不在 QML 端自行推导
-- Power Profile 仅在 daemon 报告 `power_profile_available=true` 时允许交互
-- 台式机 / 无电池设备仍允许展示 power profile 区，但必须弱化主状态区
+- 台式机 / 无电池设备不伪造 gauge 数值，保持空状态卡即可
 
 **shell / blur 规则**：
 - battery 页自己不绘制外壳；外壳由 `PanelBackgroundField` 统一负责

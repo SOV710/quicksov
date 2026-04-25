@@ -85,12 +85,15 @@ Singleton {
     readonly property int batteryHeroInnerRadius: radiusSm
     readonly property int batteryHeroSourceIconSize: 24
     readonly property int batteryHeroChargeBadgeSize: 16
-    readonly property int batteryProfileSegmentHeight: barHeight + spaceSm
-    readonly property int batteryProfileIconSize: 16
-    readonly property int batteryHeroCycleDuration: motionDeliberate * 30
+    readonly property int batteryHeroCycleDuration: 20000
     readonly property int batteryHeroSettleDuration: motionSlow + motionNormal
     readonly property real batteryHeroFrontSoftness: 0.055
     readonly property real batteryHeroWaveAmplitude: 0.028
+    readonly property int batteryGaugeCardPadding: spaceMd
+    readonly property int batteryGaugeSize: 148
+    readonly property int batteryGaugeStrokeWidth: 10
+    readonly property real batteryGaugeStartAngleDeg: 135
+    readonly property real batteryGaugeSweepAngleDeg: 270
 
     // Unified icon size for bar widgets and tray items (scales with barHeight)
     function barIconSize(scale) {
@@ -230,9 +233,6 @@ Singleton {
     readonly property string iconBatteryFullChargeBadgeStatus: "material/check_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
     readonly property string iconBatteryUnknownStatus: "material/battery_unknown_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
     readonly property string iconBatteryErrorStatus: "material/battery_error_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
-    readonly property string iconBatteryProfileSaverStatus: "material/energy_savings_leaf_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
-    readonly property string iconBatteryProfileBalancedStatus: "material/balance_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
-    readonly property string iconBatteryProfilePerformanceStatus: "material/rocket_launch_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
     readonly property string iconWifiStatus: "material/network_wifi_3_bar_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
     readonly property string iconWifiZeroStatus: "material/signal_wifi_0_bar_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
     readonly property string iconWifiOneStatus: "material/network_wifi_1_bar_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
@@ -290,19 +290,6 @@ Singleton {
         if (availability === "no_battery")
             return colorWarning;
         return fgMuted;
-    }
-
-    function batteryPowerProfileIcon(profile) {
-        switch (profile) {
-        case "power-saver":
-            return iconBatteryProfileSaverStatus;
-        case "balanced":
-            return iconBatteryProfileBalancedStatus;
-        case "performance":
-            return iconBatteryProfilePerformanceStatus;
-        default:
-            return iconBatteryProfileBalancedStatus;
-        }
     }
 
     function batteryPalette(chargeStatus, availability) {

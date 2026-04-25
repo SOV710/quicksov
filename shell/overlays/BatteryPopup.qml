@@ -14,43 +14,19 @@ Item {
     width: parent ? parent.width : Theme.batteryPanelWidth
     implicitHeight: Math.min(contentCol.implicitHeight + Theme.spaceMd * 2, Theme.batteryPanelMaxHeight)
 
-    readonly property var _profiles: ["power-saver", "balanced", "performance"]
     readonly property var _batteryPalette: Theme.batteryPalette(Battery.chargeStatus, Battery.availability)
     readonly property real _normalizedLevel: Battery.hasBattery ? Math.max(0, Math.min(1, Battery.percentage / 100.0)) : 0.0
+    readonly property real _healthProgress: typeof Battery.healthPercent === "number"
+                                            ? Math.max(0, Math.min(1, Battery.healthPercent / 100.0))
+                                            : -1
+    readonly property real _capacityProgress: (typeof Battery.energyNowWh === "number"
+                                               && typeof Battery.energyFullWh === "number"
+                                               && Battery.energyFullWh > 0)
+                                              ? Math.max(0, Math.min(1, Battery.energyNowWh / Battery.energyFullWh))
+                                              : -1
 
     property real _heroPhase: 0.0
     property real _heroDisplayedLevel: 0.0
-
-    function _metricValueText(value, suffix, decimals) {
-        if (typeof value !== "number")
-            return "Unavailable";
-        var places = decimals !== undefined ? decimals : 1;
-        return value.toFixed(places) + (suffix || "");
-    }
-
-    function _capacityValue() {
-        if (typeof Battery.energyNowWh === "number" && typeof Battery.energyFullWh === "number")
-            return Battery.energyNowWh.toFixed(1) + " / " + Battery.energyFullWh.toFixed(1) + " Wh";
-        if (typeof Battery.energyFullWh === "number")
-            return Battery.energyFullWh.toFixed(1) + " Wh";
-        return "Unavailable";
-    }
-
-    function _capacityDetail() {
-        if (typeof Battery.energyDesignWh === "number")
-            return "Design " + Battery.energyDesignWh.toFixed(1) + " Wh";
-        return "Current / full capacity";
-    }
-
-    function _profileAvailableMessage() {
-        if (Battery.isUnavailable)
-            return "Power profile control unavailable while battery backend is offline.";
-        if (!Battery.powerProfileAvailable)
-            return "Power profile service unavailable on this system.";
-        if (Battery.profilePending)
-            return "Applying " + Battery.profileLabel(Battery.pendingProfile) + "…";
-        return "";
-    }
 
     Component.onCompleted: {
         root._heroDisplayedLevel = root._normalizedLevel;
@@ -198,7 +174,6 @@ Item {
                         border.width: 1
 
                         SvgIcon {
-                            id: badgeIcon
                             anchors.centerIn: parent
                             iconPath: Theme.batteryChargeBadgeIcon(Battery.chargeStatus)
                             size: Theme.batteryHeroChargeBadgeSize - Theme.spaceXs
@@ -224,7 +199,7 @@ Item {
             iconPath: Theme.batteryStateIcon(Battery.availability)
             iconColor: Theme.batteryStateColor(Battery.availability)
             title: "No battery detected"
-            message: "This system does not report a laptop battery, but power profile controls may still be available."
+            message: "This system does not report a laptop battery."
         }
 
         StateCard {
@@ -232,219 +207,175 @@ Item {
             iconPath: Theme.batteryStateIcon(Battery.availability)
             iconColor: Theme.batteryStateColor(Battery.availability)
             title: "Battery backend unavailable"
-            message: "UPower is not reachable right now. Battery metrics and profile controls are temporarily unavailable."
-        }
-
-        Column {
-            visible: Battery.hasBattery
-            width: parent.width
-            spacing: Theme.spaceSm
-
-            RowLayout {
-                width: parent.width
-                spacing: Theme.spaceSm
-
-                MetricCard {
-                    Layout.fillWidth: true
-                    label: "Power Source"
-                    value: Battery.sourceLabel()
-                    detail: Battery.displayStatus()
-                }
-
-                MetricCard {
-                    Layout.fillWidth: true
-                    label: "Battery Health"
-                    value: root._metricValueText(Battery.healthPercent, "%", 0)
-                    detail: typeof Battery.energyDesignWh === "number"
-                            ? "Derived from full vs design"
-                            : "Design capacity unavailable"
-                }
-            }
-
-            RowLayout {
-                width: parent.width
-                spacing: Theme.spaceSm
-
-                MetricCard {
-                    Layout.fillWidth: true
-                    label: "Charge Rate"
-                    value: root._metricValueText(Battery.energyRateW, " W", 1)
-                    detail: Battery.onBattery ? "Current discharge rate" : "Current charge rate"
-                }
-
-                MetricCard {
-                    Layout.fillWidth: true
-                    label: "Capacity"
-                    value: root._capacityValue()
-                    detail: root._capacityDetail()
-                }
-            }
+            message: "UPower is not reachable right now. Battery metrics are temporarily unavailable."
         }
 
         Rectangle {
+            visible: Battery.hasBattery
             width: parent.width
             radius: Theme.radiusSm
             color: Theme.bgSurfaceRaised
             border.color: Theme.borderSubtle
             border.width: 1
-            implicitHeight: profileCol.implicitHeight + Theme.spaceSm * 2
+            implicitHeight: gaugesRow.implicitHeight + Theme.batteryGaugeCardPadding * 2
 
-            Column {
-                id: profileCol
+            RowLayout {
+                id: gaugesRow
                 anchors.fill: parent
-                anchors.margins: Theme.spaceSm
-                spacing: Theme.spaceSm
+                anchors.margins: Theme.batteryGaugeCardPadding
+                spacing: Theme.spaceMd
 
-                RowLayout {
-                    width: parent.width
-
-                    Text {
-                        text: "Power Profile"
-                        color: Theme.fgPrimary
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontBody
-                        font.weight: Theme.weightMedium
-                        Layout.fillWidth: true
-                    }
-
-                    Text {
-                        text: Battery.profileLabel(Battery.powerProfile)
-                        color: Theme.fgMuted
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSmall
-                        font.weight: Theme.weightMedium
-                        visible: Battery.powerProfile !== ""
-                    }
+                GaugeCard {
+                    Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignTop
+                    gaugeColor: root._batteryPalette.accent
+                    progress: root._healthProgress
+                    valueText: typeof Battery.healthPercent === "number"
+                               ? Battery.healthPercent.toFixed(0)
+                               : "\u2014"
+                    unitText: typeof Battery.healthPercent === "number" ? "%" : ""
+                    label: "Battery Health"
+                    unavailable: root._healthProgress < 0
                 }
 
-                Rectangle {
-                    width: parent.width
-                    height: Theme.batteryProfileSegmentHeight
-                    radius: Theme.radiusSm
-                    color: Theme.bgSurface
-                    border.color: Theme.borderSubtle
-                    border.width: 1
-                    opacity: Battery.powerProfileAvailable ? 1.0 : 0.55
-
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.margins: 3
-                        spacing: 3
-
-                        Repeater {
-                            model: root._profiles
-
-                            delegate: Rectangle {
-                                required property string modelData
-
-                                readonly property bool _current: Battery.powerProfile === modelData
-                                readonly property bool _pending: Battery.pendingProfile === modelData
-                                readonly property bool _enabled: Battery.canSetPowerProfile(modelData)
-
-                                Layout.fillWidth: true
-                                Layout.fillHeight: true
-                                radius: Theme.radiusXs
-                                color: _current || _pending
-                                       ? Theme.surfaceActive
-                                       : profileMouse.containsMouse
-                                         ? Theme.surfaceHover
-                                         : "transparent"
-                                border.color: (_current || _pending) ? Theme.borderAccent : "transparent"
-                                border.width: (_current || _pending) ? 1 : 0
-                                scale: profileMouse.pressed ? 0.98 : 1.0
-
-                                Behavior on color { ColorAnimation { duration: Theme.motionFast } }
-                                Behavior on scale { NumberAnimation { duration: Theme.motionFast } }
-
-                                RowLayout {
-                                    anchors.centerIn: parent
-                                    spacing: Theme.spaceXs
-
-                                    SvgIcon {
-                                        iconPath: Theme.batteryPowerProfileIcon(modelData)
-                                        size: Theme.batteryProfileIconSize
-                                        color: (_current || _pending) ? Theme.accentBlue : Theme.fgSecondary
-                                    }
-
-                                    Text {
-                                        text: Battery.profileLabel(modelData)
-                                        color: (_current || _pending) ? Theme.accentBlue : Theme.fgSecondary
-                                        opacity: Battery.powerProfileAvailable ? 1.0 : 0.8
-                                        font.family: Theme.fontFamily
-                                        font.pixelSize: Theme.fontBody
-                                        font.weight: (_current || _pending) ? Theme.weightMedium : Theme.weightRegular
-                                    }
-                                }
-
-                                MouseArea {
-                                    id: profileMouse
-                                    anchors.fill: parent
-                                    enabled: parent._enabled
-                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                    onClicked: Battery.setPowerProfile(modelData)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Text {
-                    visible: text !== ""
-                    width: parent.width
-                    text: root._profileAvailableMessage()
-                    color: Battery.powerProfileAvailable ? Theme.fgMuted : Theme.colorWarning
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontSmall
-                    wrapMode: Text.WordWrap
+                GaugeCard {
+                    Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignTop
+                    gaugeColor: root._batteryPalette.accent
+                    progress: root._capacityProgress
+                    valueText: typeof Battery.energyNowWh === "number"
+                               ? Battery.energyNowWh.toFixed(1)
+                               : "\u2014"
+                    unitText: typeof Battery.energyNowWh === "number" ? "Wh" : ""
+                    label: "Capacity"
+                    unavailable: root._capacityProgress < 0
                 }
             }
         }
     }
 
-    component MetricCard: Rectangle {
-        id: metricCard
+    component GaugeCard: Item {
+        id: gaugeCard
 
+        property real progress: -1
+        property color gaugeColor: Theme.accentBlue
+        property string valueText: ""
+        property string unitText: ""
         property string label: ""
-        property string value: ""
-        property string detail: ""
+        property bool unavailable: false
 
-        implicitHeight: metricCol.implicitHeight + Theme.spaceSm * 2
-        radius: Theme.radiusSm
-        color: Theme.bgSurfaceRaised
-        border.color: Theme.borderSubtle
-        border.width: 1
+        implicitWidth: Theme.batteryGaugeSize
+        implicitHeight: Theme.batteryGaugeSize + Theme.spaceLg + Theme.fontBody + Theme.fontSmall
 
-        Column {
-            id: metricCol
-            anchors.fill: parent
-            anchors.margins: Theme.spaceSm
-            spacing: 4
+        readonly property color _trackColor: Theme.withAlpha(Theme.fgMuted, 0.16)
+        readonly property color _innerFillColor: Theme.overlay(Theme.bgSurface, gaugeCard.gaugeColor, 0.06)
+        readonly property color _ringColor: gaugeCard.unavailable ? Theme.fgMuted : gaugeCard.gaugeColor
+        readonly property color _valueColor: gaugeCard.unavailable ? Theme.fgMuted : Theme.fgPrimary
+        readonly property real _clampedProgress: Math.max(0, Math.min(1, gaugeCard.progress))
 
-            Text {
-                text: metricCard.label
-                color: Theme.fgMuted
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontSmall
-                font.weight: Theme.weightMedium
+        onProgressChanged: ringCanvas.requestPaint()
+        onGaugeColorChanged: ringCanvas.requestPaint()
+        onUnavailableChanged: ringCanvas.requestPaint()
+        onWidthChanged: ringCanvas.requestPaint()
+        onHeightChanged: ringCanvas.requestPaint()
+
+        Item {
+            id: gaugeBody
+            anchors.top: parent.top
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: Math.min(parent.width, Theme.batteryGaugeSize)
+            height: Theme.batteryGaugeSize
+
+            Canvas {
+                id: ringCanvas
+                anchors.fill: parent
+                antialiasing: true
+
+                onPaint: {
+                    var ctx = getContext("2d");
+                    ctx.reset();
+
+                    var stroke = Theme.batteryGaugeStrokeWidth;
+                    var radius = Math.max(0, (Math.min(width, height) - stroke) / 2);
+                    var centerX = width / 2;
+                    var centerY = height / 2;
+                    var start = Theme.batteryGaugeStartAngleDeg * Math.PI / 180.0;
+                    var sweep = Theme.batteryGaugeSweepAngleDeg * Math.PI / 180.0;
+                    var end = start + sweep;
+                    var progressEnd = start + sweep * gaugeCard._clampedProgress;
+
+                    ctx.lineCap = "round";
+
+                    ctx.beginPath();
+                    ctx.arc(centerX, centerY, radius, start, end, false);
+                    ctx.lineWidth = stroke;
+                    ctx.strokeStyle = gaugeCard._trackColor;
+                    ctx.stroke();
+
+                    if (!gaugeCard.unavailable && gaugeCard._clampedProgress > 0) {
+                        var gradient = ctx.createLinearGradient(0, 0, width, height);
+                        gradient.addColorStop(0.0, Theme.withAlpha(gaugeCard.gaugeColor, 0.52));
+                        gradient.addColorStop(0.55, Theme.withAlpha(gaugeCard.gaugeColor, 0.84));
+                        gradient.addColorStop(1.0, Theme.withAlpha(gaugeCard.gaugeColor, 1.0));
+
+                        ctx.beginPath();
+                        ctx.arc(centerX, centerY, radius, start, progressEnd, false);
+                        ctx.lineWidth = stroke;
+                        ctx.strokeStyle = gradient;
+                        ctx.stroke();
+                    }
+                }
             }
 
-            Text {
-                text: metricCard.value
-                color: Theme.fgPrimary
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontBody
-                font.weight: Theme.weightSemibold
-                wrapMode: Text.WordWrap
+            Rectangle {
+                width: parent.width - Theme.batteryGaugeStrokeWidth * 2 - Theme.spaceSm
+                height: width
+                radius: width / 2
+                anchors.centerIn: parent
+                color: gaugeCard._innerFillColor
+                border.color: Theme.withAlpha(gaugeCard._ringColor, gaugeCard.unavailable ? 0.08 : 0.16)
+                border.width: 1
             }
 
-            Text {
-                visible: metricCard.detail !== ""
-                text: metricCard.detail
-                color: Theme.fgSecondary
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontSmall
-                wrapMode: Text.WordWrap
+            Column {
+                anchors.centerIn: parent
+                spacing: Theme.spaceXs
+
+                RowLayout {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: Theme.spaceXs
+
+                    Text {
+                        text: gaugeCard.valueText
+                        color: gaugeCard._valueColor
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontDisplay
+                        font.weight: Theme.weightSemibold
+                        font.features: { "tnum": 1 }
+                    }
+
+                    Text {
+                        visible: gaugeCard.unitText !== ""
+                        Layout.alignment: Qt.AlignVCenter
+                        text: gaugeCard.unitText
+                        color: Theme.fgSecondary
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontBody
+                        font.weight: Theme.weightMedium
+                    }
+                }
             }
+        }
+
+        Text {
+            anchors.top: gaugeBody.bottom
+            anchors.topMargin: Theme.spaceSm
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: gaugeCard.label
+            color: Theme.fgMuted
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontSmall
+            font.weight: Theme.weightMedium
         }
     }
 
