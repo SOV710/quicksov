@@ -80,6 +80,17 @@ Singleton {
     readonly property real workspaceGooeyBlobScale: 1.36
     readonly property int workspaceGooeyDuration: 320
     readonly property real workspaceGooeyMergeStrength: 7.0
+    readonly property int batteryHeroCardHeight: spaceXxl * 3
+    readonly property int batteryHeroInset: spaceSm
+    readonly property int batteryHeroInnerRadius: radiusSm
+    readonly property int batteryHeroSourceIconSize: 24
+    readonly property int batteryHeroChargeBadgeSize: 16
+    readonly property int batteryProfileSegmentHeight: barHeight + spaceSm
+    readonly property int batteryProfileIconSize: 16
+    readonly property int batteryHeroCycleDuration: motionDeliberate * 30
+    readonly property int batteryHeroSettleDuration: motionSlow + motionNormal
+    readonly property real batteryHeroFrontSoftness: 0.055
+    readonly property real batteryHeroWaveAmplitude: 0.028
 
     // Unified icon size for bar widgets and tray items (scales with barHeight)
     function barIconSize(scale) {
@@ -213,6 +224,15 @@ Singleton {
 
     readonly property string iconBatteryStatus: "material/battery_android_6_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
     readonly property string iconBatteryFullStatus: "material/battery_android_full_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconBatterySourceStatus: "material/battery_0_bar_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconBatteryExternalPowerStatus: "material/power_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconBatteryChargingBadgeStatus: "material/bolt_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconBatteryFullChargeBadgeStatus: "material/check_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconBatteryUnknownStatus: "material/battery_unknown_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconBatteryErrorStatus: "material/battery_error_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconBatteryProfileSaverStatus: "material/energy_savings_leaf_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconBatteryProfileBalancedStatus: "material/balance_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconBatteryProfilePerformanceStatus: "material/rocket_launch_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
     readonly property string iconWifiStatus: "material/network_wifi_3_bar_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
     readonly property string iconWifiZeroStatus: "material/signal_wifi_0_bar_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
     readonly property string iconWifiOneStatus: "material/network_wifi_1_bar_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
@@ -242,6 +262,102 @@ Singleton {
         if (level <= 0.82)
             return "material/battery_android_5_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg";
         return iconBatteryStatus;
+    }
+
+    function batterySourceIcon(onBattery) {
+        return onBattery ? iconBatterySourceStatus : iconBatteryExternalPowerStatus;
+    }
+
+    function batteryChargeBadgeIcon(chargeStatus) {
+        if (chargeStatus === "charging")
+            return iconBatteryChargingBadgeStatus;
+        if (chargeStatus === "fully_charged")
+            return iconBatteryFullChargeBadgeStatus;
+        return "";
+    }
+
+    function batteryStateIcon(availability) {
+        if (availability === "no_battery")
+            return iconBatteryUnknownStatus;
+        if (availability === "backend_unavailable")
+            return iconBatteryErrorStatus;
+        return iconBatterySourceStatus;
+    }
+
+    function batteryStateColor(availability) {
+        if (availability === "backend_unavailable")
+            return colorError;
+        if (availability === "no_battery")
+            return colorWarning;
+        return fgMuted;
+    }
+
+    function batteryPowerProfileIcon(profile) {
+        switch (profile) {
+        case "power-saver":
+            return iconBatteryProfileSaverStatus;
+        case "balanced":
+            return iconBatteryProfileBalancedStatus;
+        case "performance":
+            return iconBatteryProfilePerformanceStatus;
+        default:
+            return iconBatteryProfileBalancedStatus;
+        }
+    }
+
+    function batteryPalette(chargeStatus, availability) {
+        if (availability === "backend_unavailable") {
+            return {
+                fill: withAlpha(colorError, 0.38),
+                deep: withAlpha(colorError, 0.74),
+                background: withAlpha(overlay(bgSurfaceRaised, colorError, 0.08), 0.82),
+                highlight: withAlpha(colorError, 0.16),
+                accent: colorError,
+                frame: withAlpha(colorError, 0.24)
+            };
+        }
+
+        if (availability === "no_battery") {
+            return {
+                fill: withAlpha(colorWarning, 0.28),
+                deep: withAlpha(colorWarning, 0.54),
+                background: withAlpha(overlay(bgSurfaceRaised, colorWarning, 0.05), 0.82),
+                highlight: withAlpha(colorWarning, 0.12),
+                accent: colorWarning,
+                frame: withAlpha(colorWarning, 0.18)
+            };
+        }
+
+        if (chargeStatus === "charging") {
+            return {
+                fill: withAlpha(overlay(accentTeal, colorSuccess, 0.20), 0.92),
+                deep: withAlpha(colorSuccess, 0.94),
+                background: withAlpha(overlay(bgSurfaceRaised, accentTeal, 0.12), 0.84),
+                highlight: withAlpha(accentCyan, 0.30),
+                accent: accentTeal,
+                frame: withAlpha(accentTeal, 0.24)
+            };
+        }
+
+        if (chargeStatus === "fully_charged") {
+            return {
+                fill: withAlpha(overlay(accentTeal, accentCyan, 0.30), 0.92),
+                deep: withAlpha(accentCyan, 0.92),
+                background: withAlpha(overlay(bgSurfaceRaised, accentTeal, 0.10), 0.84),
+                highlight: withAlpha(accentCyan, 0.28),
+                accent: accentCyan,
+                frame: withAlpha(accentCyan, 0.24)
+            };
+        }
+
+        return {
+            fill: withAlpha(accentCyan, 0.94),
+            deep: withAlpha(accentBlue, 0.96),
+            background: withAlpha(overlay(bgSurfaceRaised, accentBlue, 0.10), 0.84),
+            highlight: withAlpha(accentCyan, 0.22),
+            accent: accentCyan,
+            frame: withAlpha(accentBlue, 0.24)
+        };
     }
 
     function wifiIconForSignal(signalPct) {

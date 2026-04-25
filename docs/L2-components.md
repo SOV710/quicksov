@@ -253,10 +253,10 @@ layer-rule {
 | bar 显示逻辑 | status capsule 内只显示 icon，不显示 `%`；充电时进入绿色语义 |
 | Icon | Material battery glyph family |
 | 几何 | click docked panel；内容加载到 `MainBarPanelScene` 的 status panel slot；默认保持较低高度 |
-| popup 头部 | 左侧大号 battery icon；右侧主读数 `87%` + 状态词 `Charging/Discharging/Fully charged` |
-| popup 次级信息 | 第二行显示 `3h 12m remaining` / `54m until full` / `Time estimate unavailable` |
+| popup 首卡 | 顶部为 full-width liquid hero card；液体场只在 `hasBattery=true` 时显示，fill 从左向右推进，front edge 需要柔和且上下不对称 |
+| popup 信息行 | hero 下方只保留大号 `87%` 与 source icon group；source 仅区分 `battery` / `power`，charging / fully charged 用小号 charge badge 叠加，不显示 `AC/Battery` 文本 |
 | popup 指标卡 | `Power Source`、`Battery Health`、`Charge Rate`、`Capacity` 四张信息卡 |
-| power profile | 底部 3-way segmented selector：`Saver` / `Balanced` / `Performance` |
+| power profile | 底部 3-way segmented selector：`Saver` / `Balanced` / `Performance`，segment 内使用 icon + label |
 | 空状态 | 区分 `No battery detected` 与 `Battery backend unavailable`；前者仍可显示 power profile，后者整体禁用 |
 | 交互 | click bar icon → 打开/关闭 docked panel；点击 panel 外关闭；Esc 关闭；click segmented selector → daemon `set_power_profile` |
 

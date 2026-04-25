@@ -15,29 +15,11 @@ Item {
     implicitHeight: Math.min(contentCol.implicitHeight + Theme.spaceMd * 2, Theme.batteryPanelMaxHeight)
 
     readonly property var _profiles: ["power-saver", "balanced", "performance"]
-    readonly property color _heroTone: root._heroColor()
+    readonly property var _batteryPalette: Theme.batteryPalette(Battery.chargeStatus, Battery.availability)
+    readonly property real _normalizedLevel: Battery.hasBattery ? Math.max(0, Math.min(1, Battery.percentage / 100.0)) : 0.0
 
-    function _heroIcon() {
-        if (Battery.isUnavailable)
-            return "lucide/triangle-alert.svg";
-        if (!Battery.hasBattery)
-            return "lucide/battery-warning.svg";
-        return Theme.batteryIconForLevel(Battery.percentage, Battery.chargeStatus);
-    }
-
-    function _heroColor() {
-        if (Battery.isUnavailable)
-            return Theme.colorError;
-        if (!Battery.hasBattery)
-            return Theme.fgMuted;
-        if (Battery.isCharging || Battery.isFullyCharged)
-            return Theme.colorSuccess;
-        if (Battery.percentage <= 15)
-            return Theme.colorError;
-        if (Battery.percentage <= 30)
-            return Theme.colorWarning;
-        return Theme.accentBlue;
-    }
+    property real _heroPhase: 0.0
+    property real _heroDisplayedLevel: 0.0
 
     function _metricValueText(value, suffix, decimals) {
         if (typeof value !== "number")
@@ -70,6 +52,43 @@ Item {
         return "";
     }
 
+    Component.onCompleted: {
+        root._heroDisplayedLevel = root._normalizedLevel;
+    }
+
+    Connections {
+        target: Battery
+
+        function onPercentageChanged() {
+            root._heroDisplayedLevel = root._normalizedLevel;
+        }
+
+        function onAvailabilityChanged() {
+            root._heroDisplayedLevel = root._normalizedLevel;
+        }
+
+        function onPresentChanged() {
+            root._heroDisplayedLevel = root._normalizedLevel;
+        }
+    }
+
+    NumberAnimation on _heroPhase {
+        from: 0
+        to: 1
+        duration: Theme.batteryHeroCycleDuration
+        loops: Animation.Infinite
+        running: Battery.hasBattery
+    }
+
+    Behavior on _heroDisplayedLevel {
+        enabled: Battery.hasBattery
+
+        NumberAnimation {
+            duration: Theme.batteryHeroSettleDuration
+            easing.type: Easing.OutCubic
+        }
+    }
+
     Column {
         id: contentCol
         anchors {
@@ -80,60 +99,112 @@ Item {
         }
         spacing: Theme.spaceMd
 
-        RowLayout {
+        Column {
+            visible: Battery.hasBattery
             width: parent.width
-            spacing: Theme.spaceMd
+            spacing: Theme.spaceSm
 
             Rectangle {
-                Layout.preferredWidth: 56
-                Layout.preferredHeight: 56
-                radius: Theme.radiusSm
-                color: Qt.rgba(root._heroTone.r, root._heroTone.g, root._heroTone.b, 0.12)
-                border.color: Qt.rgba(root._heroTone.r, root._heroTone.g, root._heroTone.b, 0.22)
+                width: parent.width
+                height: Theme.batteryHeroCardHeight
+                radius: Theme.radiusMd
+                color: Theme.chromeSubtleFillMuted
+                border.color: root._batteryPalette.frame
                 border.width: 1
+                antialiasing: true
 
-                SvgIcon {
-                    anchors.centerIn: parent
-                    iconPath: root._heroIcon()
-                    size: 28
-                    color: root._heroColor()
+                Item {
+                    anchors.fill: parent
+                    anchors.margins: Theme.batteryHeroInset
+
+                    ShaderEffect {
+                        anchors.fill: parent
+                        blending: true
+
+                        property real itemWidth: width
+                        property real itemHeight: height
+                        property real level: root._heroDisplayedLevel
+                        property real phase: root._heroPhase
+                        property real frontSoftness: Theme.batteryHeroFrontSoftness
+                        property real waveAmplitude: Theme.batteryHeroWaveAmplitude
+                        property vector4d fillColor: Qt.vector4d(
+                            root._batteryPalette.fill.r,
+                            root._batteryPalette.fill.g,
+                            root._batteryPalette.fill.b,
+                            root._batteryPalette.fill.a
+                        )
+                        property vector4d deepColor: Qt.vector4d(
+                            root._batteryPalette.deep.r,
+                            root._batteryPalette.deep.g,
+                            root._batteryPalette.deep.b,
+                            root._batteryPalette.deep.a
+                        )
+                        property vector4d backgroundColor: Qt.vector4d(
+                            root._batteryPalette.background.r,
+                            root._batteryPalette.background.g,
+                            root._batteryPalette.background.b,
+                            root._batteryPalette.background.a
+                        )
+                        property vector4d highlightColor: Qt.vector4d(
+                            root._batteryPalette.highlight.r,
+                            root._batteryPalette.highlight.g,
+                            root._batteryPalette.highlight.b,
+                            root._batteryPalette.highlight.a
+                        )
+                        property real innerRadius: Theme.batteryHeroInnerRadius
+
+                        fragmentShader: Qt.resolvedUrl("../shaders/qsb/battery_liquid_field.frag.qsb")
+                    }
                 }
             }
 
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 2
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Theme.spaceSm
-
-                    Text {
-                        text: Battery.hasBattery ? Math.round(Battery.percentage) + "%" : "Battery"
-                        color: Theme.fgPrimary
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontDisplay
-                        font.weight: Theme.weightSemibold
-                    }
-
-                    Text {
-                        text: Battery.hasBattery ? Battery.displayStatus() : (Battery.noBattery ? "No battery" : "Unavailable")
-                        color: Battery.hasBattery ? root._heroColor() : Theme.fgMuted
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontLabel
-                        font.weight: Theme.weightMedium
-                        Layout.fillWidth: true
-                        elide: Text.ElideRight
-                    }
-                }
+            RowLayout {
+                width: parent.width
+                spacing: Theme.spaceSm
 
                 Text {
-                    text: Battery.timeEstimateText()
-                    color: Theme.fgSecondary
+                    text: Math.round(Battery.percentage) + "%"
+                    color: root._batteryPalette.accent
                     font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontBody
-                    wrapMode: Text.WordWrap
+                    font.pixelSize: Theme.fontHero
+                    font.weight: Theme.weightSemibold
+                    font.features: { "tnum": 1 }
+                }
+
+                Item {
                     Layout.fillWidth: true
+                }
+
+                Item {
+                    Layout.preferredWidth: Theme.batteryHeroSourceIconSize + Theme.batteryHeroChargeBadgeSize / 2
+                    Layout.preferredHeight: Theme.batteryHeroSourceIconSize + Theme.batteryHeroChargeBadgeSize / 2
+
+                    SvgIcon {
+                        anchors.centerIn: parent
+                        iconPath: Theme.batterySourceIcon(Battery.onBattery)
+                        size: Theme.batteryHeroSourceIconSize
+                        color: Theme.fgPrimary
+                    }
+
+                    Rectangle {
+                        visible: Theme.batteryChargeBadgeIcon(Battery.chargeStatus) !== ""
+                        width: Theme.batteryHeroChargeBadgeSize
+                        height: Theme.batteryHeroChargeBadgeSize
+                        radius: width / 2
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        color: Theme.overlay(Theme.bgSurfaceRaised, root._batteryPalette.accent, 0.20)
+                        border.color: Theme.withAlpha(root._batteryPalette.accent, 0.26)
+                        border.width: 1
+
+                        SvgIcon {
+                            id: badgeIcon
+                            anchors.centerIn: parent
+                            iconPath: Theme.batteryChargeBadgeIcon(Battery.chargeStatus)
+                            size: Theme.batteryHeroChargeBadgeSize - Theme.spaceXs
+                            color: root._batteryPalette.accent
+                        }
+                    }
                 }
             }
         }
@@ -150,14 +221,16 @@ Item {
 
         StateCard {
             visible: Battery.noBattery
-            iconPath: "lucide/battery-warning.svg"
+            iconPath: Theme.batteryStateIcon(Battery.availability)
+            iconColor: Theme.batteryStateColor(Battery.availability)
             title: "No battery detected"
             message: "This system does not report a laptop battery, but power profile controls may still be available."
         }
 
         StateCard {
             visible: Battery.isUnavailable
-            iconPath: "lucide/triangle-alert.svg"
+            iconPath: Theme.batteryStateIcon(Battery.availability)
+            iconColor: Theme.batteryStateColor(Battery.availability)
             title: "Battery backend unavailable"
             message: "UPower is not reachable right now. Battery metrics and profile controls are temporarily unavailable."
         }
@@ -246,7 +319,7 @@ Item {
 
                 Rectangle {
                     width: parent.width
-                    height: Theme.barHeight + Theme.spaceXs
+                    height: Theme.batteryProfileSegmentHeight
                     radius: Theme.radiusSm
                     color: Theme.bgSurface
                     border.color: Theme.borderSubtle
@@ -283,14 +356,24 @@ Item {
                                 Behavior on color { ColorAnimation { duration: Theme.motionFast } }
                                 Behavior on scale { NumberAnimation { duration: Theme.motionFast } }
 
-                                Text {
+                                RowLayout {
                                     anchors.centerIn: parent
-                                    text: Battery.profileLabel(modelData)
-                                    color: (_current || _pending) ? Theme.accentBlue : Theme.fgSecondary
-                                    opacity: Battery.powerProfileAvailable ? 1.0 : 0.8
-                                    font.family: Theme.fontFamily
-                                    font.pixelSize: Theme.fontBody
-                                    font.weight: (_current || _pending) ? Theme.weightMedium : Theme.weightRegular
+                                    spacing: Theme.spaceXs
+
+                                    SvgIcon {
+                                        iconPath: Theme.batteryPowerProfileIcon(modelData)
+                                        size: Theme.batteryProfileIconSize
+                                        color: (_current || _pending) ? Theme.accentBlue : Theme.fgSecondary
+                                    }
+
+                                    Text {
+                                        text: Battery.profileLabel(modelData)
+                                        color: (_current || _pending) ? Theme.accentBlue : Theme.fgSecondary
+                                        opacity: Battery.powerProfileAvailable ? 1.0 : 0.8
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: Theme.fontBody
+                                        font.weight: (_current || _pending) ? Theme.weightMedium : Theme.weightRegular
+                                    }
                                 }
 
                                 MouseArea {
@@ -371,6 +454,7 @@ Item {
         property string iconPath: ""
         property string title: ""
         property string message: ""
+        property color iconColor: Theme.colorWarning
 
         width: parent.width
         radius: Theme.radiusSm
@@ -388,7 +472,7 @@ Item {
             SvgIcon {
                 iconPath: stateCard.iconPath
                 size: Theme.iconSize + 2
-                color: Theme.colorWarning
+                color: stateCard.iconColor
             }
 
             Text {
