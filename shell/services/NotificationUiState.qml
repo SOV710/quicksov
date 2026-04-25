@@ -19,16 +19,16 @@ Singleton {
     property var _centerVisibility: ({})
 
     readonly property bool notificationCenterOpen: root._centerOpenCount > 0
-    readonly property int toastEnterDurationMs: 24
-                                              + DebugVisuals.duration(Theme.motionFast)
-                                              + Math.max(
-                                                    DebugVisuals.duration(Theme.motionSlow),
-                                                    DebugVisuals.duration(Theme.motionNormal)
-                                                )
-                                              + 48
-    readonly property int toastCloseDurationMs: DebugVisuals.duration(Theme.motionFast)
-                                              + DebugVisuals.duration(Theme.motionNormal)
-                                              + 48
+    readonly property int toastEnterPhaseMs: 24
+                                           + DebugVisuals.duration(Theme.motionFast)
+                                           + Math.max(
+                                                 DebugVisuals.duration(Theme.motionSlow),
+                                                 DebugVisuals.duration(Theme.motionNormal)
+                                             )
+                                           + 48
+    readonly property int toastClosePhaseMs: DebugVisuals.duration(Theme.motionFast)
+                                           + DebugVisuals.duration(Theme.motionNormal)
+                                           + 48
     readonly property bool toastSurfaceActive: toastModel.count > 0
     readonly property alias toastModel: toastModel
 
@@ -37,7 +37,7 @@ Singleton {
         return root._toastRevisionSeed;
     }
 
-    function _nextToastLifecycleDelayMs(nowMs) {
+    function _nextLifecycleSweepDelayMs(nowMs) {
         var nextDelay = -1;
         var now = nowMs !== undefined ? nowMs : Date.now();
 
@@ -46,9 +46,9 @@ Singleton {
             var dueAt = 0;
 
             if (entry.lifecycle_state === "entering")
-                dueAt = entry.enter_complete_at_ms || 0;
+                dueAt = entry.enter_deadline_ms || 0;
             else if (entry.lifecycle_state === "closing")
-                dueAt = entry.close_complete_at_ms || 0;
+                dueAt = entry.close_deadline_ms || 0;
 
             if (dueAt <= 0)
                 continue;
@@ -61,41 +61,41 @@ Singleton {
         return nextDelay;
     }
 
-    function _scheduleToastLifecycleSweep(nowMs) {
-        var nextDelay = root._nextToastLifecycleDelayMs(nowMs);
+    function _scheduleLifecycleSweep(nowMs) {
+        var nextDelay = root._nextLifecycleSweepDelayMs(nowMs);
         if (nextDelay < 0) {
-            toastLifecycleTimer.stop();
+            lifecycleSweepTimer.stop();
             return;
         }
 
-        toastLifecycleTimer.interval = nextDelay;
-        toastLifecycleTimer.restart();
+        lifecycleSweepTimer.interval = nextDelay;
+        lifecycleSweepTimer.restart();
     }
 
-    function _advanceToastLifecycle(nowMs) {
+    function _advanceLifecycleState(nowMs) {
         var now = nowMs !== undefined ? nowMs : Date.now();
 
         for (var i = toastModel.count - 1; i >= 0; --i) {
             var entry = toastModel.get(i);
 
             if (entry.lifecycle_state === "closing"
-                    && (entry.close_complete_at_ms || 0) > 0
-                    && entry.close_complete_at_ms <= now) {
+                    && (entry.close_deadline_ms || 0) > 0
+                    && entry.close_deadline_ms <= now) {
                 toastModel.remove(i);
                 continue;
             }
 
             if (entry.lifecycle_state === "entering"
-                    && (entry.enter_complete_at_ms || 0) > 0
-                    && entry.enter_complete_at_ms <= now) {
+                    && (entry.enter_deadline_ms || 0) > 0
+                    && entry.enter_deadline_ms <= now) {
                 entry.lifecycle_state = "open";
-                entry.enter_complete_at_ms = 0;
-                entry.close_complete_at_ms = 0;
+                entry.enter_deadline_ms = 0;
+                entry.close_deadline_ms = 0;
                 toastModel.set(i, entry);
             }
         }
 
-        root._scheduleToastLifecycleSweep(now);
+        root._scheduleLifecycleSweep(now);
     }
 
     function _toastEntry(notification, lifecycleState, lifecycleRevision, nowMs) {
@@ -114,12 +114,12 @@ Singleton {
             lifecycle_revision: lifecycleRevision !== undefined
                                 ? lifecycleRevision
                                 : root._nextToastRevision(),
-            enter_complete_at_ms: lifecycleState === "entering"
-                                  ? now + root.toastEnterDurationMs
-                                  : 0,
-            close_complete_at_ms: lifecycleState === "closing"
-                                  ? now + root.toastCloseDurationMs
-                                  : 0
+            enter_deadline_ms: lifecycleState === "entering"
+                               ? now + root.toastEnterPhaseMs
+                               : 0,
+            close_deadline_ms: lifecycleState === "closing"
+                               ? now + root.toastClosePhaseMs
+                               : 0
         };
     }
 
@@ -157,7 +157,7 @@ Singleton {
 
     function clearToastState() {
         toastModel.clear();
-        toastLifecycleTimer.stop();
+        lifecycleSweepTimer.stop();
     }
 
     function beginToastClose(notificationId) {
@@ -167,20 +167,20 @@ Singleton {
 
         var entry = toastModel.get(index);
         if (entry.lifecycle_state === "closing") {
-            if ((entry.close_complete_at_ms || 0) <= 0) {
-                entry.close_complete_at_ms = Date.now() + root.toastCloseDurationMs;
+            if ((entry.close_deadline_ms || 0) <= 0) {
+                entry.close_deadline_ms = Date.now() + root.toastClosePhaseMs;
                 toastModel.set(index, entry);
-                root._scheduleToastLifecycleSweep();
+                root._scheduleLifecycleSweep();
             }
             return false;
         }
 
         entry.lifecycle_state = "closing";
         entry.lifecycle_revision = root._nextToastRevision();
-        entry.enter_complete_at_ms = 0;
-        entry.close_complete_at_ms = Date.now() + root.toastCloseDurationMs;
+        entry.enter_deadline_ms = 0;
+        entry.close_deadline_ms = Date.now() + root.toastClosePhaseMs;
         toastModel.set(index, entry);
-        root._scheduleToastLifecycleSweep();
+        root._scheduleLifecycleSweep();
         return true;
     }
 
@@ -245,7 +245,7 @@ Singleton {
             toastModel.insert(0, entry);
         }
 
-        root._scheduleToastLifecycleSweep(now);
+        root._scheduleLifecycleSweep(now);
     }
 
     ListModel {
@@ -254,12 +254,12 @@ Singleton {
     }
 
     Timer {
-        id: toastLifecycleTimer
+        id: lifecycleSweepTimer
 
         interval: 0
         repeat: false
         running: false
-        onTriggered: root._advanceToastLifecycle(Date.now())
+        onTriggered: root._advanceLifecycleState(Date.now())
     }
 
     Component.onCompleted: {
