@@ -214,9 +214,7 @@ Item {
             visible: Battery.hasBattery
             width: parent.width
             radius: Theme.radiusSm
-            color: Theme.bgSurfaceRaised
-            border.color: Theme.borderSubtle
-            border.width: 1
+            color: Theme.statusDockFill
             implicitHeight: gaugesRow.implicitHeight + Theme.batteryGaugeCardPadding * 2
 
             RowLayout {
