@@ -69,15 +69,12 @@ PanelWindow {
     readonly property real _statusMaxBodyHeight: root.screen
                                                  ? Math.max(
                                                        0,
-                                                       Math.min(
-                                                           Theme.rightPopupMaxHeight,
-                                                           root.screen.height
-                                                           - Theme.barHeight
-                                                           - Theme.barOuterMargin * 2
-                                                           - Theme.panelEdgeInset
-                                                       )
+                                                       root.screen.height
+                                                       - Theme.barHeight
+                                                       - Theme.barOuterMargin * 2
+                                                       - Theme.panelEdgeInset
                                                    )
-                                                 : Theme.rightPopupMaxHeight
+                                                 : 0
     readonly property real _clockMaxBodyHeight: root.screen
                                                 ? Math.max(
                                                       0,

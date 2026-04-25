@@ -12,8 +12,9 @@ Item {
     id: root
 
     width: parent ? parent.width : Theme.batteryPanelWidth
-    implicitHeight: Math.min(contentCol.implicitHeight + Theme.spaceMd * 2, Theme.batteryPanelMaxHeight)
+    implicitHeight: contentCol.implicitHeight + Theme.spaceMd * 2
 
+    readonly property var _profiles: ["power-saver", "balanced", "performance"]
     readonly property var _batteryPalette: Theme.batteryPalette(Battery.chargeStatus, Battery.availability)
     readonly property real _normalizedLevel: Battery.hasBattery ? Math.max(0, Math.min(1, Battery.percentage / 100.0)) : 0.0
     readonly property real _healthProgress: typeof Battery.healthPercent === "number"
@@ -24,9 +25,61 @@ Item {
                                                && Battery.energyFullWh > 0)
                                               ? Math.max(0, Math.min(1, Battery.energyNowWh / Battery.energyFullWh))
                                               : -1
+    readonly property bool _powerControlEnabled: Battery.powerProfileAvailable
+                                                 && !Battery.isUnavailable
+                                                 && !Battery.profilePending
+    readonly property bool _powerControlUnavailable: Battery.isUnavailable || !Battery.powerProfileAvailable
+    readonly property int _profileVisualIndex: root._resolveProfileVisualIndex()
 
     property real _heroPhase: 0.0
     property real _heroDisplayedLevel: 0.0
+    property bool _profileDragging: false
+    property int _profileDragIndex: 1
+
+    function _profileIndex(profile) {
+        var idx = root._profiles.indexOf(profile);
+        return idx >= 0 ? idx : 1;
+    }
+
+    function _profileAt(index) {
+        var clamped = Math.max(0, Math.min(root._profiles.length - 1, index));
+        return root._profiles[clamped];
+    }
+
+    function _nearestProfileIndex(x, width) {
+        if (width <= 0)
+            return 1;
+        return Math.max(0, Math.min(
+            root._profiles.length - 1,
+            Math.floor((Math.max(0, Math.min(width - 1, x)) / width) * root._profiles.length)
+        ));
+    }
+
+    function _resolveProfileVisualIndex() {
+        if (root._profileDragging)
+            return root._profileDragIndex;
+        if (Battery.profilePending)
+            return root._profileIndex(Battery.pendingProfile);
+        return root._profileIndex(Battery.powerProfile);
+    }
+
+    function _profileStatusText() {
+        if (Battery.profilePending)
+            return Battery.profileLabel(Battery.pendingProfile);
+        if (Battery.powerProfile !== "")
+            return Battery.profileLabel(Battery.powerProfile);
+        return "";
+    }
+
+    function _profileAvailableMessage() {
+        if (Battery.isUnavailable)
+            return "Battery backend unavailable. Power controls are disabled.";
+        if (!Battery.powerProfileAvailable)
+            return "Power mode control unavailable on this system.";
+        if (Battery.profilePending)
+            return "Applying " + Battery.profileLabel(Battery.pendingProfile) + "…";
+        return "";
+    }
 
     Component.onCompleted: {
         root._heroDisplayedLevel = root._normalizedLevel;
@@ -247,6 +300,168 @@ Item {
                     unitText: typeof Battery.energyNowWh === "number" ? "Wh" : ""
                     label: "Capacity"
                     unavailable: root._capacityProgress < 0
+                }
+            }
+        }
+
+        Rectangle {
+            width: parent.width
+            radius: Theme.radiusSm
+            color: Theme.statusDockFill
+            implicitHeight: controlsCol.implicitHeight + Theme.batteryControlCardPadding * 2
+
+            Column {
+                id: controlsCol
+                anchors.fill: parent
+                anchors.margins: Theme.batteryControlCardPadding
+                spacing: Theme.spaceSm
+
+                RowLayout {
+                    width: parent.width
+
+                    Text {
+                        text: "Power Mode"
+                        color: Theme.fgPrimary
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontBody
+                        font.weight: Theme.weightMedium
+                        Layout.fillWidth: true
+                    }
+
+                    Text {
+                        visible: text !== ""
+                        text: root._profileStatusText()
+                        color: root._powerControlUnavailable ? Theme.fgDisabled : Theme.fgMuted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSmall
+                        font.weight: Theme.weightMedium
+                    }
+                }
+
+                Rectangle {
+                    id: powerModeTrack
+                    width: parent.width
+                    height: Theme.batteryControlTrackHeight
+                    radius: Theme.radiusSm
+                    color: Theme.chromeSubtleFillMuted
+                    border.color: Theme.borderSubtle
+                    border.width: 1
+                    opacity: root._powerControlUnavailable ? 0.42 : Battery.profilePending ? 0.84 : 1.0
+
+                    Item {
+                        id: trackInner
+                        anchors.fill: parent
+                        anchors.margins: Theme.batteryControlThumbInset
+
+                        readonly property real segmentWidth: width / root._profiles.length
+
+                        Rectangle {
+                            id: sliderThumb
+                            x: trackInner.segmentWidth * root._profileVisualIndex
+                            y: 0
+                            width: trackInner.segmentWidth
+                            height: trackInner.height
+                            radius: Theme.radiusXs
+                            color: root._powerControlUnavailable
+                                   ? Theme.withAlpha(Theme.fgMuted, 0.10)
+                                   : Theme.overlay(Theme.bgSurfaceRaised, root._batteryPalette.accent, 0.18)
+                            border.color: root._powerControlUnavailable
+                                          ? Theme.withAlpha(Theme.fgMuted, 0.10)
+                                          : Theme.withAlpha(root._batteryPalette.accent, 0.26)
+                            border.width: 1
+
+                            Behavior on x {
+                                NumberAnimation {
+                                    duration: Theme.motionNormal
+                                    easing.type: Easing.OutCubic
+                                }
+                            }
+                        }
+
+                        Repeater {
+                            model: root._profiles
+
+                            delegate: Item {
+                                required property string modelData
+                                required property int index
+
+                                x: trackInner.segmentWidth * index
+                                width: trackInner.segmentWidth
+                                height: trackInner.height
+
+                                readonly property bool _active: index === root._profileVisualIndex
+
+                                Column {
+                                    anchors.centerIn: parent
+                                    spacing: Theme.spaceXs
+
+                                    SvgIcon {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        iconPath: Theme.batteryPowerProfileIcon(modelData)
+                                        size: Theme.batteryControlIconSize
+                                        color: root._powerControlUnavailable
+                                               ? Theme.fgDisabled
+                                               : parent.parent._active
+                                                 ? root._batteryPalette.accent
+                                                 : Theme.fgSecondary
+                                    }
+
+                                    Text {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        text: Battery.profileLabel(modelData)
+                                        color: root._powerControlUnavailable
+                                               ? Theme.fgDisabled
+                                               : parent.parent._active
+                                                 ? Theme.fgPrimary
+                                                 : Theme.fgSecondary
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: Theme.fontSmall
+                                        font.weight: parent.parent._active ? Theme.weightMedium : Theme.weightRegular
+                                    }
+                                }
+                            }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: root._powerControlEnabled
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+
+                            onPressed: function(mouse) {
+                                root._profileDragging = true;
+                                root._profileDragIndex = root._nearestProfileIndex(mouse.x, trackInner.width);
+                            }
+
+                            onPositionChanged: function(mouse) {
+                                if (pressed)
+                                    root._profileDragIndex = root._nearestProfileIndex(mouse.x, trackInner.width);
+                            }
+
+                            onReleased: function(mouse) {
+                                var targetIndex = root._nearestProfileIndex(mouse.x, trackInner.width);
+                                var targetProfile = root._profileAt(targetIndex);
+                                root._profileDragging = false;
+                                root._profileDragIndex = targetIndex;
+                                if (Battery.canSetPowerProfile(targetProfile))
+                                    Battery.setPowerProfile(targetProfile);
+                            }
+
+                            onCanceled: {
+                                root._profileDragging = false;
+                                root._profileDragIndex = root._profileIndex(Battery.powerProfile);
+                            }
+                        }
+                    }
+                }
+
+                Text {
+                    visible: text !== ""
+                    width: parent.width
+                    text: root._profileAvailableMessage()
+                    color: root._powerControlUnavailable ? Theme.colorWarning : Theme.fgMuted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSmall
+                    wrapMode: Text.WordWrap
                 }
             }
         }
