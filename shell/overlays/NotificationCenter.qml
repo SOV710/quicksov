@@ -17,8 +17,6 @@ Item {
     property int expandedNotificationId: -1
     property string _uiVisibilityKey: "notification-center-" + Math.random().toString(36).slice(2)
     property double nowMs: Date.now()
-    readonly property real dismissReboundEpsilon: 0.35
-
     readonly property bool directFollowActive: dragPhase === "dragging"
                                              || dragPhase === "dismiss_flyout"
     readonly property bool motionLocked: dragPhase !== "idle"
@@ -46,60 +44,14 @@ Item {
         root.pendingDismissId = notificationId;
     }
 
-    function _beginDismissRebound(notificationId, cardIndex) {
-        if (!root._isLeader(notificationId, cardIndex) || root.dragPhase !== "dismiss_flyout") return;
-        if (root.pendingDismissId !== notificationId) return;
-
-        root.dragPhase = "dismiss_rebounding";
-        root.leaderOffset = 0;
-        dismissMonitor.restart();
-    }
-
-    function _commitPendingDismiss() {
-        if (root.dragPhase !== "dismiss_rebounding" || root.pendingDismissId < 0) return;
-
-        dismissMonitor.stop();
-        root.dragPhase = "dismiss_committing";
-
-        var dismissId = root.pendingDismissId;
-        if (root.expandedNotificationId === dismissId)
-            root.expandedNotificationId = -1;
-        Notification.dismiss(dismissId);
-    }
-
-    function _dismissVisualSettled() {
-        if (root.pendingDismissId < 0 || !notifList.contentItem) return true;
-
-        var children = notifList.contentItem.children;
-        for (var i = 0; i < children.length; ++i) {
-            var item = children[i];
-            if (!item || item.cardIndex === undefined || item.notif === undefined) continue;
-
-            if (item.notif && item.notif.id === root.pendingDismissId) {
-                if (item.height > root.dismissReboundEpsilon)
-                    return false;
-                continue;
-            }
-
-            if (Math.abs(item.neighborOffset) > root.dismissReboundEpsilon)
-                return false;
-        }
-
-        return true;
-    }
-
     function _completeDismiss(notificationId, cardIndex) {
         if (!root._isLeader(notificationId, cardIndex)) return;
         if (root.pendingDismissId !== notificationId) return;
 
-        if (root.dragPhase === "dismiss_flyout")
-            root._beginDismissRebound(notificationId, cardIndex);
-    }
+        if (root.dragPhase !== "dismiss_flyout") return;
 
-    function _isPendingDismissCollapsed(notificationId) {
-        return notificationId >= 0
-            && notificationId === root.pendingDismissId
-            && (root.dragPhase === "dismiss_rebounding" || root.dragPhase === "dismiss_committing");
+        Notification.dismiss(notificationId);
+        root._resetMotionState();
     }
 
     function _enterDragging(notificationId, cardIndex) {
@@ -178,7 +130,6 @@ Item {
 
     function _resetMotionState() {
         settleTimer.stop();
-        dismissMonitor.stop();
         root.dragPhase = "idle";
         root.leaderIndex = -1;
         root.leaderNotificationId = -1;
@@ -220,12 +171,6 @@ Item {
         function onNotificationsChanged() {
             if (root.dragPhase === "dragging" || root.dragPhase === "dismiss_flyout") {
                 root._resetMotionState();
-            } else if (root.dragPhase === "dismiss_rebounding") {
-                if (!root._hasNotification(root.pendingDismissId))
-                    root._resetMotionState();
-            } else if (root.dragPhase === "dismiss_committing") {
-                if (!root._hasNotification(root.pendingDismissId))
-                    root._resetMotionState();
             } else if (root.dragPhase !== "idle" && !root._hasNotification(root.leaderNotificationId)) {
                 root._resetMotionState();
             }
@@ -244,29 +189,6 @@ Item {
             if (root.dragPhase === "cancel_settling") {
                 root._resetMotionState();
             }
-        }
-    }
-
-    Timer {
-        id: dismissMonitor
-
-        interval: 16
-        repeat: true
-        running: false
-
-        onTriggered: {
-            if (root.dragPhase === "dismiss_rebounding") {
-                if (!root._hasNotification(root.pendingDismissId)) {
-                    root._resetMotionState();
-                    return;
-                }
-
-                if (root._dismissVisualSettled())
-                    root._commitPendingDismiss();
-                return;
-            }
-
-            stop();
         }
     }
 
@@ -321,7 +243,6 @@ Item {
                 required property var modelData
 
                 cardIndex: index
-                collapsedOut: root._isPendingDismissCollapsed(modelData.id)
                 directFollowActive: root.directFollowActive
                 expanded: root.expandedNotificationId === modelData.id
                 motionLocked: root.motionLocked
@@ -331,8 +252,6 @@ Item {
                 width: notifList.width
 
                 onDismissRequested: notificationId => {
-                    if (root.expandedNotificationId === notificationId)
-                        root.expandedNotificationId = -1;
                     Notification.dismiss(notificationId);
                 }
 

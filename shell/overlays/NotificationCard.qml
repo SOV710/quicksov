@@ -12,7 +12,6 @@ Item {
     property var notif: null
     property bool expanded: false
     property int cardIndex: -1
-    property bool collapsedOut: false
     property bool directFollowActive: false
     property bool motionLocked: false
     property real neighborOffset: 0
@@ -55,7 +54,7 @@ Item {
     }
 
     implicitHeight: cardFrame.implicitHeight
-    height: root.collapsedOut ? 0 : implicitHeight
+    height: implicitHeight
     width: parent ? parent.width : 0
 
     Behavior on height {
@@ -66,7 +65,6 @@ Item {
     }
 
     function _endDrag() {
-        var id = root.notif ? root.notif.id : -1;
         var shouldDismiss = root.swipeOffset >= root.dismissThreshold;
 
         if (shouldDismiss) {
