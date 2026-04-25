@@ -16,9 +16,9 @@ Singleton {
     property int _centerOpenCount: 0
     property int _toastRevisionSeed: 0
     property var _centerVisibility: ({})
-    property bool toastSurfaceVisible: false
 
     readonly property bool notificationCenterOpen: root._centerOpenCount > 0
+    readonly property bool toastSurfaceActive: toastModel.count > 0
     readonly property alias toastModel: toastModel
 
     function _nextToastRevision() {
@@ -78,7 +78,6 @@ Singleton {
 
     function clearToastState() {
         toastModel.clear();
-        root.toastSurfaceVisible = false;
     }
 
     function beginToastClose(notificationId) {
@@ -93,7 +92,6 @@ Singleton {
         entry.lifecycle_state = "closing";
         entry.lifecycle_revision = root._nextToastRevision();
         toastModel.set(index, entry);
-        root.toastSurfaceVisible = true;
         return true;
     }
 
@@ -120,19 +118,14 @@ Singleton {
 
     function finalizeToastRemoval(notificationId, lifecycleRevision) {
         var index = root._toastIndex(notificationId);
-        if (index < 0) {
-            if (toastModel.count === 0)
-                root.toastSurfaceVisible = false;
+        if (index < 0)
             return;
-        }
 
         var entry = toastModel.get(index);
         if (entry.lifecycle_state !== "closing" || entry.lifecycle_revision !== lifecycleRevision)
             return;
 
         toastModel.remove(index);
-        if (toastModel.count === 0)
-            root.toastSurfaceVisible = false;
     }
 
     function invokeToastAction(notificationId, actionId) {
@@ -159,8 +152,6 @@ Singleton {
     function upsertToast(notification) {
         if (!notification || notification.id === undefined || root.notificationCenterOpen)
             return;
-
-        root.toastSurfaceVisible = true;
 
         var index = root._toastIndex(notification.id);
         var lifecycleState = "entering";

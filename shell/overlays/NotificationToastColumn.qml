@@ -9,9 +9,20 @@ import "../services"
 Item {
     id: root
 
+    property real availableHeight: 0
     property double nowMs: Date.now()
+    property alias toastBoundsItem: toastBoundsRegionItem
 
     readonly property bool pauseAll: columnHover.hovered || toastFlick.dragging
+    readonly property real contentImplicitHeight: Theme.notificationToastColumnTopInset
+                                                  + toastColumn.height
+                                                  + Theme.notificationToastColumnBottomInset
+    readonly property real effectiveAvailableHeight: root.availableHeight > 0
+                                                     ? root.availableHeight
+                                                     : root.contentImplicitHeight
+
+    implicitHeight: Math.min(root.contentImplicitHeight, root.effectiveAvailableHeight)
+    height: implicitHeight
 
     function _relativeTimeLabel(ts) {
         if (!ts) return "";
@@ -41,11 +52,12 @@ Item {
 
     Flickable {
         id: toastFlick
-        anchors.fill: parent
+        width: parent.width
+        height: root.implicitHeight
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         contentWidth: width
-        contentHeight: toastContent.implicitHeight
+        contentHeight: root.contentImplicitHeight
         flickableDirection: Flickable.VerticalFlick
         interactive: contentHeight > height
 
@@ -53,9 +65,16 @@ Item {
             id: toastContent
 
             width: toastFlick.width
-            implicitHeight: Theme.notificationToastColumnTopInset
-                            + toastColumn.height
-                            + Theme.notificationToastColumnBottomInset
+            implicitHeight: root.contentImplicitHeight
+
+            Item {
+                id: toastBoundsRegionItem
+
+                y: Theme.notificationToastColumnTopInset
+                width: toastColumn.width
+                height: toastColumn.height
+                visible: false
+            }
 
             Column {
                 id: toastColumn

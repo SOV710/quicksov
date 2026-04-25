@@ -22,18 +22,19 @@ PanelWindow {
                                       + Theme.barHeight
                                       + Theme.statusDockShoulderDepth
                                       - Theme.statusDockSeamOverlap
+    readonly property real availableHeight: screen && screen.height > 0
+                                            ? Math.max(0, screen.height - root.topOffset)
+                                            : 0
 
     screen: screenModel
-    visible: root.isMainScreen && NotificationUiState.toastSurfaceVisible
+    visible: root.isMainScreen
 
     anchors.top: true
     anchors.right: true
-    anchors.bottom: true
 
     margins {
         top: root.topOffset
         right: root.rightInset
-        bottom: 0
     }
 
     exclusionMode: ExclusionMode.Ignore
@@ -42,18 +43,16 @@ PanelWindow {
     focusable: false
     color: "transparent"
     implicitWidth: Theme.notificationToastColumnWidth
-
-    Loader {
-        anchors.fill: parent
-        active: root.visible
-        sourceComponent: toastColumnComponent
+    implicitHeight: toastColumn.implicitHeight
+    mask: Region {
+        item: toastColumn.toastBoundsItem
     }
 
-    Component {
-        id: toastColumnComponent
+    NotificationToastColumn {
+        id: toastColumn
 
-        NotificationToastColumn {
-            anchors.fill: parent
-        }
+        width: parent ? parent.width : Theme.notificationToastColumnWidth
+        height: implicitHeight
+        availableHeight: root.availableHeight
     }
 }

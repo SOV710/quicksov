@@ -5,6 +5,7 @@
 import QtQuick
 import Quickshell
 import "../panels"
+import "../services"
 
 Scope {
     Variants {
@@ -14,6 +15,9 @@ Scope {
             id: root
 
             required property var modelData
+            readonly property bool isMainScreen: Meta.ready
+                                              && Meta.hasScreenRoles
+                                              && Meta.screenRoles[modelData.name] === "main"
 
             MainBarExclusiveZoneWindow {
                 screenModel: root.modelData
@@ -23,8 +27,17 @@ Scope {
                 screenModel: root.modelData
             }
 
-            NotificationToastWindow {
-                screenModel: root.modelData
+            Loader {
+                active: root.isMainScreen && NotificationUiState.toastSurfaceActive
+                sourceComponent: toastWindowComponent
+            }
+
+            Component {
+                id: toastWindowComponent
+
+                NotificationToastWindow {
+                    screenModel: root.modelData
+                }
             }
         }
     }
