@@ -21,6 +21,7 @@ Item {
                                              || dragPhase === "dismiss_flyout"
     readonly property bool motionLocked: dragPhase !== "idle"
     readonly property bool revealReady: Notification.ready
+    readonly property real measuredNotificationListHeight: notificationMeasureCol.implicitHeight
 
     width: parent ? parent.width : Theme.notificationPanelWidth
     implicitHeight: Math.min(
@@ -64,27 +65,12 @@ Item {
     }
 
     function _hasNotification(id) {
-        if (id < 0 || !Notification.notifications) return false;
-
-        for (var i = 0; i < Notification.notifications.length; ++i) {
-            var notif = Notification.notifications[i];
-            if (notif && notif.id === id)
-                return true;
-        }
-
-        return false;
+        return Notification.hasNotification(id);
     }
 
     function _hasExpandedNotification() {
-        if (root.expandedNotificationId < 0 || !Notification.notifications) return false;
-
-        for (var i = 0; i < Notification.notifications.length; ++i) {
-            var notif = Notification.notifications[i];
-            if (notif && notif.id === root.expandedNotificationId)
-                return true;
-        }
-
-        return false;
+        return root.expandedNotificationId >= 0
+            && Notification.hasNotification(root.expandedNotificationId);
     }
 
     function _isLeader(notificationId, cardIndex) {
@@ -94,6 +80,19 @@ Item {
     function _markVisibleAsRead() {
         if (!root.visible || !Notification.connected || !Notification.hasUnread) return;
         Notification.markRead();
+    }
+
+    function _notificationData(notificationId, appName, summary, body, icon, urgency, timestamp) {
+        return {
+            id: notificationId,
+            app_name: appName || "",
+            summary: summary || "",
+            body: body || "",
+            icon: icon || "",
+            urgency: urgency || "normal",
+            timestamp: timestamp || 0,
+            actions: Notification.actionsFor(notificationId)
+        };
     }
 
     function _neighborOffsetForIndex(cardIndex) {
@@ -211,7 +210,7 @@ Item {
         spacing: Theme.spaceSm
 
         Item {
-            visible: Notification.notifications.length === 0
+            visible: Notification.notificationModel.count === 0
             width: parent.width
             implicitHeight: 72
 
@@ -228,27 +227,43 @@ Item {
         ListView {
             id: notifList
 
-            visible: Notification.notifications.length > 0
+            visible: Notification.notificationModel.count > 0
             width: parent.width
-            implicitHeight: contentHeight
-            height: Math.min(contentHeight, Theme.notificationListMaxHeight)
-            model: Notification.notifications
+            implicitHeight: root.measuredNotificationListHeight
+            height: Math.min(root.measuredNotificationListHeight, Theme.notificationListMaxHeight)
+            model: Notification.notificationModel
             boundsBehavior: Flickable.StopAtBounds
             clip: true
-            interactive: !root.motionLocked && contentHeight > height
+            interactive: !root.motionLocked && root.measuredNotificationListHeight > height
             spacing: Theme.spaceSm
 
             delegate: NotificationCard {
                 required property int index
-                required property var modelData
+                required property int notification_id
+                required property string app_name
+                required property string summary
+                required property string body
+                required property string icon
+                required property string urgency
+                required property double timestamp
+
+                property var notifData: root._notificationData(
+                    notification_id,
+                    app_name,
+                    summary,
+                    body,
+                    icon,
+                    urgency,
+                    timestamp
+                )
 
                 cardIndex: index
                 directFollowActive: root.directFollowActive
-                expanded: root.expandedNotificationId === modelData.id
+                expanded: root.expandedNotificationId === notification_id
                 motionLocked: root.motionLocked
                 neighborOffset: root._neighborOffsetForIndex(index)
-                notif: modelData
-                relativeTime: root._relativeTimeLabel(modelData ? modelData.timestamp : 0)
+                notif: notifData
+                relativeTime: root._relativeTimeLabel(timestamp)
                 width: notifList.width
 
                 onDismissRequested: notificationId => {
@@ -279,6 +294,64 @@ Item {
                     root.expandedNotificationId = root.expandedNotificationId === notificationId
                                                 ? -1
                                                 : notificationId;
+                }
+            }
+        }
+    }
+
+    Item {
+        id: measurementHost
+
+        x: -width - Theme.notificationPanelWidth
+        y: 0
+        width: contentCol.width
+        height: notificationMeasureCol.implicitHeight
+        enabled: false
+        opacity: 0
+        visible: Notification.notificationModel.count > 0
+
+        Column {
+            id: notificationMeasureCol
+
+            width: parent.width
+            spacing: Theme.spaceSm
+
+            Repeater {
+                model: Notification.notificationModel
+
+                delegate: Item {
+                    required property int notification_id
+                    required property string app_name
+                    required property string summary
+                    required property string body
+                    required property string icon
+                    required property string urgency
+                    required property double timestamp
+
+                    property var notifData: root._notificationData(
+                        notification_id,
+                        app_name,
+                        summary,
+                        body,
+                        icon,
+                        urgency,
+                        timestamp
+                    )
+
+                    width: notificationMeasureCol.width
+                    implicitHeight: cardContent.implicitHeight + Theme.spaceMd * 2
+                    height: implicitHeight
+
+                    NotificationCardContent {
+                        id: cardContent
+
+                        anchors.fill: parent
+                        anchors.margins: Theme.spaceMd
+                        expanded: root.expandedNotificationId === notification_id
+                        interactive: false
+                        notif: notifData
+                        relativeTime: root._relativeTimeLabel(timestamp)
+                    }
                 }
             }
         }
