@@ -389,7 +389,6 @@ Item {
 
         onFinished: {
             root._logGeometry("enter-animation-finished");
-            NotificationUiState.markToastEntered(root.notificationId, root._animatedLifecycleRevision);
         }
     }
 
@@ -425,7 +424,6 @@ Item {
 
         onFinished: {
             root._logGeometry("close-animation-finished");
-            NotificationUiState.finalizeToastRemoval(root.notificationId, root._animatedLifecycleRevision);
         }
     }
 }
