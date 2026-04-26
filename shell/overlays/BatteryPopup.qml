@@ -341,12 +341,13 @@ Item {
             width: parent.width
             radius: Theme.radiusSm
             color: Theme.statusDockFill
-            implicitHeight: controlsCol.implicitHeight + Theme.batteryControlCardPadding * 2
+            implicitHeight: controlsCol.childrenRect.height + Theme.batteryControlCardPadding * 2
 
             Column {
                 id: controlsCol
-                anchors.fill: parent
-                anchors.margins: Theme.batteryControlCardPadding
+                x: Theme.batteryControlCardPadding
+                y: Theme.batteryControlCardPadding
+                width: parent.width - Theme.batteryControlCardPadding * 2
                 spacing: Theme.spaceSm
 
                 RowLayout {
@@ -487,16 +488,23 @@ Item {
                     }
                 }
 
-                Text {
-                    visible: text !== ""
+                Item {
                     width: parent.width
-                    text: root._profileAvailableMessage()
-                    color: (root._powerControlUnavailable || root._showDegradedWarning)
-                           ? Theme.colorWarning
-                           : Theme.fgMuted
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontSmall
-                    wrapMode: Text.WordWrap
+                    implicitHeight: profileStatusText.visible ? profileStatusText.implicitHeight : 0
+
+                    Text {
+                        id: profileStatusText
+                        visible: text !== ""
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        text: root._profileAvailableMessage()
+                        color: (root._powerControlUnavailable || root._showDegradedWarning)
+                               ? Theme.colorWarning
+                               : Theme.fgMuted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSmall
+                        wrapMode: Text.WordWrap
+                    }
                 }
             }
         }
