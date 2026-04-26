@@ -28,7 +28,7 @@
 以下约束来自 L0，在 L3 中作为技术选型的硬性前提：
 
 - **OS**：Gentoo Linux
-- **Init**：OpenRC（**无 systemd**）
+- **Init**：OpenRC（运行时**不依赖** systemd；仓库允许同时提供 OpenRC / systemd init artifacts）
 - **Compositor**：Niri（Wayland）
 - **网络栈**：wpa_supplicant + dhcpcd（**无 NetworkManager、无 iwd**）
 - **音频栈**：PipeWire
@@ -41,10 +41,11 @@
 
 ### 3.1 特权模型
 
-Daemon 作为**纯 user-space 单进程**运行，不拆分 privileged helper，不依赖 setuid 或 polkit helper 二进制。所有需要特权的操作通过以下方式达成：
+主 daemon `qsovd` 作为普通用户进程运行；仅对 `platform_profile` 写入单独拆出 root helper `qsosysd`。项目不依赖 setuid 或 polkit helper 二进制。所有需要特权的操作通过以下方式达成：
 
 - **wpa_supplicant ctrl socket**：通过配置 wpa_supplicant 的 `ctrl_interface_group` 为用户所在 group，使 daemon 能直接对话
 - **DDC/i2c 亮度**：通过把用户加入 `i2c` group
+- **platform_profile 写入**：通过 root sidecar `qsosysd`，监听 abstract UDS `@quicksov.qsosysd`，按 `SO_PEERCRED` + `/proc/<pid>/exe` basename=`qsovd` 鉴权
 - **其他偶发特权操作**：预留走外部命令 + pkexec 的后门，但初版不实现
 
 ### 3.2 进程拓扑
@@ -474,10 +475,7 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
     └── phosphor/
 ```
 
-```
-/run/quicksov/
-└── qsosysd.sock                  # root helper socket, root:quicksov 0660
-```
+`qsosysd` 不再创建文件系统 socket；helper 固定监听 Linux abstract namespace 地址 `@quicksov.qsosysd`，因此 `/run/quicksov/` 下没有对应 socket inode。
 
 开发时主 shell 使用 `quickshell --config quicksov`，qs 从 `~/.config/quickshell/quicksov/` 读 `shell.qml`。wallpaper 由 daemon 直接启动 `qsov-wallpaper-renderer`，并按 `QSOV_WALLPAPER_RENDERER`、同目录 sibling binary、`.build/cpp/wallpaper/renderer/qsov-wallpaper-renderer`、`PATH` 的顺序查找，不再启动 Quickshell/QML wallpaper shell。
 
@@ -494,7 +492,9 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
 │   ├── bin/
 │   │   └── qsosysd.rs
 │   └── services/
-├── systemd/                        # qsosysd.socket / qsosysd.service
+├── init/
+│   ├── systemd/                    # qsosysd.service
+│   └── openrc/                     # qsosysd
 ├── shell/                          # QML 源码, 对应运行时的 qs 部分
 │   ├── shell.qml
 │   ├── Theme.qml

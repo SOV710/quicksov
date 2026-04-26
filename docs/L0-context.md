@@ -10,13 +10,13 @@
 ## 1. 宿主系统
 
 - **OS**：Gentoo Linux
-- **Init**：OpenRC（**无 systemd**）
+- **Init**：OpenRC（运行时**不依赖** systemd；仓库允许同时提供 OpenRC / systemd init artifacts）
 - **Compositor**：Niri（Wayland）
 - **音频栈**：PipeWire
 - **网络栈**：wpa_supplicant + dhcpcd（**无 NetworkManager、无 iwd**）
 - **DNS 历史**：resolv.conf 单 nameserver + dhcpcd 管理
 
-任何需要 systemd / NetworkManager / iwd 的方案都必须被拒绝。Daemon 实现网络功能时，除 WiFi 连接管理（通过 wpa_supplicant ctrl socket）外，所有网络状态通过 **netlink** 直接获取。
+任何在运行时强依赖 systemd / NetworkManager / iwd 的方案都必须被拒绝。Daemon 实现网络功能时，除 WiFi 连接管理（通过 wpa_supplicant ctrl socket）外，所有网络状态通过 **netlink** 直接获取。
 
 ## 2. 硬件上下文
 

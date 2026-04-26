@@ -5,7 +5,7 @@
 
 ## Context
 
-L0 的宿主系统约束：Gentoo + OpenRC，无 systemd，网络栈是 wpa_supplicant + dhcpcd。作者明确拒绝 NetworkManager 和 iwd。Shell 需要显示的网络信息包括：接口状态（载体、IP）、WiFi 连接状态（SSID、信号强度、扫描结果）、网速。
+L0 的宿主系统约束：Gentoo + OpenRC，运行时不依赖 systemd；网络栈是 wpa_supplicant + dhcpcd。作者明确拒绝 NetworkManager 和 iwd。Shell 需要显示的网络信息包括：接口状态（载体、IP）、WiFi 连接状态（SSID、信号强度、扫描结果）、网速。
 
 ## Decision
 

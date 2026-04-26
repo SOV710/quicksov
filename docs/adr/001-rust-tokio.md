@@ -7,7 +7,7 @@
 
 quicksov daemon 需要承担所有系统集成的长期运行任务：D-Bus（UPower/BlueZ/MPRIS/Notification/Tray）、netlink（link/addr/route 事件流）、wpa_supplicant ctrl socket、PipeWire client、Open-Meteo HTTP 轮询，以及面向 qs 的 UDS server。所有任务都是 I/O 密集且高度并发的。
 
-宿主环境为 Gentoo + OpenRC，无 systemd，无 NetworkManager，作者本人熟悉的系统语言为 Rust、C、TypeScript、Go。
+宿主环境为 Gentoo + OpenRC，运行时不依赖 systemd，无 NetworkManager；仓库可以同时携带 OpenRC / systemd 的部署文件。作者本人熟悉的系统语言为 Rust、C、TypeScript、Go。
 
 ## Decision
 
