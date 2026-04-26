@@ -8,7 +8,6 @@ pub mod bus;
 pub mod config;
 pub mod ipc;
 pub mod platform;
-pub mod qsosysd;
 pub mod qsovd;
 pub mod services;
 pub mod session_env;

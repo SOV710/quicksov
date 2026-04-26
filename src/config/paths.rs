@@ -9,8 +9,6 @@ use thiserror::Error;
 
 pub const APP_DIR_NAME: &str = "quicksov";
 pub const DAEMON_SOCKET_RAW: &str = "$XDG_RUNTIME_DIR/quicksov/daemon.sock";
-pub const QSOSYSD_SOCKET_ADDR_RAW: &str = "\0quicksov.qsosysd";
-pub const QSOSYSD_SOCKET_ADDR_DISPLAY: &str = "@quicksov.qsosysd";
 pub const DAEMON_CONFIG_FILE_NAME: &str = "daemon.toml";
 pub const DESIGN_TOKENS_FILE_NAME: &str = "design-tokens.toml";
 pub const WEATHER_CACHE_FILE_NAME: &str = "current.json";
