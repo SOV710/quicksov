@@ -14,29 +14,41 @@ Item {
     width: parent ? parent.width : Theme.batteryPanelWidth
     implicitHeight: contentCol.implicitHeight + Theme.spaceMd * 2
 
-    readonly property var _profiles: ["power-saver", "balanced", "performance"]
+    readonly property var _profiles: Array.isArray(Battery.powerProfileChoices)
+                                     && Battery.powerProfileChoices.length >= 2
+                                     ? Battery.powerProfileChoices
+                                     : ["power-saver", "balanced", "performance"]
     readonly property var _batteryPalette: Theme.batteryPalette(Battery.chargeStatus, Battery.availability)
     readonly property real _healthProgress: typeof Battery.healthPercent === "number"
                                             ? Math.max(0, Math.min(1, Battery.healthPercent / 100.0))
                                             : -1
-    readonly property real _capacityProgress: (typeof Battery.energyNowWh === "number"
-                                               && typeof Battery.energyFullWh === "number"
-                                               && Battery.energyFullWh > 0)
-                                              ? Math.max(0, Math.min(1, Battery.energyNowWh / Battery.energyFullWh))
-                                              : -1
+    readonly property real _energyProgress: (typeof Battery.energyNowWh === "number"
+                                             && typeof Battery.energyFullWh === "number"
+                                             && Battery.energyFullWh > 0)
+                                            ? Math.max(0, Math.min(1, Battery.energyNowWh / Battery.energyFullWh))
+                                            : -1
     readonly property bool _powerControlEnabled: Battery.powerProfileAvailable
-                                                 && !Battery.isUnavailable
                                                  && !Battery.profilePending
-    readonly property bool _powerControlUnavailable: Battery.isUnavailable || !Battery.powerProfileAvailable
+    readonly property bool _powerControlUnavailable: !Battery.powerProfileAvailable
+    readonly property bool _showDegradedWarning: Battery.powerProfile === "performance"
+                                                 && typeof Battery.powerProfileDegradedReason === "string"
+                                                 && Battery.powerProfileDegradedReason !== ""
+                                                 && Battery.powerProfileAvailable
+                                                 && !Battery.profilePending
     readonly property int _profileVisualIndex: root._resolveProfileVisualIndex()
 
     property real _heroPhase: 0.0
     property bool _profileDragging: false
-    property int _profileDragIndex: 1
+    property int _profileDragIndex: root._defaultProfileIndex()
+
+    function _defaultProfileIndex() {
+        var balanced = root._profiles.indexOf("balanced");
+        return balanced >= 0 ? balanced : 0;
+    }
 
     function _profileIndex(profile) {
         var idx = root._profiles.indexOf(profile);
-        return idx >= 0 ? idx : 1;
+        return idx >= 0 ? idx : root._defaultProfileIndex();
     }
 
     function _profileAt(index) {
@@ -46,7 +58,7 @@ Item {
 
     function _nearestProfileIndex(x, width) {
         if (width <= 0)
-            return 1;
+            return root._defaultProfileIndex();
         return Math.max(0, Math.min(
             root._profiles.length - 1,
             Math.floor((Math.max(0, Math.min(width - 1, x)) / width) * root._profiles.length)
@@ -70,24 +82,30 @@ Item {
     }
 
     function _profileAvailableMessage() {
-        if (Battery.isUnavailable)
-            return "Battery backend unavailable. Power controls are disabled.";
         if (Battery.profilePending)
             return "Applying " + Battery.profileLabel(Battery.pendingProfile) + "…";
         if (!Battery.powerProfileAvailable) {
             switch (Battery.powerProfileReason) {
             case "unsupported":
-                return "This system does not expose the full platform_profile power-mode set.";
-            case "helper_unavailable":
-                return "qsosysd is not reachable. Power controls are disabled.";
+                return "This system does not expose at least two standard power modes.";
+            case "service_unavailable":
+                return "power-profiles-daemon is not available right now. Power controls are disabled.";
             case "permission_denied":
-                return "qsosysd rejected this daemon's power-mode change request.";
-            case "backend_unavailable":
-                return "platform_profile is not writable right now.";
+                return "power-profiles-daemon denied this power-mode change request.";
             case "write_failed":
                 return "The requested power mode could not be applied.";
             default:
                 return "Power mode control unavailable on this system.";
+            }
+        }
+        if (root._showDegradedWarning) {
+            switch (Battery.powerProfileDegradedReason) {
+            case "lap-detected":
+                return "Performance mode is limited because lap detection is active.";
+            case "high-operating-temperature":
+                return "Performance mode is limited because the system is running hot.";
+            default:
+                return "Performance mode is temporarily limited by the system.";
             }
         }
         return "";
@@ -275,7 +293,7 @@ Item {
             iconPath: Theme.batteryStateIcon(Battery.availability)
             iconColor: Theme.batteryStateColor(Battery.availability)
             title: "Battery backend unavailable"
-            message: "The sysfs battery backend is not readable right now. Battery metrics are temporarily unavailable."
+            message: "UPower is not readable right now. Battery metrics are temporarily unavailable."
         }
 
         Rectangle {
@@ -308,13 +326,13 @@ Item {
                     Layout.fillWidth: true
                     Layout.alignment: Qt.AlignTop
                     gaugeColor: root._batteryPalette.accent
-                    progress: root._capacityProgress
+                    progress: root._energyProgress
                     valueText: typeof Battery.energyNowWh === "number"
                                ? Battery.energyNowWh.toFixed(1)
                                : "\u2014"
                     unitText: typeof Battery.energyNowWh === "number" ? "Wh" : ""
-                    label: "Capacity"
-                    unavailable: root._capacityProgress < 0
+                    label: "Energy"
+                    unavailable: root._energyProgress < 0
                 }
             }
         }
@@ -473,7 +491,9 @@ Item {
                     visible: text !== ""
                     width: parent.width
                     text: root._profileAvailableMessage()
-                    color: root._powerControlUnavailable ? Theme.colorWarning : Theme.fgMuted
+                    color: (root._powerControlUnavailable || root._showDegradedWarning)
+                           ? Theme.colorWarning
+                           : Theme.fgMuted
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontSmall
                     wrapMode: Text.WordWrap

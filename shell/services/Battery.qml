@@ -30,6 +30,7 @@ Singleton {
     property string powerProfileBackend: "none"
     property var powerProfileReason: null
     property var powerProfileChoices: []
+    property var powerProfileDegradedReason: null
     property var healthPercent: null
     property var energyRateW: null
     property var energyNowWh: null
@@ -70,6 +71,7 @@ Singleton {
         root.powerProfileBackend = "none";
         root.powerProfileReason = null;
         root.powerProfileChoices = [];
+        root.powerProfileDegradedReason = null;
         root.healthPercent = null;
         root.energyRateW = null;
         root.energyNowWh = null;
@@ -192,6 +194,9 @@ Singleton {
         root.powerProfileChoices = Array.isArray(payload.power_profile_choices)
                                    ? payload.power_profile_choices
                                    : [];
+        root.powerProfileDegradedReason = typeof payload.power_profile_degraded_reason === "string"
+                                          ? payload.power_profile_degraded_reason
+                                          : null;
         root.healthPercent  = typeof payload.health_percent === "number" ? payload.health_percent : null;
         root.energyRateW    = typeof payload.energy_rate_w === "number" ? payload.energy_rate_w : null;
         root.energyNowWh    = typeof payload.energy_now_wh === "number" ? payload.energy_now_wh : null;
