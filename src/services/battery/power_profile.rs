@@ -3,12 +3,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::fs;
-use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
+#[cfg(target_os = "linux")]
+use std::os::linux::net::SocketAddrExt;
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::net::{SocketAddr as StdUnixSocketAddr, UnixStream as StdUnixStream};
 use std::path::{Path, PathBuf};
 
-use nix::unistd::{getgid, getgroups, getuid};
-
-use crate::config::paths::QSOSYSD_SOCKET_PATH;
+use crate::config::paths::QSOSYSD_SOCKET_ADDR_RAW;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProductPowerProfile {
@@ -100,7 +101,7 @@ impl PowerProfileState {
 pub(crate) struct PlatformProfilePaths {
     pub(crate) profile_path: PathBuf,
     pub(crate) choices_path: PathBuf,
-    pub(crate) helper_socket_path: PathBuf,
+    pub(crate) helper_socket_addr: PathBuf,
 }
 
 impl Default for PlatformProfilePaths {
@@ -108,16 +109,9 @@ impl Default for PlatformProfilePaths {
         Self {
             profile_path: PathBuf::from("/sys/firmware/acpi/platform_profile"),
             choices_path: PathBuf::from("/sys/firmware/acpi/platform_profile_choices"),
-            helper_socket_path: PathBuf::from(QSOSYSD_SOCKET_PATH),
+            helper_socket_addr: PathBuf::from(QSOSYSD_SOCKET_ADDR_RAW),
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum HelperAccess {
-    Available,
-    Missing,
-    PermissionDenied,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -172,21 +166,13 @@ pub(crate) fn read_power_profile_state(paths: &PlatformProfilePaths) -> PowerPro
     let choices_complete = ProductPowerProfile::SETTABLE
         .iter()
         .all(|expected| choices.contains(expected));
-    let backend_writable = fs::metadata(&paths.profile_path)
-        .map(|metadata| !metadata.permissions().readonly())
-        .unwrap_or(false);
-    let helper_access = inspect_helper_socket(&paths.helper_socket_path);
 
     let reason = if !choices_complete {
         Some(PowerProfileReason::Unsupported)
-    } else if !backend_writable {
-        Some(PowerProfileReason::BackendUnavailable)
+    } else if helper_socket_reachable(&paths.helper_socket_addr) {
+        None
     } else {
-        match helper_access {
-            HelperAccess::Available => None,
-            HelperAccess::Missing => Some(PowerProfileReason::HelperUnavailable),
-            HelperAccess::PermissionDenied => Some(PowerProfileReason::PermissionDenied),
-        }
+        Some(PowerProfileReason::HelperUnavailable)
     };
 
     PowerProfileState {
@@ -279,47 +265,22 @@ fn preferred_raw_names(target: ProductPowerProfile) -> &'static [&'static str] {
     }
 }
 
-fn inspect_helper_socket(path: &Path) -> HelperAccess {
-    let Ok(metadata) = fs::metadata(path) else {
-        return HelperAccess::Missing;
-    };
-    if !metadata.file_type().is_socket() {
-        return HelperAccess::Missing;
-    }
-    if current_identity_can_write_socket(&metadata) {
-        HelperAccess::Available
-    } else {
-        HelperAccess::PermissionDenied
-    }
+fn helper_socket_reachable(addr: &Path) -> bool {
+    helper_socket_addr(addr)
+        .and_then(|socket_addr| StdUnixStream::connect_addr(&socket_addr))
+        .is_ok()
 }
 
-fn current_identity_can_write_socket(metadata: &fs::Metadata) -> bool {
-    let mode = metadata.permissions().mode();
-    let uid = metadata.uid();
-    let gid = metadata.gid();
-    let current_uid = getuid().as_raw();
+fn helper_socket_addr(path: &Path) -> Result<StdUnixSocketAddr, std::io::Error> {
+    #[cfg(target_os = "linux")]
+    {
+        let bytes = path.as_os_str().as_bytes();
+        if let Some(name) = bytes.strip_prefix(b"\0") {
+            return StdUnixSocketAddr::from_abstract_name(name);
+        }
+    }
 
-    if current_uid == 0 {
-        return (mode & 0o200) != 0;
-    }
-    if uid == current_uid {
-        return (mode & 0o200) != 0;
-    }
-    if current_groups().iter().any(|candidate| *candidate == gid) {
-        return (mode & 0o020) != 0;
-    }
-    (mode & 0o002) != 0
-}
-
-fn current_groups() -> Vec<u32> {
-    let mut groups = Vec::new();
-    groups.push(getgid().as_raw());
-    if let Ok(extra) = getgroups() {
-        groups.extend(extra.into_iter().map(|gid| gid.as_raw()));
-    }
-    groups.sort_unstable();
-    groups.dedup();
-    groups
+    StdUnixSocketAddr::from_pathname(path)
 }
 
 fn read_trimmed(path: &Path) -> Result<String, std::io::Error> {
@@ -345,11 +306,12 @@ fn map_write_error(error: std::io::Error) -> PlatformProfileWriteError {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::io::ErrorKind;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::{
-        map_raw_profile, parse_raw_choices, product_choices_from_raw_choices,
+        helper_socket_addr, map_raw_profile, parse_raw_choices, product_choices_from_raw_choices,
         read_power_profile_state, select_raw_choice, write_platform_profile, PlatformProfilePaths,
         PlatformProfileWriteError, PowerProfileBackend, PowerProfileReason, ProductPowerProfile,
     };
@@ -384,7 +346,7 @@ mod tests {
         PlatformProfilePaths {
             profile_path: dir.path.join("platform_profile"),
             choices_path: dir.path.join("platform_profile_choices"),
-            helper_socket_path: dir.path.join("qsosysd.sock"),
+            helper_socket_addr: dir.path.join("qsosysd.sock"),
         }
     }
 
@@ -460,6 +422,32 @@ mod tests {
         );
         assert_eq!(state.reason, Some(PowerProfileReason::HelperUnavailable));
         assert!(!state.available);
+    }
+
+    #[test]
+    fn read_state_reports_helper_reachable_via_socket_connect() {
+        let dir = TestDir::new();
+        let mut paths = test_paths(&dir);
+        let pseudo_path = dir.path.join("reachable-helper.sock");
+        paths.helper_socket_addr = pseudo_path.clone();
+
+        fs::write(&paths.profile_path, "balanced").expect("write profile");
+        fs::write(&paths.choices_path, "low-power balanced performance").expect("write choices");
+
+        let listener_addr = helper_socket_addr(&paths.helper_socket_addr).expect("listener addr");
+        let listener = match std::os::unix::net::UnixListener::bind_addr(&listener_addr) {
+            Ok(listener) => listener,
+            Err(error) if error.kind() == ErrorKind::PermissionDenied => return,
+            Err(error) => panic!("bind helper: {error}"),
+        };
+
+        let state = read_power_profile_state(&paths);
+        assert_eq!(state.backend, PowerProfileBackend::PlatformProfile);
+        assert_eq!(state.reason, None);
+        assert!(state.available);
+        assert!(pseudo_path.exists());
+
+        drop(listener);
     }
 
     #[test]

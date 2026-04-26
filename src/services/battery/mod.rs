@@ -128,13 +128,11 @@ impl SetPowerProfileError {
     fn reason(&self) -> Option<PowerProfileReason> {
         match self {
             Self::MissingProfile | Self::InvalidProfile(_) => None,
-            Self::HelperUnavailable(_) | Self::Protocol(_) => {
-                Some(PowerProfileReason::HelperUnavailable)
-            }
+            Self::HelperUnavailable(_) | Self::Protocol(_) => None,
             Self::PermissionDenied(_) => Some(PowerProfileReason::PermissionDenied),
             Self::BackendUnavailable(_) => Some(PowerProfileReason::BackendUnavailable),
             Self::WriteFailed(_) => Some(PowerProfileReason::WriteFailed),
-            Self::Unsupported => Some(PowerProfileReason::Unsupported),
+            Self::Unsupported => None,
         }
     }
 
@@ -264,7 +262,7 @@ async fn handle_set_power_profile(
 
     let stream = tokio::time::timeout(
         HELPER_TIMEOUT,
-        UnixStream::connect(&paths.profile.helper_socket_path),
+        UnixStream::connect(&paths.profile.helper_socket_addr),
     )
     .await
     .map_err(|_| SetPowerProfileError::HelperUnavailable("helper connect timed out".to_string()))?
@@ -321,11 +319,9 @@ fn map_helper_connect_error(error: std::io::Error) -> SetPowerProfileError {
         std::io::ErrorKind::NotFound
         | std::io::ErrorKind::ConnectionRefused
         | std::io::ErrorKind::ConnectionReset
-        | std::io::ErrorKind::TimedOut => {
+        | std::io::ErrorKind::TimedOut
+        | std::io::ErrorKind::PermissionDenied => {
             SetPowerProfileError::HelperUnavailable(error.to_string())
-        }
-        std::io::ErrorKind::PermissionDenied => {
-            SetPowerProfileError::PermissionDenied(error.to_string())
         }
         _ => SetPowerProfileError::HelperUnavailable(error.to_string()),
     }
@@ -546,11 +542,58 @@ async fn watch_logind_prepare_for_sleep(hint_tx: &mpsc::Sender<RefreshHint>) -> 
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+    use std::io::ErrorKind;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
     use serde_json::json;
+    use tokio::io::BufReader;
+    use tokio::net::UnixListener;
 
     use crate::bus::ServiceError;
+    use crate::ipc::{codec, transport};
+    use crate::services::battery::helper_protocol::{HelperErrorKind, HelperResponse};
+    use crate::services::battery::power_profile::PlatformProfilePaths;
 
     use super::{handle_set_power_profile, BatteryPaths, SetPowerProfileError};
+
+    struct TestDir {
+        path: PathBuf,
+    }
+
+    impl TestDir {
+        fn new() -> Self {
+            let unique = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "quicksov-battery-service-{}-{}",
+                std::process::id(),
+                unique
+            ));
+            fs::create_dir_all(&path).expect("create temp dir");
+            Self { path }
+        }
+
+        fn battery_paths(&self, helper_socket_addr: PathBuf) -> BatteryPaths {
+            BatteryPaths {
+                power_supply_root: self.path.join("power_supply"),
+                profile: PlatformProfilePaths {
+                    profile_path: self.path.join("platform_profile"),
+                    choices_path: self.path.join("platform_profile_choices"),
+                    helper_socket_addr,
+                },
+            }
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
 
     #[tokio::test]
     async fn invalid_payload_is_rejected_before_helper_contact() {
@@ -571,5 +614,73 @@ mod tests {
             ServiceError::ActionPayload { .. } => {}
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn helper_connect_failures_map_to_unavailable_without_reason_override() {
+        let dir = TestDir::new();
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let helper_socket_addr =
+            PathBuf::from(format!("\0quicksov-battery-missing-helper-{unique}"));
+        let paths = dir.battery_paths(helper_socket_addr);
+
+        let error = handle_set_power_profile(&json!({ "profile": "balanced" }), &paths)
+            .await
+            .expect_err("missing helper should fail");
+
+        assert!(matches!(error, SetPowerProfileError::HelperUnavailable(_)));
+        assert_eq!(error.reason(), None);
+        match error.into_service_error() {
+            ServiceError::Unavailable => {}
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn helper_permission_denied_reply_maps_to_permission_error_and_reason() {
+        let dir = TestDir::new();
+        let helper_socket_addr = dir.path.join("helper.sock");
+        let paths = dir.battery_paths(helper_socket_addr.clone());
+
+        let listener = match UnixListener::bind(&helper_socket_addr) {
+            Ok(listener) => listener,
+            Err(error) if error.kind() == ErrorKind::PermissionDenied => return,
+            Err(error) => panic!("bind helper: {error}"),
+        };
+        let helper_task = tokio::spawn(async move {
+            let (stream, _addr) = listener.accept().await.expect("accept");
+            let (reader_half, mut writer_half) = stream.into_split();
+            let mut reader = BufReader::new(reader_half);
+            let _request = transport::read_line(&mut reader)
+                .await
+                .expect("read request")
+                .expect("request line");
+            let response = HelperResponse::Error {
+                kind: HelperErrorKind::PermissionDenied,
+                message: "helper rejected caller".to_string(),
+            };
+            let encoded = codec::encode(&response).expect("encode response");
+            transport::write_line(&mut writer_half, &encoded)
+                .await
+                .expect("write response");
+        });
+
+        let error = handle_set_power_profile(&json!({ "profile": "balanced" }), &paths)
+            .await
+            .expect_err("permission-denied helper should fail");
+
+        assert_eq!(
+            error.reason(),
+            Some(super::PowerProfileReason::PermissionDenied)
+        );
+        match error.into_service_error() {
+            ServiceError::Permission { msg } => assert_eq!(msg, "helper rejected caller"),
+            other => panic!("unexpected error: {other:?}"),
+        }
+
+        helper_task.await.expect("join helper");
     }
 }

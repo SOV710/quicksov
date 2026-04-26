@@ -192,8 +192,23 @@ def run() -> int:
                     code = payload.get("code") if isinstance(payload, dict) else None
                     if code in {"E_SERVICE_INTERNAL", "E_SERVICE_UNAVAILABLE", "E_PERMISSION"}:
                         h.warn(
-                            f"battery set_power_profile {{profile:{target!r}}}: service returned {code}; helper or backend likely unavailable: {reply!r}"
+                            f"battery set_power_profile {{profile:{target!r}}}: service returned {code}; helper may be unreachable, helper auth may have denied qsovd, or backend write may have failed: {reply!r}"
                         )
+                        if code == "E_PERMISSION":
+                            sub = client.sub("battery")
+                            refreshed = expect_envelope(h, sub, kind=PUB, topic="battery")
+                            payload = refreshed.get("payload") if isinstance(refreshed, dict) else None
+                            if isinstance(payload, dict):
+                                reason = payload.get("power_profile_reason")
+                                if reason in {"permission_denied", None}:
+                                    h.ok(
+                                        "battery snapshot after permission error is consistent with helper auth denial semantics"
+                                    )
+                                else:
+                                    h.warn(
+                                        f"battery snapshot after permission error has unexpected power_profile_reason: {payload!r}"
+                                    )
+                            client.unsub("battery")
                     else:
                         h.error(
                             f"battery set_power_profile {{profile:{target!r}}}: unexpected reply: {reply!r}"

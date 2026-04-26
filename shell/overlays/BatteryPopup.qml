@@ -81,7 +81,7 @@ Item {
             case "helper_unavailable":
                 return "qsosysd is not reachable. Power controls are disabled.";
             case "permission_denied":
-                return "qsosysd permissions do not allow power-mode changes.";
+                return "qsosysd rejected this daemon's power-mode change request.";
             case "backend_unavailable":
                 return "platform_profile is not writable right now.";
             case "write_failed":

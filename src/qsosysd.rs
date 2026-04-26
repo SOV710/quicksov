@@ -2,24 +2,23 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::os::fd::FromRawFd;
-use std::os::unix::fs::{chown, PermissionsExt};
-use std::path::Path;
+use std::ffi::OsStr;
+use std::io;
+use std::path::{Path, PathBuf};
 
 use thiserror::Error;
+use tokio::io::AsyncWrite;
 use tokio::io::BufReader;
 use tokio::net::{UnixListener, UnixStream};
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
-use crate::config::paths::{QSOSYSD_GROUP_NAME, QSOSYSD_SOCKET_PATH};
+use crate::config::paths::{QSOSYSD_SOCKET_ADDR_DISPLAY, QSOSYSD_SOCKET_ADDR_RAW};
 use crate::ipc::{codec, transport};
 use crate::services::battery::helper_protocol::{HelperErrorKind, HelperRequest, HelperResponse};
 use crate::services::battery::power_profile::{
     write_platform_profile, PlatformProfilePaths, PlatformProfileWriteError, ProductPowerProfile,
 };
-
-const SYSTEMD_LISTEN_FDS_START: i32 = 3;
 
 #[derive(Debug, Error)]
 pub enum MainError {
@@ -47,7 +46,7 @@ async fn async_main() -> Result<(), MainError> {
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let paths = PlatformProfilePaths::default();
 
-    info!(socket = QSOSYSD_SOCKET_PATH, "qsosysd ready");
+    info!(socket = QSOSYSD_SOCKET_ADDR_DISPLAY, "qsosysd ready");
 
     loop {
         tokio::select! {
@@ -86,56 +85,55 @@ fn init_tracing() -> Result<(), MainError> {
 }
 
 async fn acquire_listener() -> Result<UnixListener, MainError> {
-    if let Some(listener) = listener_from_systemd_socket()? {
-        return Ok(listener);
-    }
-
-    let path = Path::new(QSOSYSD_SOCKET_PATH);
-    let listener = transport::bind(path).await?;
-    configure_socket_permissions(path)?;
-    Ok(listener)
+    UnixListener::bind(QSOSYSD_SOCKET_ADDR_RAW).map_err(MainError::Io)
 }
 
-fn listener_from_systemd_socket() -> Result<Option<UnixListener>, MainError> {
-    let listen_pid = match std::env::var("LISTEN_PID") {
-        Ok(value) => value,
-        Err(_) => return Ok(None),
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PeerIdentity {
+    uid: u32,
+    pid: Option<i32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AuthorizedCaller {
+    Root(PeerIdentity),
+    Daemon(PeerIdentity),
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+enum AuthError {
+    #[error("failed to read peer credentials: {message}")]
+    PeerCred { message: String },
+    #[error("peer uid {uid} did not include a pid")]
+    MissingPid { uid: u32 },
+    #[error("failed to read /proc/{pid}/exe: {message}")]
+    ReadExe { pid: i32, message: String },
+    #[error("refusing deleted executable for pid {pid}: {exe}")]
+    DeletedExe { pid: i32, exe: String },
+    #[error("refusing executable basename for pid {pid}: expected qsovd, got {exe}")]
+    InvalidExe { pid: i32, exe: String },
+}
+
+async fn handle_client(
+    mut stream: UnixStream,
+    paths: &PlatformProfilePaths,
+) -> Result<(), MainError> {
+    let caller = match authorize_stream(&stream) {
+        Ok(caller) => caller,
+        Err(error) => {
+            let response = HelperResponse::Error {
+                kind: HelperErrorKind::PermissionDenied,
+                message: error.to_string(),
+            };
+            write_response(&mut stream, &response).await?;
+            return Ok(());
+        }
     };
-    let Ok(pid) = listen_pid.parse::<u32>() else {
-        return Ok(None);
-    };
-    if pid != std::process::id() {
-        return Ok(None);
+
+    if let AuthorizedCaller::Root(identity) = caller {
+        info!(uid = identity.uid, pid = ?identity.pid, "qsosysd authorized root caller");
     }
 
-    let listen_fds = std::env::var("LISTEN_FDS")
-        .ok()
-        .and_then(|value| value.parse::<i32>().ok())
-        .unwrap_or(0);
-    if listen_fds < 1 {
-        return Ok(None);
-    }
-
-    let std_listener =
-        unsafe { std::os::unix::net::UnixListener::from_raw_fd(SYSTEMD_LISTEN_FDS_START) };
-    std_listener.set_nonblocking(true)?;
-    UnixListener::from_std(std_listener)
-        .map(Some)
-        .map_err(MainError::Io)
-}
-
-fn configure_socket_permissions(path: &Path) -> Result<(), MainError> {
-    let group = nix::unistd::Group::from_name(QSOSYSD_GROUP_NAME)
-        .map_err(|error| MainError::Setup(error.to_string()))?
-        .ok_or_else(|| MainError::Setup(format!("group {QSOSYSD_GROUP_NAME:?} not found")))?;
-
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o660))?;
-    chown(path, Some(0), Some(group.gid.as_raw()))
-        .map_err(|error| MainError::Setup(error.to_string()))?;
-    Ok(())
-}
-
-async fn handle_client(stream: UnixStream, paths: &PlatformProfilePaths) -> Result<(), MainError> {
     let (reader_half, mut writer_half) = stream.into_split();
     let mut reader = BufReader::new(reader_half);
     let Some(line) = transport::read_line(&mut reader).await? else {
@@ -149,8 +147,73 @@ async fn handle_client(stream: UnixStream, paths: &PlatformProfilePaths) -> Resu
             message: error.to_string(),
         },
     };
-    let encoded = codec::encode(&response).map_err(|error| MainError::Setup(error.to_string()))?;
-    transport::write_line(&mut writer_half, &encoded).await?;
+    write_response(&mut writer_half, &response).await?;
+    Ok(())
+}
+
+fn authorize_stream(stream: &UnixStream) -> Result<AuthorizedCaller, AuthError> {
+    let cred = stream.peer_cred().map_err(|error| AuthError::PeerCred {
+        message: error.to_string(),
+    })?;
+    let identity = PeerIdentity {
+        uid: cred.uid(),
+        pid: cred.pid(),
+    };
+    authorize_peer_identity(identity, read_proc_exe_path)
+}
+
+fn authorize_peer_identity<F>(
+    identity: PeerIdentity,
+    read_exe: F,
+) -> Result<AuthorizedCaller, AuthError>
+where
+    F: FnOnce(i32) -> io::Result<PathBuf>,
+{
+    if identity.uid == 0 {
+        return Ok(AuthorizedCaller::Root(identity));
+    }
+
+    let pid = identity
+        .pid
+        .ok_or(AuthError::MissingPid { uid: identity.uid })?;
+    let exe_path = read_exe(pid).map_err(|error| AuthError::ReadExe {
+        pid,
+        message: error.to_string(),
+    })?;
+    let exe_name = exe_path
+        .file_name()
+        .and_then(OsStr::to_str)
+        .ok_or_else(|| AuthError::InvalidExe {
+            pid,
+            exe: exe_path.display().to_string(),
+        })?;
+
+    if exe_name.ends_with(" (deleted)") {
+        return Err(AuthError::DeletedExe {
+            pid,
+            exe: exe_name.to_string(),
+        });
+    }
+    if exe_name != "qsovd" {
+        return Err(AuthError::InvalidExe {
+            pid,
+            exe: exe_name.to_string(),
+        });
+    }
+
+    Ok(AuthorizedCaller::Daemon(identity))
+}
+
+fn read_proc_exe_path(pid: i32) -> io::Result<PathBuf> {
+    std::fs::read_link(Path::new("/proc").join(pid.to_string()).join("exe"))
+}
+
+async fn write_response<W>(writer: &mut W, response: &HelperResponse) -> Result<(), MainError>
+where
+    W: AsyncWrite + Unpin,
+{
+    let encoded = codec::encode(response).map_err(|error| MainError::Setup(error.to_string()))?;
+    transport::write_line(writer, &encoded).await?;
     Ok(())
 }
 
@@ -193,14 +256,23 @@ fn map_helper_error_kind(error: &PlatformProfileWriteError) -> HelperErrorKind {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::io::ErrorKind;
+    use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    use tokio::io::BufReader;
+    use tokio::net::{UnixListener, UnixStream};
+
+    use crate::ipc::{codec, transport};
     use crate::services::battery::helper_protocol::{
         HelperErrorKind, HelperRequest, HelperResponse,
     };
     use crate::services::battery::power_profile::PlatformProfilePaths;
 
-    use super::process_request;
+    use super::{
+        authorize_peer_identity, process_request, write_response, AuthError, AuthorizedCaller,
+        PeerIdentity,
+    };
 
     struct TestDir {
         path: std::path::PathBuf,
@@ -225,7 +297,7 @@ mod tests {
             PlatformProfilePaths {
                 profile_path: self.path.join("platform_profile"),
                 choices_path: self.path.join("platform_profile_choices"),
-                helper_socket_path: self.path.join("qsosysd.sock"),
+                helper_socket_addr: self.path.join("qsosysd.sock"),
             }
         }
     }
@@ -274,5 +346,200 @@ mod tests {
                 message: "invalid profile: turbo".to_string(),
             }
         );
+    }
+
+    #[test]
+    fn authorizes_root_without_proc_lookup() {
+        let result = authorize_peer_identity(PeerIdentity { uid: 0, pid: None }, |_| {
+            panic!("root callers should not hit /proc lookup")
+        });
+
+        assert_eq!(
+            result,
+            Ok(AuthorizedCaller::Root(PeerIdentity { uid: 0, pid: None }))
+        );
+    }
+
+    #[test]
+    fn authorizes_qsovd_basename() {
+        let result = authorize_peer_identity(
+            PeerIdentity {
+                uid: 1000,
+                pid: Some(42),
+            },
+            |_| Ok(PathBuf::from("/usr/bin/qsovd")),
+        );
+
+        assert_eq!(
+            result,
+            Ok(AuthorizedCaller::Daemon(PeerIdentity {
+                uid: 1000,
+                pid: Some(42),
+            }))
+        );
+    }
+
+    #[test]
+    fn rejects_non_qsovd_basename() {
+        let result = authorize_peer_identity(
+            PeerIdentity {
+                uid: 1000,
+                pid: Some(42),
+            },
+            |_| Ok(PathBuf::from("/usr/bin/bash")),
+        );
+
+        assert_eq!(
+            result,
+            Err(AuthError::InvalidExe {
+                pid: 42,
+                exe: "bash".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_missing_pid_for_non_root() {
+        let result = authorize_peer_identity(
+            PeerIdentity {
+                uid: 1000,
+                pid: None,
+            },
+            |_| panic!("missing pid should fail before /proc lookup"),
+        );
+
+        assert_eq!(result, Err(AuthError::MissingPid { uid: 1000 }));
+    }
+
+    #[test]
+    fn rejects_proc_exe_read_failures() {
+        let result = authorize_peer_identity(
+            PeerIdentity {
+                uid: 1000,
+                pid: Some(42),
+            },
+            |_| Err(std::io::Error::new(ErrorKind::NotFound, "no exe")),
+        );
+
+        assert_eq!(
+            result,
+            Err(AuthError::ReadExe {
+                pid: 42,
+                message: "no exe".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_deleted_executable() {
+        let result = authorize_peer_identity(
+            PeerIdentity {
+                uid: 1000,
+                pid: Some(42),
+            },
+            |_| Ok(PathBuf::from("/usr/bin/qsovd (deleted)")),
+        );
+
+        assert_eq!(
+            result,
+            Err(AuthError::DeletedExe {
+                pid: 42,
+                exe: "qsovd (deleted)".to_string(),
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn abstract_socket_smoke_has_no_filesystem_socket() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let abstract_name = format!("quicksov-abstract-smoke-{unique}");
+        let abstract_addr = format!("\0{abstract_name}");
+        let pseudo_path = format!("/tmp/{abstract_name}.sock");
+
+        let listener = match UnixListener::bind(abstract_addr.as_str()) {
+            Ok(listener) => listener,
+            Err(error) if error.kind() == ErrorKind::PermissionDenied => return,
+            Err(error) => panic!("bind abstract listener: {error}"),
+        };
+        let client_task = tokio::spawn({
+            let abstract_addr = abstract_addr.clone();
+            async move {
+                UnixStream::connect(abstract_addr.as_str())
+                    .await
+                    .expect("connect")
+            }
+        });
+
+        let (_server_stream, peer_addr) = listener.accept().await.expect("accept");
+        let client_stream = client_task.await.expect("join client");
+
+        assert_eq!(
+            listener
+                .local_addr()
+                .expect("local addr")
+                .as_abstract_name(),
+            Some(abstract_name.as_bytes())
+        );
+        assert!(peer_addr.as_pathname().is_none());
+        assert!(!Path::new(&pseudo_path).exists());
+
+        drop(client_stream);
+    }
+
+    #[tokio::test]
+    async fn permission_denied_response_round_trips_without_writing_backend() {
+        let dir = TestDir::new();
+        let paths = dir.paths();
+        fs::write(&paths.profile_path, "balanced").expect("write profile");
+        fs::write(&paths.choices_path, "low-power balanced performance").expect("write choices");
+
+        let (client, mut server) = UnixStream::pair().expect("socket pair");
+        let server_task = tokio::spawn(async move {
+            write_response(
+                &mut server,
+                &HelperResponse::Error {
+                    kind: HelperErrorKind::PermissionDenied,
+                    message: "helper rejected caller".to_string(),
+                },
+            )
+            .await
+        });
+
+        let (reader_half, writer_half) = client.into_split();
+        match server_task.await.expect("join server") {
+            Ok(()) => {}
+            Err(super::MainError::Transport(transport::TransportError::Io(error)))
+                if error.kind() == ErrorKind::PermissionDenied =>
+            {
+                drop(writer_half);
+                return;
+            }
+            Err(error) => panic!("server ok: {error:?}"),
+        }
+
+        let mut reader = BufReader::new(reader_half);
+        let line = transport::read_line(&mut reader)
+            .await
+            .expect("read response")
+            .expect("response line");
+        let response: HelperResponse =
+            codec::decode(line.trim_end_matches('\n')).expect("decode response");
+
+        match response {
+            HelperResponse::Error { kind, message } => {
+                assert_eq!(kind, HelperErrorKind::PermissionDenied);
+                assert_eq!(message, "helper rejected caller");
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
+        assert_eq!(
+            fs::read_to_string(&dir.paths().profile_path).expect("read profile"),
+            "balanced"
+        );
+
+        drop(writer_half);
     }
 }

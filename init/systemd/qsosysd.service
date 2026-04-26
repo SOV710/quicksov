@@ -1,7 +1,5 @@
 [Unit]
 Description=quicksov privileged platform_profile helper
-Requires=qsosysd.socket
-After=qsosysd.socket
 
 [Service]
 Type=simple
