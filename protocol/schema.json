@@ -102,6 +102,7 @@
           "power_profile_backend",
           "power_profile_reason",
           "power_profile_choices",
+          "power_profile_degraded_reason",
           "batteries"
         ],
         "properties": {
@@ -128,19 +129,19 @@
           "power_profile_available": { "type": "boolean" },
           "power_profile_backend": {
             "type": "string",
-            "enum": ["platform_profile", "none"]
+            "enum": ["power_profiles_daemon", "none"]
           },
           "power_profile_reason": {
             "type": ["string", "null"],
             "enum": [
               "unsupported",
-              "helper_unavailable",
+              "service_unavailable",
               "permission_denied",
-              "backend_unavailable",
               "write_failed",
               null
             ]
           },
+          "power_profile_degraded_reason": { "type": ["string", "null"] },
           "power_profile_choices": {
             "type": "array",
             "items": {
@@ -212,7 +213,7 @@
           "response": { "type": "null" }
         }
       },
-      "backend": "sysfs + uevent + polling"
+      "backend": "UPower + power-profiles-daemon"
     },
 
     "net.link": {

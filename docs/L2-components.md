@@ -249,17 +249,17 @@ layer-rule {
 
 | 属性 | 值 |
 |---|---|
-| 数据源 | daemon `battery` service via sysfs battery service（`/sys/class/power_supply` + `platform_profile`） |
+| 数据源 | daemon `battery` service via UPower (`DisplayDevice` + per-device battery list) + power-profiles-daemon |
 | bar 显示逻辑 | status capsule 内只显示 icon，不显示 `%`；充电时进入绿色语义 |
 | Icon | Material battery glyph family |
 | 几何 | click docked panel；内容加载到 `MainBarPanelScene` 的 status panel slot；默认保持较低高度 |
 | popup 首卡 | 顶部为 `Repeater` 渲染的一组 full-width liquid hero card；每个 present battery 一张卡，液体场从左向右推进，front edge 需要柔和且上下不对称 |
 | popup 信息行 | 每张 hero 下方显示大号 `87%`，其右侧追加灰色小字电池名（如 `BAT0`）；source 仅区分 `battery` / `power`，badge 由该电池自身 state 决定：charging → bolt，fully charged → check |
-| popup 次卡 | 第二张卡片为并排双仪表盘 mini radial gauges，仅显示 `Battery Health` 与 `Capacity`；中心主值优先，外围使用简化环形 gauge |
-| popup 次要信息 | `Battery Health` 使用 health percent；`Capacity` 使用当前 `energy_now_wh` 主值与 `energy_now_wh / energy_full_wh` 进度 |
-| popup 控制卡 | 第三张卡片始终渲染 `Power Mode` snap slider：三档 `Saver / Balanced / Performance`，每档使用 icon + label，thumb 在三档之间吸附滑动 |
+| popup 次卡 | 第二张卡片为并排双仪表盘 mini radial gauges，仅显示 `Battery Health` 与 `Energy`；中心主值优先，外围使用简化环形 gauge |
+| popup 次要信息 | `Battery Health` 使用 health percent；`Energy` 使用当前 `energy_now_wh` 主值与 `energy_now_wh / energy_full_wh` 进度 |
+| popup 控制卡 | 第三张卡片渲染 `Power Mode` snap slider：按后端返回的可用档位渲染二档或三档，每档使用 icon + label，thumb 在各档之间吸附滑动 |
 | 空状态 | 区分 `No battery detected` 与 `Battery backend unavailable`；空状态下省略 hero 与 gauges，仅保留状态卡 |
-| 控制不可用 | 若 platform_profile 三档不完整、helper 不可达、权限不足或 backend 不可写，控制卡保留但整体变灰，并显示 warning message |
+| 控制不可用 | 若 power-profiles-daemon 不可达、权限不足、写入失败或后端只暴露不足两档，控制卡保留但整体变灰，并显示 warning message；`performance` degraded 时复用同一区域显示 warning |
 | 交互 | click bar icon → 打开/关闭 docked panel；点击 panel 外关闭；Esc 关闭；power mode 通过点击/拖动 snap slider 切换 |
 
 **实现约束**：
@@ -416,7 +416,7 @@ layer-rule {
 ## 7. Daemon Service 依赖图
 
 ```
-        sysfs + uevent      → battery-service    ──┐
+        UPower + PPD        → battery-service    ──┐
         netlink (rtnetlink)  → net.link-service   ──┤
         wpa_supplicant ctrl  → net.wifi-service   ──┤
         BlueZ D-Bus          → bt-service         ──┤

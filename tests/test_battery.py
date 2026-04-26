@@ -32,6 +32,7 @@ REQUIRED = [
     "power_profile_backend",
     "power_profile_reason",
     "power_profile_choices",
+    "power_profile_degraded_reason",
 ]
 
 ENTRY_REQUIRED = [
@@ -105,21 +106,25 @@ def run() -> int:
                 h.ok("battery.power_profile enum is valid")
             else:
                 h.error(f"battery.power_profile invalid: {snapshot!r}")
-            if snapshot.get("power_profile_backend") in {"platform_profile", "none"}:
+            if snapshot.get("power_profile_backend") in {"power_profiles_daemon", "none"}:
                 h.ok("battery.power_profile_backend enum is valid")
             else:
                 h.error(f"battery.power_profile_backend invalid: {snapshot!r}")
             if snapshot.get("power_profile_reason") in {
                 None,
                 "unsupported",
-                "helper_unavailable",
+                "service_unavailable",
                 "permission_denied",
-                "backend_unavailable",
                 "write_failed",
             }:
                 h.ok("battery.power_profile_reason enum is valid")
             else:
                 h.error(f"battery.power_profile_reason invalid: {snapshot!r}")
+            degraded_reason = snapshot.get("power_profile_degraded_reason")
+            if degraded_reason is None or isinstance(degraded_reason, str):
+                h.ok("battery.power_profile_degraded_reason is string-or-null")
+            else:
+                h.error(f"battery.power_profile_degraded_reason invalid: {snapshot!r}")
             choices = snapshot.get("power_profile_choices")
             if isinstance(choices, list) and all(
                 choice in {"performance", "balanced", "power-saver"} for choice in choices
@@ -192,21 +197,25 @@ def run() -> int:
                     code = payload.get("code") if isinstance(payload, dict) else None
                     if code in {"E_SERVICE_INTERNAL", "E_SERVICE_UNAVAILABLE", "E_PERMISSION"}:
                         h.warn(
-                            f"battery set_power_profile {{profile:{target!r}}}: service returned {code}; helper may be unreachable, helper auth may have denied qsovd, or backend write may have failed: {reply!r}"
+                            f"battery set_power_profile {{profile:{target!r}}}: service returned {code}; power-profiles-daemon may be unavailable, policy may have denied the request, or the backend write may have failed: {reply!r}"
                         )
-                        if code == "E_PERMISSION":
+                        if code in {"E_PERMISSION", "E_SERVICE_UNAVAILABLE"}:
                             sub = client.sub("battery")
                             refreshed = expect_envelope(h, sub, kind=PUB, topic="battery")
                             payload = refreshed.get("payload") if isinstance(refreshed, dict) else None
                             if isinstance(payload, dict):
                                 reason = payload.get("power_profile_reason")
-                                if reason in {"permission_denied", None}:
+                                expected = {
+                                    "E_PERMISSION": {"permission_denied", None},
+                                    "E_SERVICE_UNAVAILABLE": {"service_unavailable", "unsupported", None},
+                                }[code]
+                                if reason in expected:
                                     h.ok(
-                                        "battery snapshot after permission error is consistent with helper auth denial semantics"
+                                        "battery snapshot after power-profile error is consistent with service semantics"
                                     )
                                 else:
                                     h.warn(
-                                        f"battery snapshot after permission error has unexpected power_profile_reason: {payload!r}"
+                                        f"battery snapshot after power-profile error has unexpected power_profile_reason: {payload!r}"
                                     )
                             client.unsub("battery")
                     else:
