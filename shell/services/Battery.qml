@@ -18,14 +18,18 @@ Singleton {
 
     property string availability: "backend_unavailable"
     property bool present: false
-    // "charging" | "discharging" | "fully_charged" | "empty" | "unknown"
+    // "charging" | "discharging" | "fully_charged" | "not_charging" | "empty" | "unknown"
     property string chargeStatus: ""
     property real percentage: 0.0
     property bool onBattery: false
     property var timeToEmptySec: null
     property var timeToFullSec: null
+    property var batteries: []
     property string powerProfile: ""
     property bool powerProfileAvailable: false
+    property string powerProfileBackend: "none"
+    property var powerProfileReason: null
+    property var powerProfileChoices: []
     property var healthPercent: null
     property var energyRateW: null
     property var energyNowWh: null
@@ -35,7 +39,10 @@ Singleton {
 
     readonly property bool profilePending: pendingProfile !== ""
     readonly property bool isUnavailable: availability === "backend_unavailable"
-    readonly property bool hasBattery: availability === "ready" && present
+    readonly property var presentBatteries: batteries.filter(function(entry) {
+        return entry && entry.present === true;
+    })
+    readonly property bool hasBattery: availability === "ready" && presentBatteries.length > 0
     readonly property bool noBattery: availability === "no_battery" || (!present && !isUnavailable)
     readonly property bool isCharging: chargeStatus === "charging"
     readonly property bool isFullyCharged: chargeStatus === "fully_charged"
@@ -57,8 +64,12 @@ Singleton {
         root.onBattery = false;
         root.timeToEmptySec = null;
         root.timeToFullSec = null;
+        root.batteries = [];
         root.powerProfile = "";
         root.powerProfileAvailable = false;
+        root.powerProfileBackend = "none";
+        root.powerProfileReason = null;
+        root.powerProfileChoices = [];
         root.healthPercent = null;
         root.energyRateW = null;
         root.energyNowWh = null;
@@ -90,10 +101,8 @@ Singleton {
             return "Discharging";
         case "fully_charged":
             return "Fully charged";
-        case "pending_charge":
-            return "Pending charge";
-        case "pending_discharge":
-            return "Pending discharge";
+        case "not_charging":
+            return "Not charging";
         case "empty":
             return "Empty";
         default:
@@ -128,6 +137,8 @@ Singleton {
             return "Balanced";
         case "performance":
             return "Performance";
+        case "custom":
+            return "Custom";
         default:
             return "Unknown";
         }
@@ -137,6 +148,7 @@ Singleton {
         return root.connected
             && root.ready
             && root.powerProfileAvailable
+            && root.powerProfileChoices.indexOf(profile) >= 0
             && !root.profilePending
             && root.powerProfile !== profile;
     }
@@ -170,8 +182,16 @@ Singleton {
         root.onBattery      = payload.on_battery         || false;
         root.timeToEmptySec = payload.time_to_empty_sec;
         root.timeToFullSec  = payload.time_to_full_sec;
+        root.batteries      = Array.isArray(payload.batteries) ? payload.batteries : [];
         root.powerProfile   = payload.power_profile      || "";
         root.powerProfileAvailable = payload.power_profile_available === true;
+        root.powerProfileBackend = payload.power_profile_backend || "none";
+        root.powerProfileReason = typeof payload.power_profile_reason === "string"
+                                  ? payload.power_profile_reason
+                                  : null;
+        root.powerProfileChoices = Array.isArray(payload.power_profile_choices)
+                                   ? payload.power_profile_choices
+                                   : [];
         root.healthPercent  = typeof payload.health_percent === "number" ? payload.health_percent : null;
         root.energyRateW    = typeof payload.energy_rate_w === "number" ? payload.energy_rate_w : null;
         root.energyNowWh    = typeof payload.energy_now_wh === "number" ? payload.energy_now_wh : null;

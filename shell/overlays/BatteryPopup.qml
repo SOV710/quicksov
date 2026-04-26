@@ -16,7 +16,6 @@ Item {
 
     readonly property var _profiles: ["power-saver", "balanced", "performance"]
     readonly property var _batteryPalette: Theme.batteryPalette(Battery.chargeStatus, Battery.availability)
-    readonly property real _normalizedLevel: Battery.hasBattery ? Math.max(0, Math.min(1, Battery.percentage / 100.0)) : 0.0
     readonly property real _healthProgress: typeof Battery.healthPercent === "number"
                                             ? Math.max(0, Math.min(1, Battery.healthPercent / 100.0))
                                             : -1
@@ -32,7 +31,6 @@ Item {
     readonly property int _profileVisualIndex: root._resolveProfileVisualIndex()
 
     property real _heroPhase: 0.0
-    property real _heroDisplayedLevel: 0.0
     property bool _profileDragging: false
     property int _profileDragIndex: 1
 
@@ -74,31 +72,25 @@ Item {
     function _profileAvailableMessage() {
         if (Battery.isUnavailable)
             return "Battery backend unavailable. Power controls are disabled.";
-        if (!Battery.powerProfileAvailable)
-            return "Power mode control unavailable on this system.";
         if (Battery.profilePending)
             return "Applying " + Battery.profileLabel(Battery.pendingProfile) + "…";
+        if (!Battery.powerProfileAvailable) {
+            switch (Battery.powerProfileReason) {
+            case "unsupported":
+                return "This system does not expose the full platform_profile power-mode set.";
+            case "helper_unavailable":
+                return "qsosysd is not reachable. Power controls are disabled.";
+            case "permission_denied":
+                return "qsosysd permissions do not allow power-mode changes.";
+            case "backend_unavailable":
+                return "platform_profile is not writable right now.";
+            case "write_failed":
+                return "The requested power mode could not be applied.";
+            default:
+                return "Power mode control unavailable on this system.";
+            }
+        }
         return "";
-    }
-
-    Component.onCompleted: {
-        root._heroDisplayedLevel = root._normalizedLevel;
-    }
-
-    Connections {
-        target: Battery
-
-        function onPercentageChanged() {
-            root._heroDisplayedLevel = root._normalizedLevel;
-        }
-
-        function onAvailabilityChanged() {
-            root._heroDisplayedLevel = root._normalizedLevel;
-        }
-
-        function onPresentChanged() {
-            root._heroDisplayedLevel = root._normalizedLevel;
-        }
     }
 
     NumberAnimation on _heroPhase {
@@ -107,15 +99,6 @@ Item {
         duration: Theme.batteryHeroCycleDuration
         loops: Animation.Infinite
         running: Battery.hasBattery
-    }
-
-    Behavior on _heroDisplayedLevel {
-        enabled: Battery.hasBattery
-
-        NumberAnimation {
-            duration: Theme.batteryHeroSettleDuration
-            easing.type: Easing.OutCubic
-        }
     }
 
     Column {
@@ -133,104 +116,136 @@ Item {
             width: parent.width
             spacing: Theme.spaceSm
 
-            Rectangle {
-                width: parent.width
-                height: Theme.batteryHeroCardHeight
-                radius: Theme.radiusMd
-                color: Theme.chromeSubtleFillMuted
-                border.color: root._batteryPalette.frame
-                border.width: 1
-                antialiasing: true
+            Repeater {
+                model: Battery.presentBatteries
 
-                Item {
-                    anchors.fill: parent
-                    anchors.margins: Theme.batteryHeroInset
+                delegate: Column {
+                    id: heroDelegate
 
-                    ShaderEffect {
-                        anchors.fill: parent
-                        blending: true
+                    required property var modelData
 
-                        property real itemWidth: width
-                        property real itemHeight: height
-                        property real level: root._heroDisplayedLevel
-                        property real phase: root._heroPhase
-                        property real frontSoftness: Theme.batteryHeroFrontSoftness
-                        property real waveAmplitude: Theme.batteryHeroWaveAmplitude
-                        property vector4d fillColor: Qt.vector4d(
-                            root._batteryPalette.fill.r,
-                            root._batteryPalette.fill.g,
-                            root._batteryPalette.fill.b,
-                            root._batteryPalette.fill.a
-                        )
-                        property vector4d deepColor: Qt.vector4d(
-                            root._batteryPalette.deep.r,
-                            root._batteryPalette.deep.g,
-                            root._batteryPalette.deep.b,
-                            root._batteryPalette.deep.a
-                        )
-                        property vector4d backgroundColor: Qt.vector4d(
-                            root._batteryPalette.background.r,
-                            root._batteryPalette.background.g,
-                            root._batteryPalette.background.b,
-                            root._batteryPalette.background.a
-                        )
-                        property vector4d highlightColor: Qt.vector4d(
-                            root._batteryPalette.highlight.r,
-                            root._batteryPalette.highlight.g,
-                            root._batteryPalette.highlight.b,
-                            root._batteryPalette.highlight.a
-                        )
-                        property real innerRadius: Theme.batteryHeroInnerRadius
+                    width: parent.width
+                    spacing: Theme.spaceSm
 
-                        fragmentShader: Qt.resolvedUrl("../shaders/qsb/battery_liquid_field.frag.qsb")
-                    }
-                }
-            }
+                    readonly property var _heroPalette: Theme.batteryPalette(modelData.state || "unknown", Battery.availability)
+                    property real _heroDisplayedLevel: Math.max(0, Math.min(1, Number(modelData.level || 0) / 100.0))
 
-            RowLayout {
-                width: parent.width
-                spacing: Theme.spaceSm
-
-                Text {
-                    text: Math.round(Battery.percentage) + "%"
-                    color: root._batteryPalette.accent
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontHero
-                    font.weight: Theme.weightSemibold
-                    font.features: { "tnum": 1 }
-                }
-
-                Item {
-                    Layout.fillWidth: true
-                }
-
-                Item {
-                    Layout.preferredWidth: Theme.batteryHeroSourceIconSize + Theme.batteryHeroChargeBadgeSize / 2
-                    Layout.preferredHeight: Theme.batteryHeroSourceIconSize + Theme.batteryHeroChargeBadgeSize / 2
-
-                    SvgIcon {
-                        anchors.centerIn: parent
-                        iconPath: Theme.batterySourceIcon(Battery.onBattery)
-                        size: Theme.batteryHeroSourceIconSize
-                        color: Theme.fgPrimary
+                    Behavior on _heroDisplayedLevel {
+                        NumberAnimation {
+                            duration: Theme.batteryHeroSettleDuration
+                            easing.type: Easing.OutCubic
+                        }
                     }
 
                     Rectangle {
-                        visible: Theme.batteryChargeBadgeIcon(Battery.chargeStatus) !== ""
-                        width: Theme.batteryHeroChargeBadgeSize
-                        height: Theme.batteryHeroChargeBadgeSize
-                        radius: width / 2
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        color: Theme.overlay(Theme.bgSurfaceRaised, root._batteryPalette.accent, 0.20)
-                        border.color: Theme.withAlpha(root._batteryPalette.accent, 0.26)
+                        width: parent.width
+                        height: Theme.batteryHeroCardHeight
+                        radius: Theme.radiusMd
+                        color: Theme.chromeSubtleFillMuted
+                        border.color: parent._heroPalette.frame
                         border.width: 1
+                        antialiasing: true
 
-                        SvgIcon {
-                            anchors.centerIn: parent
-                            iconPath: Theme.batteryChargeBadgeIcon(Battery.chargeStatus)
-                            size: Theme.batteryHeroChargeBadgeSize - Theme.spaceXs
-                            color: root._batteryPalette.accent
+                        Item {
+                            anchors.fill: parent
+                            anchors.margins: Theme.batteryHeroInset
+
+                            ShaderEffect {
+                                anchors.fill: parent
+                                blending: true
+
+                                property real itemWidth: width
+                                property real itemHeight: height
+                                property real level: heroDelegate._heroDisplayedLevel
+                                property real phase: root._heroPhase
+                                property real frontSoftness: Theme.batteryHeroFrontSoftness
+                                property real waveAmplitude: Theme.batteryHeroWaveAmplitude
+                                property vector4d fillColor: Qt.vector4d(
+                                    heroDelegate._heroPalette.fill.r,
+                                    heroDelegate._heroPalette.fill.g,
+                                    heroDelegate._heroPalette.fill.b,
+                                    heroDelegate._heroPalette.fill.a
+                                )
+                                property vector4d deepColor: Qt.vector4d(
+                                    heroDelegate._heroPalette.deep.r,
+                                    heroDelegate._heroPalette.deep.g,
+                                    heroDelegate._heroPalette.deep.b,
+                                    heroDelegate._heroPalette.deep.a
+                                )
+                                property vector4d backgroundColor: Qt.vector4d(
+                                    heroDelegate._heroPalette.background.r,
+                                    heroDelegate._heroPalette.background.g,
+                                    heroDelegate._heroPalette.background.b,
+                                    heroDelegate._heroPalette.background.a
+                                )
+                                property vector4d highlightColor: Qt.vector4d(
+                                    heroDelegate._heroPalette.highlight.r,
+                                    heroDelegate._heroPalette.highlight.g,
+                                    heroDelegate._heroPalette.highlight.b,
+                                    heroDelegate._heroPalette.highlight.a
+                                )
+                                property real innerRadius: Theme.batteryHeroInnerRadius
+
+                                fragmentShader: Qt.resolvedUrl("../shaders/qsb/battery_liquid_field.frag.qsb")
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        width: parent.width
+                        spacing: Theme.spaceSm
+
+                        Text {
+                            text: Math.round(Number(heroDelegate.modelData.level || 0)) + "%"
+                            color: heroDelegate._heroPalette.accent
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontHero
+                            font.weight: Theme.weightSemibold
+                            font.features: { "tnum": 1 }
+                        }
+
+                        Text {
+                            Layout.alignment: Qt.AlignBottom
+                            text: String(heroDelegate.modelData.name || "")
+                            color: Theme.fgMuted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontBody
+                            font.weight: Theme.weightMedium
+                        }
+
+                        Item {
+                            Layout.fillWidth: true
+                        }
+
+                        Item {
+                            Layout.preferredWidth: Theme.batteryHeroSourceIconSize + Theme.batteryHeroChargeBadgeSize / 2
+                            Layout.preferredHeight: Theme.batteryHeroSourceIconSize + Theme.batteryHeroChargeBadgeSize / 2
+
+                            SvgIcon {
+                                anchors.centerIn: parent
+                                iconPath: Theme.batterySourceIcon(Battery.onBattery)
+                                size: Theme.batteryHeroSourceIconSize
+                                color: Theme.fgPrimary
+                            }
+
+                            Rectangle {
+                                visible: Theme.batteryChargeBadgeIcon(heroDelegate.modelData.state || "") !== ""
+                                width: Theme.batteryHeroChargeBadgeSize
+                                height: Theme.batteryHeroChargeBadgeSize
+                                radius: width / 2
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                color: Theme.overlay(Theme.bgSurfaceRaised, heroDelegate._heroPalette.accent, 0.20)
+                                border.color: Theme.withAlpha(heroDelegate._heroPalette.accent, 0.26)
+                                border.width: 1
+
+                                SvgIcon {
+                                    anchors.centerIn: parent
+                                    iconPath: Theme.batteryChargeBadgeIcon(heroDelegate.modelData.state || "")
+                                    size: Theme.batteryHeroChargeBadgeSize - Theme.spaceXs
+                                    color: heroDelegate._heroPalette.accent
+                                }
+                            }
                         }
                     }
                 }
@@ -260,7 +275,7 @@ Item {
             iconPath: Theme.batteryStateIcon(Battery.availability)
             iconColor: Theme.batteryStateColor(Battery.availability)
             title: "Battery backend unavailable"
-            message: "UPower is not reachable right now. Battery metrics are temporarily unavailable."
+            message: "The sysfs battery backend is not readable right now. Battery metrics are temporarily unavailable."
         }
 
         Rectangle {
