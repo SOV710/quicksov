@@ -4,6 +4,6 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-fn main() -> Result<(), quicksov::qsovd::MainError> {
-    quicksov::qsovd::main()
+fn main() -> Result<(), quicksov::qsosysd::MainError> {
+    quicksov::qsosysd::main()
 }

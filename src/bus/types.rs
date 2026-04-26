@@ -47,6 +47,9 @@ pub enum ServiceError {
     #[error("service temporarily unavailable")]
     #[allow(dead_code)]
     Unavailable,
+    #[error("permission denied: {msg}")]
+    #[allow(dead_code)]
+    Permission { msg: String },
 }
 
 impl ServiceError {
@@ -57,6 +60,7 @@ impl ServiceError {
             Self::ActionPayload { .. } => "E_ACTION_PAYLOAD",
             Self::Internal { .. } => "E_SERVICE_INTERNAL",
             Self::Unavailable => "E_SERVICE_UNAVAILABLE",
+            Self::Permission { .. } => "E_PERMISSION",
         }
     }
 }

@@ -794,6 +794,9 @@ fn reply_manual_waiters(
             }
             Err(ServiceError::Internal { msg }) => Err(ServiceError::Internal { msg: msg.clone() }),
             Err(ServiceError::Unavailable) => Err(ServiceError::Unavailable),
+            Err(ServiceError::Permission { msg }) => {
+                Err(ServiceError::Permission { msg: msg.clone() })
+            }
         };
         waiter.send(payload).ok();
     }

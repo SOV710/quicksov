@@ -7,6 +7,10 @@ edition = "2021"
 name = "qsovd"
 path = "src/main.rs"
 
+[[bin]]
+name = "qsosysd"
+path = "src/bin/qsosysd.rs"
+
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
