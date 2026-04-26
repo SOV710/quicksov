@@ -121,22 +121,73 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 ```json
 {
   "type": "object",
-  "required": ["availability", "present", "on_battery", "level", "state", "power_profile_available"],
+  "required": [
+    "availability",
+    "present",
+    "on_battery",
+    "level",
+    "state",
+    "time_to_empty_sec",
+    "time_to_full_sec",
+    "power_profile",
+    "power_profile_available",
+    "power_profile_backend",
+    "power_profile_reason",
+    "power_profile_choices",
+    "batteries"
+  ],
   "properties": {
     "availability":      { "type": "string", "enum": ["ready", "no_battery", "backend_unavailable"] },
     "present":           { "type": "boolean" },
-    "on_battery":        { "type": "boolean", "description": "UPower OnBattery" },
-    "level":             { "type": "integer", "minimum": 0, "maximum": 100, "description": "百分比" },
-    "state":             { "type": "string", "enum": ["charging","discharging","empty","fully_charged","pending_charge","pending_discharge","unknown"] },
+    "on_battery":        { "type": "boolean", "description": "True when no non-battery power_supply device reports online=1" },
+    "level":             { "type": "integer", "minimum": 0, "maximum": 100, "description": "Aggregated percent derived from sum(energy_now) / sum(energy_full)" },
+    "state":             { "type": "string", "enum": ["charging","discharging","fully_charged","not_charging","empty","unknown"] },
     "time_to_empty_sec": { "type": ["integer","null"] },
     "time_to_full_sec":  { "type": ["integer","null"] },
-    "power_profile":     { "type": "string", "enum": ["performance","balanced","power-saver","unknown"] },
+    "power_profile":     { "type": "string", "enum": ["performance","balanced","power-saver","custom","unknown"] },
     "power_profile_available": { "type": "boolean" },
+    "power_profile_backend": { "type": "string", "enum": ["platform_profile","none"] },
+    "power_profile_reason": {
+      "type": ["string","null"],
+      "enum": [null, "unsupported", "helper_unavailable", "permission_denied", "backend_unavailable", "write_failed"]
+    },
+    "power_profile_choices": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["power-saver","balanced","performance"] }
+    },
     "health_percent":    { "type": ["number","null"], "minimum": 0, "maximum": 100, "description": "Battery health derived from EnergyFull / EnergyFullDesign when available" },
     "energy_rate_w":     { "type": ["number","null"], "description": "Positive charge/discharge rate in watts" },
     "energy_now_wh":     { "type": ["number","null"], "description": "Current stored energy in Wh" },
     "energy_full_wh":    { "type": ["number","null"], "description": "Current full capacity in Wh" },
-    "energy_design_wh":  { "type": ["number","null"], "description": "Design capacity in Wh" }
+    "energy_design_wh":  { "type": ["number","null"], "description": "Design capacity in Wh" },
+    "batteries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "present",
+          "level",
+          "state",
+          "health_percent",
+          "energy_rate_w",
+          "energy_now_wh",
+          "energy_full_wh",
+          "energy_design_wh"
+        ],
+        "properties": {
+          "name": { "type": "string" },
+          "present": { "type": "boolean" },
+          "level": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "state": { "type": "string", "enum": ["charging","discharging","fully_charged","not_charging","empty","unknown"] },
+          "health_percent": { "type": ["number","null"], "minimum": 0, "maximum": 100 },
+          "energy_rate_w": { "type": ["number","null"] },
+          "energy_now_wh": { "type": ["number","null"] },
+          "energy_full_wh": { "type": ["number","null"] },
+          "energy_design_wh": { "type": ["number","null"] }
+        }
+      }
+    }
   }
 }
 ```

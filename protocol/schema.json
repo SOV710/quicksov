@@ -89,7 +89,21 @@
     "battery": {
       "state_snapshot": {
         "type": "object",
-        "required": ["availability", "present", "on_battery", "level", "state", "power_profile_available"],
+        "required": [
+          "availability",
+          "present",
+          "on_battery",
+          "level",
+          "state",
+          "time_to_empty_sec",
+          "time_to_full_sec",
+          "power_profile",
+          "power_profile_available",
+          "power_profile_backend",
+          "power_profile_reason",
+          "power_profile_choices",
+          "batteries"
+        ],
         "properties": {
           "availability": {
             "type": "string",
@@ -103,24 +117,83 @@
             "enum": [
               "charging",
               "discharging",
-              "empty",
               "fully_charged",
-              "pending_charge",
-              "pending_discharge",
+              "not_charging",
+              "empty",
               "unknown"
             ]
           },
           "time_to_empty_sec": { "type": ["integer", "null"] },
           "time_to_full_sec": { "type": ["integer", "null"] },
           "power_profile_available": { "type": "boolean" },
+          "power_profile_backend": {
+            "type": "string",
+            "enum": ["platform_profile", "none"]
+          },
+          "power_profile_reason": {
+            "type": ["string", "null"],
+            "enum": [
+              "unsupported",
+              "helper_unavailable",
+              "permission_denied",
+              "backend_unavailable",
+              "write_failed",
+              null
+            ]
+          },
+          "power_profile_choices": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["power-saver", "balanced", "performance"]
+            }
+          },
           "health_percent": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
           "energy_rate_w": { "type": ["number", "null"] },
           "energy_now_wh": { "type": ["number", "null"] },
           "energy_full_wh": { "type": ["number", "null"] },
           "energy_design_wh": { "type": ["number", "null"] },
+          "batteries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "present",
+                "level",
+                "state",
+                "health_percent",
+                "energy_rate_w",
+                "energy_now_wh",
+                "energy_full_wh",
+                "energy_design_wh"
+              ],
+              "properties": {
+                "name": { "type": "string" },
+                "present": { "type": "boolean" },
+                "level": { "type": "integer", "minimum": 0, "maximum": 100 },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "charging",
+                    "discharging",
+                    "fully_charged",
+                    "not_charging",
+                    "empty",
+                    "unknown"
+                  ]
+                },
+                "health_percent": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+                "energy_rate_w": { "type": ["number", "null"] },
+                "energy_now_wh": { "type": ["number", "null"] },
+                "energy_full_wh": { "type": ["number", "null"] },
+                "energy_design_wh": { "type": ["number", "null"] }
+              }
+            }
+          },
           "power_profile": {
             "type": "string",
-            "enum": ["performance", "balanced", "power-saver", "unknown"]
+            "enum": ["performance", "balanced", "power-saver", "custom", "unknown"]
           }
         }
       },
@@ -139,7 +212,7 @@
           "response": { "type": "null" }
         }
       },
-      "backend": "UPower D-Bus"
+      "backend": "sysfs + uevent + polling"
     },
 
     "net.link": {

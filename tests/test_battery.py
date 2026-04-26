@@ -13,7 +13,6 @@ from _qsov_testlib import (
     choose_socket,
     connect_and_hello,
     expect_envelope,
-    expect_rep_or_warn_service_err,
     main_guard,
     maybe_warn_unavailable,
 )
@@ -27,8 +26,24 @@ REQUIRED = [
     "state",
     "time_to_empty_sec",
     "time_to_full_sec",
+    "batteries",
     "power_profile",
     "power_profile_available",
+    "power_profile_backend",
+    "power_profile_reason",
+    "power_profile_choices",
+]
+
+ENTRY_REQUIRED = [
+    "name",
+    "present",
+    "level",
+    "state",
+    "health_percent",
+    "energy_rate_w",
+    "energy_now_wh",
+    "energy_full_wh",
+    "energy_design_wh",
 ]
 
 
@@ -68,10 +83,9 @@ def run() -> int:
             if snapshot.get("state") in {
                 "charging",
                 "discharging",
-                "empty",
                 "fully_charged",
-                "pending_charge",
-                "pending_discharge",
+                "not_charging",
+                "empty",
                 "unknown",
             }:
                 h.ok("battery.state enum is valid")
@@ -81,6 +95,61 @@ def run() -> int:
                 h.ok("battery.power_profile_available is boolean")
             else:
                 h.error(f"battery.power_profile_available invalid: {snapshot!r}")
+            if snapshot.get("power_profile") in {
+                "performance",
+                "balanced",
+                "power-saver",
+                "custom",
+                "unknown",
+            }:
+                h.ok("battery.power_profile enum is valid")
+            else:
+                h.error(f"battery.power_profile invalid: {snapshot!r}")
+            if snapshot.get("power_profile_backend") in {"platform_profile", "none"}:
+                h.ok("battery.power_profile_backend enum is valid")
+            else:
+                h.error(f"battery.power_profile_backend invalid: {snapshot!r}")
+            if snapshot.get("power_profile_reason") in {
+                None,
+                "unsupported",
+                "helper_unavailable",
+                "permission_denied",
+                "backend_unavailable",
+                "write_failed",
+            }:
+                h.ok("battery.power_profile_reason enum is valid")
+            else:
+                h.error(f"battery.power_profile_reason invalid: {snapshot!r}")
+            choices = snapshot.get("power_profile_choices")
+            if isinstance(choices, list) and all(
+                choice in {"performance", "balanced", "power-saver"} for choice in choices
+            ):
+                h.ok("battery.power_profile_choices is valid")
+            else:
+                h.error(f"battery.power_profile_choices invalid: {snapshot!r}")
+            entries = snapshot.get("batteries")
+            if isinstance(entries, list):
+                h.ok("battery.batteries is an array")
+                for index, entry in enumerate(entries):
+                    if not assert_dict_keys(h, entry, ENTRY_REQUIRED, f"battery entry #{index}"):
+                        continue
+                    if entry.get("state") in {
+                        "charging",
+                        "discharging",
+                        "fully_charged",
+                        "not_charging",
+                        "empty",
+                        "unknown",
+                    }:
+                        h.ok(f"battery entry #{index} state enum is valid")
+                    else:
+                        h.error(f"battery entry #{index} state invalid: {entry!r}")
+                    if isinstance(entry.get("level"), int) and 0 <= entry["level"] <= 100:
+                        h.ok(f"battery entry #{index} level is in [0,100]")
+                    else:
+                        h.error(f"battery entry #{index} level invalid: {entry!r}")
+            else:
+                h.error(f"battery.batteries invalid: {snapshot!r}")
 
             for field in [
                 "health_percent",
@@ -114,7 +183,23 @@ def run() -> int:
                 h.warn("skipping valid set_power_profile test: no usable profile in snapshot")
             else:
                 reply = client.req("battery", "set_power_profile", {"profile": target})
-                expect_rep_or_warn_service_err(h, reply, "battery", f"battery set_power_profile {{profile:{target!r}}}")
+                if not isinstance(reply, dict):
+                    h.error(f"battery set_power_profile {{profile:{target!r}}}: message is not a map: {reply!r}")
+                elif reply.get("kind") == REP and reply.get("topic") == "battery":
+                    h.ok(f"battery set_power_profile {{profile:{target!r}}}: got REP")
+                elif reply.get("kind") == ERR and reply.get("topic") == "battery":
+                    payload = reply.get("payload")
+                    code = payload.get("code") if isinstance(payload, dict) else None
+                    if code in {"E_SERVICE_INTERNAL", "E_SERVICE_UNAVAILABLE", "E_PERMISSION"}:
+                        h.warn(
+                            f"battery set_power_profile {{profile:{target!r}}}: service returned {code}; helper or backend likely unavailable: {reply!r}"
+                        )
+                    else:
+                        h.error(
+                            f"battery set_power_profile {{profile:{target!r}}}: unexpected reply: {reply!r}"
+                        )
+                else:
+                    h.error(f"battery set_power_profile {{profile:{target!r}}}: unexpected reply: {reply!r}")
         else:
             h.warn("valid battery mutation test skipped; rerun with --mutate")
     finally:

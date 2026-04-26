@@ -285,7 +285,10 @@ qsovd/                              # Rust crate
     ├── services/
     │   ├── mod.rs                  # start_services 注册函数
     │   ├── battery/
-    │   │   └── mod.rs              # UPower D-Bus, spawn, BatterySnapshot
+    │   │   ├── mod.rs              # sysfs snapshot, uevent/poll loop, helper client
+    │   │   ├── power_profile.rs    # platform_profile mapping / helper-side write helpers
+    │   │   ├── helper_protocol.rs  # qsovd ↔ qsosysd UDS protocol
+    │   │   └── sysfs.rs            # /sys/class/power_supply parser + aggregation
     │   ├── network/
     │   │   ├── mod.rs              # 聚合 net.link 与 net.wifi 的 spawn
     │   │   ├── link.rs             # net.link: rtnetlink 接口/IP/路由
@@ -471,14 +474,27 @@ Daemon 用 inotify 监听两份 toml。变更按影响范围分三类：
     └── phosphor/
 ```
 
+```
+/run/quicksov/
+└── qsosysd.sock                  # root helper socket, root:quicksov 0660
+```
+
 开发时主 shell 使用 `quickshell --config quicksov`，qs 从 `~/.config/quickshell/quicksov/` 读 `shell.qml`。wallpaper 由 daemon 直接启动 `qsov-wallpaper-renderer`，并按 `QSOV_WALLPAPER_RENDERER`、同目录 sibling binary、`.build/cpp/wallpaper/renderer/qsov-wallpaper-renderer`、`PATH` 的顺序查找，不再启动 Quickshell/QML wallpaper shell。
 
 ## 9. 开发仓库目录
 
 ```
 ~/proj/quicksov/
-├── Cargo.toml                      # Rust crate: qsovd
-├── src/                            # daemon service 实现
+├── Cargo.toml                      # Rust crate: lib + qsovd + qsosysd
+├── src/                            # daemon / helper 实现
+│   ├── lib.rs
+│   ├── qsovd.rs
+│   ├── qsosysd.rs
+│   ├── main.rs
+│   ├── bin/
+│   │   └── qsosysd.rs
+│   └── services/
+├── systemd/                        # qsosysd.socket / qsosysd.service
 ├── shell/                          # QML 源码, 对应运行时的 qs 部分
 │   ├── shell.qml
 │   ├── Theme.qml
