@@ -166,7 +166,7 @@ Item {
                        : Network.scanning ? "Scanning"
                        : "Refresh"
                 iconPath: Network.scanning ? "lucide/loader-circle.svg" : "lucide/rotate-cw.svg"
-                enabled: Network.ready && Network.availability === "ready" && !Network.scanPending
+                enabled: Network.ready && Network.availability === "ready" && !Network.scanPending && !Network.scanning
                 active: Network.scanning || Network.scanPending
                 pending: Network.scanPending
                 spinning: Network.scanning

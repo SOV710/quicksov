@@ -518,14 +518,14 @@ Singleton {
     }
 
     function scan() {
-        if (!root.canMutate() || root.availability !== "ready" || root.scanPending)
+        if (!root.canMutate() || root.availability !== "ready" || root.scanPending || root.scanning)
             return;
         root.lastScanAt = Date.now();
         root._request("scan", {}, "scan", "Scanning");
     }
 
     function maybeRefreshScan() {
-        if (!root.canMutate() || root.availability !== "ready")
+        if (!root.canMutate() || root.availability !== "ready" || root.scanning)
             return;
 
         var stale = (Date.now() - root.lastScanAt) > 15000;

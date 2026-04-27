@@ -379,7 +379,7 @@ impl WifiRuntime {
                 msg: "wifi backend unavailable after socket setup".to_string(),
             })?;
 
-        wpa_expect_ok(sock, "SCAN")
+        wpa_request_scan(sock)
             .await
             .map_err(service_error_from_wifi_error)?;
 
@@ -893,6 +893,22 @@ async fn wpa_expect_ok(sock: &UnixDatagram, cmd: &str) -> Result<(), WifiError> 
     })
 }
 
+async fn wpa_request_scan(sock: &UnixDatagram) -> Result<(), WifiError> {
+    let reply = wpa_cmd(sock, "SCAN").await?;
+    let trimmed = reply.trim();
+    if scan_reply_is_accepted(trimmed) {
+        return Ok(());
+    }
+    Err(WifiError::CommandFailed {
+        cmd: "SCAN".to_string(),
+        reply: trimmed.to_string(),
+    })
+}
+
+fn scan_reply_is_accepted(reply: &str) -> bool {
+    matches!(reply.trim(), "OK" | "FAIL-BUSY")
+}
+
 fn parse_network_id(reply: &str, cmd: &str) -> Result<String, WifiError> {
     let trimmed = reply.trim();
     if trimmed.parse::<u32>().is_ok() {
@@ -1316,6 +1332,13 @@ mod tests {
             Some("wlan42")
         );
         assert_eq!(iface_from_ctrl_path(""), None);
+    }
+
+    #[test]
+    fn scan_busy_reply_is_treated_as_accepted() {
+        assert!(super::scan_reply_is_accepted("OK"));
+        assert!(super::scan_reply_is_accepted("FAIL-BUSY"));
+        assert!(!super::scan_reply_is_accepted("FAIL"));
     }
 
     #[test]
