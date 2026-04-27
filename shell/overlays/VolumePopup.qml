@@ -360,8 +360,8 @@ Item {
 
                         Item {
                             Layout.alignment: Qt.AlignVCenter
-                            Layout.preferredWidth: Theme.iconSize + Theme.spaceMd
-                            Layout.preferredHeight: Theme.iconSize + Theme.spaceMd
+                            Layout.preferredWidth: Theme.iconSize + Theme.spaceSm
+                            Layout.preferredHeight: Theme.iconSize + Theme.spaceSm
 
                             Image {
                                 anchors.centerIn: parent
