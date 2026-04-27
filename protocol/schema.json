@@ -303,7 +303,7 @@
             ]
           },
           "scan_started_at": { "type": ["integer", "null"] },
-          "scan_finished_at": { "type": ["integer", "null"] },
+          "scan_finished_at": { "type": ["integer", "null"], "description": "Unix ms when the latest scan left an active state, including results, abort, or backend failure" },
           "scan_last_error": { "type": ["string", "null"] },
           "present": { "type": "boolean" },
           "enabled": { "type": "boolean" },
@@ -366,7 +366,16 @@
         }
       },
       "actions": {
+        "scan_start": {
+          "request": { "type": "object", "properties": {} },
+          "response": { "type": "null" }
+        },
+        "scan_stop": {
+          "request": { "type": "object", "properties": {} },
+          "response": { "type": "null" }
+        },
         "scan": {
+          "description": "Deprecated compatibility alias for scan_start",
           "request": { "type": "object", "properties": {} },
           "response": { "type": "null" }
         },
@@ -415,7 +424,7 @@
           "response": { "type": "null" }
         }
       },
-      "backend": "wpa_supplicant ctrl socket at /run/wpa_supplicant/wlo1 (wpa_cli protocol)"
+      "backend": "wpa_supplicant ctrl socket at /run/wpa_supplicant/wlo1 (wpa_cli protocol; SCAN / ABORT_SCAN / SCAN_RESULTS)"
     },
 
     "bluetooth": {

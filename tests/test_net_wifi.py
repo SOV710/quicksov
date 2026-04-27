@@ -201,46 +201,93 @@ def run() -> int:
         if expect_envelope(h, bad_set_airplane, kind=ERR, topic="net.wifi", code="E_ACTION_PAYLOAD"):
             h.ok("net.wifi set_airplane_mode {} returns E_ACTION_PAYLOAD")
 
-        scan_req_id = client.send_envelope(0, "net.wifi", "scan", {})
+        scan_req_id = client.send_envelope(0, "net.wifi", "scan_start", {})
         scan, scan_pubs = _recv_until_reply(client, scan_req_id, max(args.timeout, 6.0))
         first_scan_ok = False
         if scan is None:
-            h.error("net.wifi scan {} reply timed out")
+            h.error("net.wifi scan_start {} reply timed out")
         else:
-            first_scan_ok = expect_rep_or_warn_service_err(h, scan, "net.wifi", "net.wifi scan {}")
+            first_scan_ok = expect_rep_or_warn_service_err(
+                h, scan, "net.wifi", "net.wifi scan_start {}"
+            )
 
         second_scan_ok = False
         second_scan_pubs: list[dict] = []
         if first_scan_ok:
-            second_req_id = client.send_envelope(0, "net.wifi", "scan", {})
+            second_req_id = client.send_envelope(0, "net.wifi", "scan_start", {})
             second_scan, second_scan_pubs = _recv_until_reply(client, second_req_id, max(args.timeout, 6.0))
             if second_scan is None:
-                h.error("second net.wifi scan {} reply timed out")
+                h.error("second net.wifi scan_start {} reply timed out")
             else:
                 second_scan_ok = expect_rep_or_warn_service_err(
                     h,
                     second_scan,
                     "net.wifi",
-                    "second net.wifi scan {}",
+                    "second net.wifi scan_start {}",
+                )
+
+        alias_scan_ok = False
+        alias_scan_pubs: list[dict] = []
+        if first_scan_ok:
+            alias_req_id = client.send_envelope(0, "net.wifi", "scan", {})
+            alias_scan, alias_scan_pubs = _recv_until_reply(client, alias_req_id, max(args.timeout, 6.0))
+            if alias_scan is None:
+                h.error("legacy net.wifi scan {} alias reply timed out")
+            else:
+                alias_scan_ok = expect_rep_or_warn_service_err(
+                    h,
+                    alias_scan,
+                    "net.wifi",
+                    "legacy net.wifi scan {} alias",
+                )
+
+        stop_active_ok = False
+        stop_active_pubs: list[dict] = []
+        if first_scan_ok:
+            stop_active_req_id = client.send_envelope(0, "net.wifi", "scan_stop", {})
+            stop_active, stop_active_pubs = _recv_until_reply(
+                client, stop_active_req_id, max(args.timeout, 6.0)
+            )
+            if stop_active is None:
+                h.error("net.wifi scan_stop {} during active scan reply timed out")
+            else:
+                stop_active_ok = expect_rep_or_warn_service_err(
+                    h,
+                    stop_active,
+                    "net.wifi",
+                    "net.wifi scan_stop {} during active scan",
                 )
 
         if first_scan_ok:
             transition_payloads = [snapshot] if isinstance(snapshot, dict) else []
             transition_payloads.extend(_pub_payloads(scan_pubs))
             transition_payloads.extend(_pub_payloads(second_scan_pubs))
+            transition_payloads.extend(_pub_payloads(alias_scan_pubs))
+            transition_payloads.extend(_pub_payloads(stop_active_pubs))
 
             if any(payload.get("scan_state") in {"starting", "running"} for payload in transition_payloads):
-                h.ok("net.wifi scan pushes snapshot into starting/running state")
+                h.ok("net.wifi scan_start pushes snapshot into starting/running state")
             else:
-                h.error(f"net.wifi scan never reported starting/running: {transition_payloads!r}")
+                h.error(f"net.wifi scan_start never reported starting/running: {transition_payloads!r}")
 
-        if first_scan_ok and second_scan_ok:
+        if first_scan_ok and second_scan_ok and alias_scan_ok and stop_active_ok:
             idle_pubs = _collect_wifi_pubs(client, max(args.timeout, 10.0), stop_on_idle=True)
             idle_payloads = _pub_payloads(idle_pubs)
-            if any(payload.get("scan_state") == "idle" for payload in idle_payloads):
-                h.ok("net.wifi scan returns to idle after completion")
+            transition_payloads = [snapshot] if isinstance(snapshot, dict) else []
+            transition_payloads.extend(_pub_payloads(scan_pubs))
+            transition_payloads.extend(_pub_payloads(second_scan_pubs))
+            transition_payloads.extend(_pub_payloads(alias_scan_pubs))
+            transition_payloads.extend(_pub_payloads(stop_active_pubs))
+            transition_payloads.extend(idle_payloads)
+            if any(payload.get("scan_state") == "idle" for payload in transition_payloads):
+                h.ok("net.wifi scan_stop returns snapshot to idle")
             else:
-                h.error(f"net.wifi scan did not return to idle: {idle_payloads!r}")
+                h.error(f"net.wifi scan_stop did not return to idle: {transition_payloads!r}")
+
+            stop_idle = client.req("net.wifi", "scan_stop", {})
+            expect_rep_or_warn_service_err(
+                h, stop_idle, "net.wifi", "net.wifi scan_stop {} while idle"
+            )
 
         client.unsub("net.wifi")
 

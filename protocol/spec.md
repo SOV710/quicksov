@@ -262,7 +262,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
       "enum": ["idle", "starting", "running"]
     },
     "scan_started_at": { "type": ["integer","null"], "description": "Unix ms when the current or latest scan started" },
-    "scan_finished_at": { "type": ["integer","null"], "description": "Unix ms when the latest completed scan finished" },
+    "scan_finished_at": { "type": ["integer","null"], "description": "Unix ms when the latest scan left an active state, including results, abort, or backend failure" },
     "scan_last_error": { "type": ["string","null"], "description": "Most recent real scan failure; FAIL-BUSY does not populate this field" },
     "present":   { "type": "boolean", "description": "Whether the target Wi-Fi interface exists in sysfs" },
     "enabled":   { "type": "boolean", "description": "Whether Wi-Fi operations are currently enabled and usable" },
@@ -332,14 +332,18 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 - 其他情况 → `state = "unknown"`
 
 **Actions**:
-- `scan` — 触发扫描，payload `{}`
+- `scan_start` — 显式开始扫描，payload `{}`
+- `scan_stop` — 显式停止扫描，payload `{}`
+- `scan` — deprecated compatibility alias for `scan_start`，payload `{}`
 - `connect` — payload `{ ssid: string, psk?: string, save?: boolean }`
 - `disconnect` — payload `{}`
 - `forget` — payload `{ ssid: string }`
 - `set_enabled` — payload `{ enabled: boolean }`，通过 `rfkill block/unblock wifi` 控制 Wi-Fi soft block
 - `set_airplane_mode` — payload `{ enabled: boolean }`，通过 `rfkill block/unblock all` 控制全局飞行模式 soft block
 
-**后端**: `wpa_supplicant` ctrl socket `/run/wpa_supplicant/wlo1`，通过 `wpa_cli` 协议（`SCAN`, `SCAN_RESULTS`, `ADD_NETWORK`, `SET_NETWORK`, `ENABLE_NETWORK`, `SELECT_NETWORK` 等）。
+Wi-Fi 扫描生命周期是显式控制的：客户端打开 popup 时不自动触发扫描；需要通过 `scan_start` 发起，通过 `scan_stop` 终止。
+
+**后端**: `wpa_supplicant` ctrl socket `/run/wpa_supplicant/wlo1`，通过 `wpa_cli` 协议（`SCAN`, `ABORT_SCAN`, `SCAN_RESULTS`, `ADD_NETWORK`, `SET_NETWORK`, `ENABLE_NETWORK`, `SELECT_NETWORK` 等）。
 
 ---
 

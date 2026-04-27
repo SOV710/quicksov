@@ -281,10 +281,10 @@ layer-rule {
 | 监听接口 | `wlo1`、`enp109s0` |
 | bar 视觉 | status capsule 内 icon-only；Wi-Fi 状态优先用 Material Wi-Fi glyph family；有线连接时允许切换为 ethernet glyph；扫描时允许蓝色呼吸语义 |
 | 几何 | click docked panel；内容加载到 `MainBarPanelScene` 的 status panel slot；列表区按内容增长，不默认展开成宽大 panel |
-| 头部 | 左侧 `Network` 标题 + 副标题；右侧 `Refresh`、`Wi-Fi On/Off`、`Flight` 三个 chip |
+| 头部 | 左侧 `Network` 标题 + 副标题；右侧 `Refresh/Stop`、`Wi-Fi On/Off`、`Flight` 三个 chip |
 | 状态归约 | daemon 提供正交 `connection_state` + `scan_state`，并额外提供 `availability` / `availability_reason` / `rfkill_*` / `airplane_mode`；旧 `state` 仅作为兼容字段保留 |
 | 列表分组 | `Current` → `Saved` → `Available`；每行显示 SSID、状态副标题（Connected / Saved / Open / WPA2 / 频段 / 信号） |
-| 交互 | click bar icon → 打开/关闭 docked panel；打开时按需自动 `scan`；`Refresh` 按 `Refresh → Starting → Scanning → Refresh` 切换，connected + scanning 时保留连接信息并在副标题追加 `• scanning`；secure 且未保存的网络 inline 输入密码；点击 panel 外关闭 |
+| 交互 | click bar icon → 打开/关闭 docked panel；打开时只展示当前缓存状态，不自动扫描；`Refresh` 显式开始扫描、扫描中切为 `Stop`，请求往返中分别显示 `Starting` / `Stopping`；connected + scanning 时保留连接信息并在副标题追加 `• scanning`；secure 且未保存的网络 inline 输入密码；点击 panel 外关闭 |
 | 首版范围 | 实现 Wi-Fi 扫描、连接、断开、忘记网络、Wi-Fi on/off、airplane-mode；**不实现 VPN 区块** |
 
 **实现约束**：

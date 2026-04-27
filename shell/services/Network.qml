@@ -54,7 +54,9 @@ Singleton {
     readonly property bool wifiAvailable: availability !== "unavailable"
     // `scanPending` remains a short transport fallback until the daemon snapshot confirms state.
     readonly property bool scanPending: isPending("scan")
-    readonly property bool scanRequestPending: scanPending && scanState === "idle"
+    readonly property string scanPendingLabel: scanPending ? String(root.pendingActions["scan"]) : ""
+    readonly property bool scanStartPending: scanPendingLabel === "Starting"
+    readonly property bool scanStopPending: scanPendingLabel === "Stopping"
     readonly property bool powerPending: isPending("power")
     readonly property bool airplanePending: isPending("airplane")
     readonly property bool scanning: scanState === "starting" || scanState === "running"
@@ -545,20 +547,23 @@ Singleton {
         );
     }
 
-    function scan() {
-        if (!root.canMutate() || root.availability !== "ready" || root.scanState !== "idle" || root.scanRequestPending)
+    function startScan() {
+        if (!root.canMutate() || root.availability !== "ready" || root.scanning || root.scanPending)
             return;
-        root._request("scan", {}, "scan", "Scanning");
+        root._request("scan_start", {}, "scan", "Starting");
     }
 
-    function maybeRefreshScan() {
-        if (!root.canMutate() || root.availability !== "ready" || root.scanState !== "idle" || root.scanRequestPending)
+    function stopScan() {
+        if (!root.canMutate() || root.availability !== "ready" || !root.scanning || root.scanPending)
             return;
+        root._request("scan_stop", {}, "scan", "Stopping");
+    }
 
-        var lastScanAt = root.scanFinishedAt > 0 ? root.scanFinishedAt : root.scanStartedAt;
-        var stale = lastScanAt <= 0 || (Date.now() - lastScanAt) > 15000;
-        if (root.scanResults.length === 0 || stale)
-            root.scan();
+    function toggleScan() {
+        if (root.scanning)
+            root.stopScan();
+        else
+            root.startScan();
     }
 
     function connectTo(network, psk, save) {

@@ -116,11 +116,8 @@ Item {
     }
 
     onVisibleChanged: {
-        if (visible) {
-            Network.maybeRefreshScan();
-        } else {
+        if (!visible)
             root._expandPassword(null);
-        }
     }
 
     Column {
@@ -162,18 +159,18 @@ Item {
             }
 
             HeaderChip {
-                label: Network.scanState === "starting" ? "Starting"
-                       : Network.scanState === "running" ? "Scanning"
+                label: Network.scanStopPending ? "Stopping"
+                       : Network.scanStartPending ? "Starting"
+                       : Network.scanning ? "Stop"
                        : "Refresh"
                 iconPath: Network.scanning ? "lucide/loader-circle.svg" : "lucide/rotate-cw.svg"
                 enabled: Network.ready
                          && Network.availability === "ready"
-                         && Network.scanState === "idle"
-                         && !Network.scanRequestPending
-                active: Network.scanState !== "idle"
-                pending: Network.scanRequestPending
+                         && !Network.scanPending
+                active: Network.scanning || Network.scanPending
+                pending: Network.scanPending
                 spinning: Network.scanning
-                onClicked: Network.scan()
+                onClicked: Network.toggleScan()
             }
 
             HeaderChip {

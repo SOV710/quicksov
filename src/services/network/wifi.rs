@@ -226,7 +226,8 @@ async fn handle_request(
 ) {
     let action = req.action.clone();
     let result = match action.as_str() {
-        "scan" => runtime.handle_scan().await,
+        "scan" | "scan_start" => runtime.handle_scan_start().await,
+        "scan_stop" => runtime.handle_scan_stop().await,
         "connect" => runtime.handle_connect(&req.payload).await,
         "disconnect" => runtime.handle_disconnect().await,
         "forget" => runtime.handle_forget(&req.payload).await,
@@ -237,8 +238,9 @@ async fn handle_request(
         }),
     };
 
-    let allow_scan_promotion =
-        !(action == "scan" && result.is_ok() && runtime.scan_state == WifiScanState::Starting);
+    let allow_scan_promotion = !matches!(action.as_str(), "scan" | "scan_start")
+        || result.is_err()
+        || runtime.scan_state != WifiScanState::Starting;
     publish_snapshot(runtime, state_tx, last_snapshot, allow_scan_promotion).await;
     req.reply.send(result).ok();
 }
@@ -269,6 +271,7 @@ struct WifiRuntime {
     scan_started_at: Option<i64>,
     scan_finished_at: Option<i64>,
     scan_last_error: Option<String>,
+    scan_stop_requested: bool,
 }
 
 impl WifiRuntime {
@@ -282,6 +285,7 @@ impl WifiRuntime {
             scan_started_at: None,
             scan_finished_at: None,
             scan_last_error: None,
+            scan_stop_requested: false,
         }
     }
 
@@ -323,6 +327,7 @@ impl WifiRuntime {
         self.scan_state = WifiScanState::Starting;
         self.scan_started_at = Some(unix_ms_now());
         self.scan_last_error = None;
+        self.scan_stop_requested = false;
     }
 
     fn mark_scan_running(&mut self) {
@@ -335,20 +340,36 @@ impl WifiRuntime {
     fn mark_scan_finished(&mut self) {
         self.scan_state = WifiScanState::Idle;
         self.scan_finished_at = Some(unix_ms_now());
+        self.scan_stop_requested = false;
     }
 
-    fn mark_scan_failed(&mut self, error: String) {
+    fn mark_scan_start_failed(&mut self, error: String) {
         self.scan_state = WifiScanState::Idle;
         self.scan_last_error = Some(error);
+        self.scan_stop_requested = false;
+    }
+
+    fn mark_scan_runtime_failed(&mut self, error: String) {
+        self.scan_state = WifiScanState::Idle;
+        self.scan_finished_at = Some(unix_ms_now());
+        self.scan_last_error = Some(error);
+        self.scan_stop_requested = false;
+    }
+
+    fn mark_scan_stop_requested(&mut self) {
+        self.scan_stop_requested = true;
     }
 
     fn clear_scan_activity(&mut self) {
         self.scan_state = WifiScanState::Idle;
+        self.scan_stop_requested = false;
     }
 
     fn observe_status_scan(&mut self, status_scan_active: bool) {
         if status_scan_active {
             self.mark_scan_running();
+        } else if self.scan_stop_requested && self.scan_state != WifiScanState::Idle {
+            self.mark_scan_finished();
         }
     }
 
@@ -362,6 +383,15 @@ impl WifiRuntime {
 
         if message.contains("CTRL-EVENT-SCAN-RESULTS") {
             self.mark_scan_finished();
+            relevant = true;
+        }
+
+        if message.contains("CTRL-EVENT-SCAN-FAILED") {
+            if self.scan_stop_requested {
+                self.mark_scan_finished();
+            } else {
+                self.mark_scan_runtime_failed(message.trim().to_string());
+            }
             relevant = true;
         }
 
@@ -449,26 +479,72 @@ impl WifiRuntime {
         Ok(())
     }
 
-    async fn handle_scan(&mut self) -> Result<Value, ServiceError> {
-        self.require_backend_ready().await?;
-        let sock = self
-            .cmd_sock
-            .as_ref()
-            .ok_or_else(|| ServiceError::Internal {
-                msg: "wifi backend unavailable after socket setup".to_string(),
-            })?;
+    async fn handle_scan_start(&mut self) -> Result<Value, ServiceError> {
+        if self.scan_state != WifiScanState::Idle {
+            return Ok(Value::Null);
+        }
 
-        match wpa_request_scan(sock).await {
+        self.require_backend_ready().await?;
+        let outcome = {
+            let sock = self
+                .cmd_sock
+                .as_ref()
+                .ok_or_else(|| ServiceError::Internal {
+                    msg: "wifi backend unavailable after socket setup".to_string(),
+                })?;
+            wpa_request_scan(sock).await
+        };
+
+        self.finish_scan_start(outcome)
+    }
+
+    fn finish_scan_start(
+        &mut self,
+        outcome: Result<ScanRequestOutcome, WifiError>,
+    ) -> Result<Value, ServiceError> {
+        match outcome {
             Ok(ScanRequestOutcome::Started) => self.mark_scan_starting(),
-            Ok(ScanRequestOutcome::Busy) => self.mark_scan_running(),
+            Ok(ScanRequestOutcome::Busy) => {
+                self.mark_scan_running();
+                self.scan_stop_requested = false;
+            }
             Err(err) => {
                 let error_text = err.to_string();
-                self.mark_scan_failed(error_text);
+                self.mark_scan_start_failed(error_text);
                 return Err(service_error_from_wifi_error(err));
             }
         }
 
         Ok(Value::Null)
+    }
+
+    async fn handle_scan_stop(&mut self) -> Result<Value, ServiceError> {
+        if self.scan_state == WifiScanState::Idle {
+            return Ok(Value::Null);
+        }
+
+        self.require_backend_ready().await?;
+        let result = {
+            let sock = self
+                .cmd_sock
+                .as_ref()
+                .ok_or_else(|| ServiceError::Internal {
+                    msg: "wifi backend unavailable after socket setup".to_string(),
+                })?;
+            wpa_abort_scan(sock).await
+        };
+
+        self.finish_scan_stop(result)
+    }
+
+    fn finish_scan_stop(&mut self, result: Result<(), WifiError>) -> Result<Value, ServiceError> {
+        match result {
+            Ok(()) => {
+                self.mark_scan_stop_requested();
+                Ok(Value::Null)
+            }
+            Err(err) => Err(service_error_from_wifi_error(err)),
+        }
     }
 
     async fn handle_connect(&mut self, payload: &Value) -> Result<Value, ServiceError> {
@@ -1048,6 +1124,10 @@ async fn wpa_request_scan(sock: &UnixDatagram) -> Result<ScanRequestOutcome, Wif
     })
 }
 
+async fn wpa_abort_scan(sock: &UnixDatagram) -> Result<(), WifiError> {
+    wpa_expect_ok(sock, "ABORT_SCAN").await
+}
+
 fn scan_reply_is_accepted(reply: &str) -> bool {
     matches!(reply.trim(), "OK" | "FAIL-BUSY")
 }
@@ -1475,14 +1555,32 @@ enum ScanRequestOutcome {
 #[cfg(test)]
 mod tests {
     use serde_json::Value;
+    use tokio::net::UnixDatagram;
 
     use crate::config::{Config, NetworkConfig, ServicesConfig};
 
     use super::{
         build_wifi_snapshot, derive_legacy_state, iface_from_ctrl_path, resolve_wifi_control,
-        AvailabilityReason, WifiAvailability, WifiConnectionState, WifiReadState, WifiRuntime,
-        WifiScanState, WifiStatus, DEFAULT_WIFI_INTERFACE,
+        wpa_abort_scan, wpa_request_scan, AvailabilityReason, WifiAvailability,
+        WifiConnectionState, WifiReadState, WifiRuntime, WifiScanState, WifiStatus,
+        DEFAULT_WIFI_INTERFACE,
     };
+
+    async fn spawn_wpa_pair(
+        expected_cmd: &'static str,
+        reply: &'static str,
+    ) -> (UnixDatagram, tokio::task::JoinHandle<()>) {
+        let (server, client) = UnixDatagram::pair().expect("create unix datagram pair");
+        let task = tokio::spawn(async move {
+            let mut buf = [0u8; 256];
+            let size = server.recv(&mut buf).await.expect("receive command");
+            let command = String::from_utf8_lossy(&buf[..size]).to_string();
+            assert_eq!(command, expected_cmd);
+            server.send(reply.as_bytes()).await.expect("send reply");
+        });
+
+        (client, task)
+    }
 
     #[test]
     fn explicit_wpa_ctrl_path_wins_over_interfaces() {
@@ -1600,10 +1698,11 @@ mod tests {
     fn scan_failure_records_last_error() {
         let mut runtime =
             WifiRuntime::new("/run/wpa_supplicant/wlo1".to_string(), "wlo1".to_string());
-        runtime.mark_scan_failed("FAIL-BOOM".to_string());
+        runtime.mark_scan_runtime_failed("FAIL-BOOM".to_string());
 
         assert_eq!(runtime.scan_state, WifiScanState::Idle);
         assert_eq!(runtime.scan_last_error.as_deref(), Some("FAIL-BOOM"));
+        assert!(runtime.scan_finished_at.is_some());
     }
 
     #[test]
@@ -1618,5 +1717,128 @@ mod tests {
         let (ctrl_path, iface) = resolve_wifi_control(&cfg);
         assert_eq!(iface, DEFAULT_WIFI_INTERFACE);
         assert!(ctrl_path.ends_with(&format!("/{DEFAULT_WIFI_INTERFACE}")));
+    }
+
+    #[tokio::test]
+    async fn scan_start_accepts_ok_reply() {
+        let (client, task) = spawn_wpa_pair("SCAN", "OK").await;
+        let mut runtime = WifiRuntime::new("/unused".to_string(), "lo".to_string());
+        runtime.cmd_sock = Some(client);
+
+        let outcome = {
+            let sock = runtime.cmd_sock.as_ref().expect("command socket");
+            wpa_request_scan(sock).await
+        };
+        let reply = runtime.finish_scan_start(outcome);
+
+        assert!(reply.is_ok());
+        assert_eq!(runtime.scan_state, WifiScanState::Starting);
+        assert!(runtime.scan_started_at.is_some());
+        task.await.expect("server task");
+    }
+
+    #[tokio::test]
+    async fn scan_start_accepts_fail_busy_reply() {
+        let (client, task) = spawn_wpa_pair("SCAN", "FAIL-BUSY").await;
+        let mut runtime = WifiRuntime::new("/unused".to_string(), "lo".to_string());
+        runtime.cmd_sock = Some(client);
+
+        let outcome = {
+            let sock = runtime.cmd_sock.as_ref().expect("command socket");
+            wpa_request_scan(sock).await
+        };
+        let reply = runtime.finish_scan_start(outcome);
+
+        assert!(reply.is_ok());
+        assert_eq!(runtime.scan_state, WifiScanState::Running);
+        assert!(runtime.scan_started_at.is_some());
+        task.await.expect("server task");
+    }
+
+    #[tokio::test]
+    async fn scan_start_when_active_is_successful_noop() {
+        let mut runtime = WifiRuntime::new("/unused".to_string(), "lo".to_string());
+        runtime.scan_state = WifiScanState::Running;
+        runtime.scan_started_at = Some(42);
+
+        let reply = runtime.handle_scan_start().await;
+
+        assert!(reply.is_ok());
+        assert_eq!(runtime.scan_state, WifiScanState::Running);
+        assert_eq!(runtime.scan_started_at, Some(42));
+    }
+
+    #[tokio::test]
+    async fn scan_stop_when_idle_is_successful_noop() {
+        let mut runtime = WifiRuntime::new("/unused".to_string(), "lo".to_string());
+
+        let reply = runtime.handle_scan_stop().await;
+
+        assert!(reply.is_ok());
+        assert_eq!(runtime.scan_state, WifiScanState::Idle);
+        assert!(!runtime.scan_stop_requested);
+    }
+
+    #[tokio::test]
+    async fn scan_stop_dispatches_abort_without_setting_error() {
+        let (client, task) = spawn_wpa_pair("ABORT_SCAN", "OK").await;
+        let mut runtime = WifiRuntime::new("/unused".to_string(), "lo".to_string());
+        runtime.cmd_sock = Some(client);
+        runtime.mark_scan_running();
+
+        let result = {
+            let sock = runtime.cmd_sock.as_ref().expect("command socket");
+            wpa_abort_scan(sock).await
+        };
+        let reply = runtime.finish_scan_stop(result);
+
+        assert!(reply.is_ok());
+        assert_eq!(runtime.scan_state, WifiScanState::Running);
+        assert!(runtime.scan_stop_requested);
+        assert_eq!(runtime.scan_last_error, None);
+        task.await.expect("server task");
+    }
+
+    #[test]
+    fn status_poll_can_complete_user_requested_stop() {
+        let mut runtime = WifiRuntime::new("/unused".to_string(), "lo".to_string());
+        runtime.mark_scan_running();
+        runtime.mark_scan_stop_requested();
+
+        runtime.observe_status_scan(false);
+
+        assert_eq!(runtime.scan_state, WifiScanState::Idle);
+        assert!(runtime.scan_finished_at.is_some());
+        assert!(!runtime.scan_stop_requested);
+    }
+
+    #[test]
+    fn scan_failed_event_records_error_and_finishes_scan() {
+        let mut runtime = WifiRuntime::new("/unused".to_string(), "lo".to_string());
+        runtime.mark_scan_running();
+
+        let relevant = runtime.observe_wpa_event("<3>CTRL-EVENT-SCAN-FAILED ret=-22 retry=1");
+
+        assert!(relevant);
+        assert_eq!(runtime.scan_state, WifiScanState::Idle);
+        assert_eq!(
+            runtime.scan_last_error.as_deref(),
+            Some("<3>CTRL-EVENT-SCAN-FAILED ret=-22 retry=1")
+        );
+        assert!(runtime.scan_finished_at.is_some());
+    }
+
+    #[test]
+    fn scan_failed_event_after_user_stop_does_not_record_error() {
+        let mut runtime = WifiRuntime::new("/unused".to_string(), "lo".to_string());
+        runtime.mark_scan_running();
+        runtime.mark_scan_stop_requested();
+
+        let relevant = runtime.observe_wpa_event("<3>CTRL-EVENT-SCAN-FAILED ret=-22 retry=1");
+
+        assert!(relevant);
+        assert_eq!(runtime.scan_state, WifiScanState::Idle);
+        assert_eq!(runtime.scan_last_error, None);
+        assert!(runtime.scan_finished_at.is_some());
     }
 }
