@@ -21,6 +21,7 @@ Item {
     readonly property bool directFollowActive: dragPhase === "dragging"
                                              || dragPhase === "dismiss_flyout"
     readonly property bool hasNotifications: Notification.notificationModel.count > 0
+    readonly property bool dndToggleEnabled: Notification.connected && Notification.ready && !root.motionLocked
     readonly property bool motionLocked: dragPhase !== "idle"
     readonly property bool clearAllEnabled: root.hasNotifications && !root.motionLocked
     readonly property bool revealReady: Notification.ready
@@ -214,56 +215,112 @@ Item {
 
         Item {
             width: parent.width
-            implicitHeight: clearAllButton.height
+            implicitHeight: headerActions.height
 
-            Item {
-                id: clearAllButton
+            Row {
+                id: headerActions
 
                 anchors.right: parent.right
-                width: Theme.statusIconSize + Theme.spaceMd
-                height: width
-                opacity: root.clearAllEnabled ? 1 : 0.48
+                spacing: Theme.spaceSm
 
-                Rectangle {
-                    anchors.fill: parent
-                    radius: width / 2
-                    color: clearAllMouseArea.containsMouse && root.clearAllEnabled
-                           ? Theme.overlay(Theme.chromeSubtleFill, Theme.colorError, 0.16)
-                           : "transparent"
-                    border.color: root.clearAllEnabled
-                                  ? Theme.withAlpha(
-                                      clearAllMouseArea.containsMouse ? Theme.colorError : Theme.borderDefault,
-                                      clearAllMouseArea.containsMouse ? 0.48 : 0.26
-                                  )
-                                  : Theme.withAlpha(Theme.borderDefault, 0.12)
-                    border.width: 1
+                Item {
+                    id: dndButton
 
-                    Behavior on color { ColorAnimation { duration: Theme.motionFast } }
-                    Behavior on border.color { ColorAnimation { duration: Theme.motionFast } }
+                    width: Theme.statusIconSize + Theme.spaceMd
+                    height: width
+                    opacity: root.dndToggleEnabled ? 1 : 0.48
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: width / 2
+                        color: dndMouseArea.containsMouse && root.dndToggleEnabled
+                               ? Theme.overlay(Theme.chromeSubtleFill, Theme.accentBlue, 0.16)
+                               : "transparent"
+                        border.color: root.dndToggleEnabled
+                                      ? Theme.withAlpha(
+                                          dndMouseArea.containsMouse ? Theme.accentBlue : Theme.borderDefault,
+                                          dndMouseArea.containsMouse ? 0.48 : 0.26
+                                      )
+                                      : Theme.withAlpha(Theme.borderDefault, 0.12)
+                        border.width: 1
+
+                        Behavior on color { ColorAnimation { duration: Theme.motionFast } }
+                        Behavior on border.color { ColorAnimation { duration: Theme.motionFast } }
+                    }
+
+                    SvgIcon {
+                        anchors.centerIn: parent
+                        iconPath: Notification.doNotDisturb
+                                  ? Theme.iconDoNotDisturbEnabledStatus
+                                  : Theme.iconDoNotDisturbDisabledStatus
+                        size: Theme.iconSize
+                        color: root.dndToggleEnabled
+                               ? (dndMouseArea.containsMouse ? Theme.fgPrimary : Theme.fgSecondary)
+                               : Theme.fgDisabled
+
+                        Behavior on color { ColorAnimation { duration: Theme.motionFast } }
+                    }
+
+                    MouseArea {
+                        id: dndMouseArea
+
+                        anchors.fill: parent
+                        enabled: root.dndToggleEnabled
+                        hoverEnabled: true
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+
+                        onClicked: Notification.setDoNotDisturb(!Notification.doNotDisturb)
+                    }
                 }
 
-                SvgIcon {
-                    anchors.centerIn: parent
-                    iconPath: Theme.iconDeleteStatus
-                    size: Theme.iconSize
-                    color: root.clearAllEnabled
-                           ? (clearAllMouseArea.containsMouse ? Theme.colorError : Theme.fgSecondary)
-                           : Theme.fgDisabled
+                Item {
+                    id: clearAllButton
 
-                    Behavior on color { ColorAnimation { duration: Theme.motionFast } }
-                }
+                    width: Theme.statusIconSize + Theme.spaceMd
+                    height: width
+                    opacity: root.clearAllEnabled ? 1 : 0.48
 
-                MouseArea {
-                    id: clearAllMouseArea
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: width / 2
+                        color: clearAllMouseArea.containsMouse && root.clearAllEnabled
+                               ? Theme.overlay(Theme.chromeSubtleFill, Theme.colorError, 0.16)
+                               : "transparent"
+                        border.color: root.clearAllEnabled
+                                      ? Theme.withAlpha(
+                                          clearAllMouseArea.containsMouse ? Theme.colorError : Theme.borderDefault,
+                                          clearAllMouseArea.containsMouse ? 0.48 : 0.26
+                                      )
+                                      : Theme.withAlpha(Theme.borderDefault, 0.12)
+                        border.width: 1
 
-                    anchors.fill: parent
-                    enabled: root.clearAllEnabled
-                    hoverEnabled: true
-                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        Behavior on color { ColorAnimation { duration: Theme.motionFast } }
+                        Behavior on border.color { ColorAnimation { duration: Theme.motionFast } }
+                    }
 
-                    onClicked: {
-                        root.expandedNotificationId = -1;
-                        Notification.dismissAll();
+                    SvgIcon {
+                        anchors.centerIn: parent
+                        iconPath: Theme.iconDeleteStatus
+                        size: Theme.iconSize
+                        color: root.clearAllEnabled
+                               ? (clearAllMouseArea.containsMouse ? Theme.colorError : Theme.fgSecondary)
+                               : Theme.fgDisabled
+
+                        Behavior on color { ColorAnimation { duration: Theme.motionFast } }
+                    }
+
+                    MouseArea {
+                        id: clearAllMouseArea
+
+                        anchors.fill: parent
+                        enabled: root.clearAllEnabled
+                        hoverEnabled: true
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+
+                        onClicked: {
+                            root.expandedNotificationId = -1;
+                            Notification.dismissAll();
+                        }
                     }
                 }
             }

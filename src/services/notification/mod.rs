@@ -62,6 +62,7 @@ pub fn spawn(_cfg: &Config, apps: Arc<AppResolver>) -> ServiceHandle {
 
 fn empty_snapshot() -> Value {
     json_map([
+        ("do_not_disturb", Value::from(false)),
         ("unread_count", Value::from(0_i64)),
         ("history", Value::Array(vec![])),
     ])
@@ -72,6 +73,7 @@ fn empty_snapshot() -> Value {
 // ---------------------------------------------------------------------------
 
 struct NotifState {
+    do_not_disturb: bool,
     notifications: Vec<Notification>,
     next_id: u32,
 }
@@ -79,6 +81,7 @@ struct NotifState {
 impl Default for NotifState {
     fn default() -> Self {
         Self {
+            do_not_disturb: false,
             notifications: Vec::new(),
             next_id: 1,
         }
@@ -201,15 +204,7 @@ impl NotifServer {
             add_notification(&mut state, data)
         };
 
-        let snap = state_to_snapshot(&state);
-        let event_payload = state
-            .notifications
-            .iter()
-            .find(|notification| notification.id == id)
-            .map(notif_to_value)
-            .unwrap_or(Value::Null);
-        self.state_tx.send_replace(snap);
-        broadcast_event(&self.events_tx, "new", event_payload);
+        publish_snapshot_and_maybe_new_event(&self.state_tx, &self.events_tx, &state, id);
 
         id
     }
@@ -493,6 +488,29 @@ fn broadcast_closed(events_tx: &broadcast::Sender<Value>, id: u32, reason: u32) 
     broadcast_event(events_tx, "closed", closed_payload(id, reason));
 }
 
+fn publish_snapshot_and_maybe_new_event(
+    state_tx: &watch::Sender<Value>,
+    events_tx: &broadcast::Sender<Value>,
+    state: &NotifState,
+    id: u32,
+) {
+    let event_payload = if state.do_not_disturb {
+        None
+    } else {
+        state
+            .notifications
+            .iter()
+            .find(|notification| notification.id == id)
+            .map(notif_to_value)
+    };
+
+    state_tx.send_replace(state_to_snapshot(state));
+
+    if let Some(payload) = event_payload {
+        broadcast_event(events_tx, "new", payload);
+    }
+}
+
 fn broadcast_event(events_tx: &broadcast::Sender<Value>, event_type: &str, payload: Value) {
     let event = json_map([("type", Value::from(event_type)), ("payload", payload)]);
     let _ = events_tx.send(event);
@@ -527,6 +545,7 @@ fn state_to_snapshot(state: &NotifState) -> Value {
         .map(notif_to_value)
         .collect();
     json_map([
+        ("do_not_disturb", Value::from(state.do_not_disturb)),
         ("unread_count", Value::from(unread)),
         ("history", Value::Array(history)),
     ])
@@ -575,6 +594,7 @@ async fn handle_request(
         "dismiss" => handle_dismiss(&req.payload, shared, state_tx, events_tx, dbus_conn).await,
         "dismiss_all" => handle_dismiss_all(shared, state_tx).await,
         "mark_read" => handle_mark_read(&req.payload, shared, state_tx).await,
+        "set_do_not_disturb" => handle_set_do_not_disturb(&req.payload, shared, state_tx).await,
         other => Err(ServiceError::ActionUnknown {
             action: other.to_string(),
         }),
@@ -737,6 +757,20 @@ async fn handle_mark_read(
     Ok(Value::Null)
 }
 
+async fn handle_set_do_not_disturb(
+    payload: &Value,
+    shared: &Arc<RwLock<NotifState>>,
+    state_tx: &watch::Sender<Value>,
+) -> Result<Value, ServiceError> {
+    let enabled = extract_bool(payload, "enabled").ok_or_else(|| ServiceError::ActionPayload {
+        msg: "missing 'enabled' field".to_string(),
+    })?;
+    let mut state = shared.write().await;
+    state.do_not_disturb = enabled;
+    state_tx.send_replace(state_to_snapshot(&state));
+    Ok(Value::Null)
+}
+
 // ---------------------------------------------------------------------------
 // Payload helpers
 // ---------------------------------------------------------------------------
@@ -750,6 +784,10 @@ fn extract_u64(v: &Value, key: &str) -> Option<u64> {
     val.as_u64().or_else(|| val.as_i64().map(|i| i as u64))
 }
 
+fn extract_bool(v: &Value, key: &str) -> Option<bool> {
+    v.get(key)?.as_bool()
+}
+
 // ---------------------------------------------------------------------------
 // Error type
 // ---------------------------------------------------------------------------
@@ -758,4 +796,123 @@ fn extract_u64(v: &Value, key: &str) -> Option<u64> {
 enum NotifError {
     #[error("zbus error: {0}")]
     Zbus(#[from] zbus::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+    use tokio::sync::{broadcast, watch, RwLock};
+
+    use super::*;
+
+    fn sample_notification(summary: &'static str) -> NotifData<'static> {
+        NotifData {
+            app_name: "Example",
+            summary,
+            body: "body",
+            icon: "icon",
+            urgency: "normal",
+            actions: Vec::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn snapshot_updates_without_new_event_while_dnd_enabled() {
+        let (state_tx, state_rx) = watch::channel(empty_snapshot());
+        let (events_tx, _) = broadcast::channel(4);
+        let mut events_rx = events_tx.subscribe();
+        let mut state = NotifState {
+            do_not_disturb: true,
+            ..NotifState::default()
+        };
+        let id = add_notification(&mut state, sample_notification("muted"));
+
+        publish_snapshot_and_maybe_new_event(&state_tx, &events_tx, &state, id);
+
+        let snapshot = state_rx.borrow().clone();
+        assert_eq!(snapshot.get("do_not_disturb"), Some(&Value::Bool(true)));
+        assert_eq!(snapshot.get("unread_count"), Some(&Value::from(1_i64)));
+        let history = snapshot
+            .get("history")
+            .and_then(Value::as_array)
+            .expect("history array");
+        assert_eq!(history.len(), 1);
+        assert_eq!(
+            history[0].get("summary").and_then(Value::as_str),
+            Some("muted")
+        );
+        assert!(matches!(
+            events_rx.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+    }
+
+    #[tokio::test]
+    async fn set_do_not_disturb_reenables_new_events_for_future_notifications() {
+        let shared = Arc::new(RwLock::new(NotifState {
+            do_not_disturb: true,
+            ..NotifState::default()
+        }));
+        let (state_tx, state_rx) = watch::channel(empty_snapshot());
+        let (events_tx, _) = broadcast::channel(4);
+        let mut events_rx = events_tx.subscribe();
+
+        {
+            let mut state = shared.write().await;
+            let first_id = add_notification(&mut state, sample_notification("suppressed"));
+            publish_snapshot_and_maybe_new_event(&state_tx, &events_tx, &state, first_id);
+        }
+
+        assert!(matches!(
+            events_rx.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+
+        handle_set_do_not_disturb(&json!({ "enabled": false }), &shared, &state_tx)
+            .await
+            .expect("dnd toggle should succeed");
+        assert_eq!(
+            state_rx.borrow().get("do_not_disturb"),
+            Some(&Value::Bool(false))
+        );
+
+        {
+            let mut state = shared.write().await;
+            let second_id = add_notification(&mut state, sample_notification("visible"));
+            publish_snapshot_and_maybe_new_event(&state_tx, &events_tx, &state, second_id);
+        }
+
+        let event = events_rx
+            .recv()
+            .await
+            .expect("new event after disabling dnd");
+        assert_eq!(event.get("type"), Some(&Value::from("new")));
+        assert_eq!(
+            event
+                .get("payload")
+                .and_then(|payload| payload.get("summary"))
+                .and_then(Value::as_str),
+            Some("visible")
+        );
+        assert_eq!(
+            state_rx.borrow().get("unread_count"),
+            Some(&Value::from(2_i64))
+        );
+    }
+
+    #[tokio::test]
+    async fn set_do_not_disturb_requires_enabled_payload() {
+        let shared = Arc::new(RwLock::new(NotifState::default()));
+        let (state_tx, _) = watch::channel(empty_snapshot());
+
+        let err = handle_set_do_not_disturb(&json!({}), &shared, &state_tx)
+            .await
+            .expect_err("missing enabled should fail");
+        match err {
+            ServiceError::ActionPayload { msg } => {
+                assert_eq!(msg, "missing 'enabled' field");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
 }

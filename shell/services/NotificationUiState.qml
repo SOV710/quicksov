@@ -16,6 +16,7 @@ Singleton {
     property bool connected: false
     property int _centerOpenCount: 0
     property int _toastRevisionSeed: 0
+    property bool _lastDoNotDisturb: false
     property var _centerVisibility: ({})
 
     readonly property bool notificationCenterOpen: root._centerOpenCount > 0
@@ -136,9 +137,17 @@ Singleton {
         root.connected = isConnected;
         if (isConnected) {
             Client.subscribeEvents("notification", root._onEvent);
+            root._lastDoNotDisturb = Notification.doNotDisturb;
         } else {
+            root._lastDoNotDisturb = false;
             root.clearToastState();
         }
+    }
+
+    function _syncDoNotDisturbState() {
+        if (!root._lastDoNotDisturb && Notification.doNotDisturb)
+            root.clearToastState();
+        root._lastDoNotDisturb = Notification.doNotDisturb;
     }
 
     function _onEvent(eventName, payload) {
@@ -265,5 +274,14 @@ Singleton {
     Component.onCompleted: {
         Client.connectionChanged.connect(root._onConnectionChanged);
         if (Client.connected) root._onConnectionChanged(true);
+        root._lastDoNotDisturb = Notification.doNotDisturb;
+    }
+
+    Connections {
+        target: Notification
+
+        function onDoNotDisturbChanged() {
+            root._syncDoNotDisturbState();
+        }
     }
 }

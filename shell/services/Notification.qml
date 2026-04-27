@@ -18,6 +18,7 @@ Singleton {
 
     property int count: 0
     property bool hasUnread: false
+    property bool doNotDisturb: false
     property var notifications: []
     property alias notificationModel: notificationModel
     property var _actionsById: ({})
@@ -110,6 +111,9 @@ Singleton {
     function dismissAll() {
         Client.request("notification", "dismiss_all", {}, null);
     }
+    function setDoNotDisturb(enabled) {
+        Client.request("notification", "set_do_not_disturb", { enabled: enabled }, null);
+    }
     function markRead(id) {
         var payload = {};
         if (id !== undefined && id !== null)
@@ -126,6 +130,7 @@ Singleton {
     function _onSnapshot(payload) {
         var unread = payload.unread_count || 0;
         var history = payload.history || [];
+        root.doNotDisturb = payload.do_not_disturb === true;
         root.count         = unread;
         root.hasUnread     = unread > 0;
         root.notifications = history;
@@ -141,6 +146,7 @@ Singleton {
         } else {
             root.count = 0;
             root.hasUnread = false;
+            root.doNotDisturb = false;
             root.notifications = [];
             root._actionsById = ({});
             notificationModel.clear();

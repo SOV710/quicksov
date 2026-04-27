@@ -181,26 +181,27 @@ pub(crate) async fn set_power_profile(
     let proxy = ppd_proxy(conn)
         .await
         .map_err(|error| map_read_error("open power profile proxy", error))?;
-    tokio::time::timeout(PPD_ACTION_TIMEOUT, proxy.set_property("ActiveProfile", target.as_str()))
-        .await
-        .map_err(|_| {
-            SetPowerProfileError::ServiceUnavailable(
-                "power-profiles-daemon request timed out".to_string(),
-            )
-        })?
-        .map_err(|error| map_write_error("set power profile", error.into()))?;
-
-    let active_profile: String = tokio::time::timeout(
+    tokio::time::timeout(
         PPD_ACTION_TIMEOUT,
-        proxy.get_property("ActiveProfile"),
+        proxy.set_property("ActiveProfile", target.as_str()),
     )
     .await
     .map_err(|_| {
         SetPowerProfileError::ServiceUnavailable(
-            "power-profiles-daemon read-back timed out".to_string(),
+            "power-profiles-daemon request timed out".to_string(),
         )
     })?
-    .map_err(|error| map_read_error("read back active power profile", error))?;
+    .map_err(|error| map_write_error("set power profile", error.into()))?;
+
+    let active_profile: String =
+        tokio::time::timeout(PPD_ACTION_TIMEOUT, proxy.get_property("ActiveProfile"))
+            .await
+            .map_err(|_| {
+                SetPowerProfileError::ServiceUnavailable(
+                    "power-profiles-daemon read-back timed out".to_string(),
+                )
+            })?
+            .map_err(|error| map_read_error("read back active power profile", error))?;
 
     match map_current_profile(&active_profile) {
         ProductPowerProfile::PowerSaver
@@ -259,7 +260,9 @@ fn parse_profiles(profiles: &[HashMap<String, OwnedValue>]) -> Vec<ProductPowerP
 fn map_current_profile(raw: &str) -> ProductPowerProfile {
     match raw.trim() {
         "" => ProductPowerProfile::Unknown,
-        other => ProductPowerProfile::from_backend_str(other).unwrap_or(ProductPowerProfile::Custom),
+        other => {
+            ProductPowerProfile::from_backend_str(other).unwrap_or(ProductPowerProfile::Custom)
+        }
     }
 }
 
@@ -281,22 +284,18 @@ fn map_zbus_error(context: &str, error: zbus::Error, write: bool) -> SetPowerPro
         zbus::Error::MethodError(name, detail, _) => {
             let name = name.as_str();
             if is_permission_error_name(name) {
-                return SetPowerProfileError::PermissionDenied(
-                    render_error_message(
-                        context,
-                        detail.as_deref(),
-                        "power profile change was denied",
-                    ),
-                );
+                return SetPowerProfileError::PermissionDenied(render_error_message(
+                    context,
+                    detail.as_deref(),
+                    "power profile change was denied",
+                ));
             }
             if is_unavailable_error_name(name) {
-                return SetPowerProfileError::ServiceUnavailable(
-                    render_error_message(
-                        context,
-                        detail.as_deref(),
-                        "power profile service is unavailable",
-                    ),
-                );
+                return SetPowerProfileError::ServiceUnavailable(render_error_message(
+                    context,
+                    detail.as_deref(),
+                    "power profile service is unavailable",
+                ));
             }
             if write {
                 return SetPowerProfileError::WriteFailed(render_error_message(
@@ -503,7 +502,10 @@ mod tests {
 
     #[test]
     fn maps_current_profile_to_custom_when_unknown() {
-        assert_eq!(map_current_profile("balanced"), ProductPowerProfile::Balanced);
+        assert_eq!(
+            map_current_profile("balanced"),
+            ProductPowerProfile::Balanced
+        );
         assert_eq!(
             map_current_profile("vendor-special"),
             ProductPowerProfile::Custom

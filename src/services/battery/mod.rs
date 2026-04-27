@@ -283,7 +283,8 @@ async fn handle_set_power_profile(
     conn: &zbus::Connection,
     payload: &Value,
 ) -> Result<(), HandleSetPowerProfileError> {
-    let profile = extract_str(payload, "profile").ok_or(HandleSetPowerProfileError::MissingProfile)?;
+    let profile =
+        extract_str(payload, "profile").ok_or(HandleSetPowerProfileError::MissingProfile)?;
     let requested = ProductPowerProfile::from_action_str(profile)
         .ok_or_else(|| HandleSetPowerProfileError::InvalidProfile(profile.to_string()))?;
     set_power_profile(conn, requested).await?;
@@ -304,14 +305,8 @@ fn build_snapshot(state: &BatteryCombinedState) -> Value {
         ("on_battery", Value::Bool(telemetry.on_battery)),
         ("level", Value::from(telemetry.level)),
         ("state", Value::from(telemetry.state.as_str())),
-        (
-            "time_to_empty_sec",
-            int_value(telemetry.time_to_empty_sec),
-        ),
-        (
-            "time_to_full_sec",
-            int_value(telemetry.time_to_full_sec),
-        ),
+        ("time_to_empty_sec", int_value(telemetry.time_to_empty_sec)),
+        ("time_to_full_sec", int_value(telemetry.time_to_full_sec)),
         ("health_percent", float_value(telemetry.health_percent)),
         ("energy_rate_w", float_value(telemetry.energy_rate_w)),
         ("energy_now_wh", float_value(telemetry.energy_now_wh)),

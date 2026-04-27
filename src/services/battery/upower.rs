@@ -130,7 +130,8 @@ pub(crate) async fn read_battery_telemetry(
 ) -> Result<BatteryTelemetry, zbus::Error> {
     let upower_proxy = zbus::Proxy::new(conn, UPOWER_DEST, UPOWER_PATH, UPOWER_IFACE).await?;
     let upower_props = get_all_properties(conn, UPOWER_DEST, UPOWER_PATH, UPOWER_IFACE).await?;
-    let on_battery = owned_prop::<bool>(&upower_props, &["OnBattery", "on-battery"]).unwrap_or(false);
+    let on_battery =
+        owned_prop::<bool>(&upower_props, &["OnBattery", "on-battery"]).unwrap_or(false);
 
     let display_path: OwnedObjectPath = upower_proxy.call("GetDisplayDevice", &()).await?;
     let display_props = get_all_properties(
@@ -140,8 +141,9 @@ pub(crate) async fn read_battery_telemetry(
         UPOWER_DEVICE_IFACE,
     )
     .await?;
-    let display = parse_display_device(&display_props)
-        .ok_or_else(|| zbus::Error::Failure("UPower display device snapshot incomplete".to_string()))?;
+    let display = parse_display_device(&display_props).ok_or_else(|| {
+        zbus::Error::Failure("UPower display device snapshot incomplete".to_string())
+    })?;
 
     let device_paths: Vec<OwnedObjectPath> = upower_proxy.call("EnumerateDevices", &()).await?;
     let mut batteries = Vec::new();
@@ -174,14 +176,18 @@ fn parse_display_device(props: &HashMap<String, OwnedValue>) -> Option<RawDispla
     Some(RawDisplayDevice {
         level: round_percent(owned_prop::<f64>(props, &["Percentage", "percentage"])?),
         state: map_charge_state(owned_prop::<u32>(props, &["State", "state"]).unwrap_or_default()),
-        time_to_empty_sec: normalize_time(owned_prop::<i64>(props, &["TimeToEmpty", "time-to-empty"])),
+        time_to_empty_sec: normalize_time(owned_prop::<i64>(
+            props,
+            &["TimeToEmpty", "time-to-empty"],
+        )),
         time_to_full_sec: normalize_time(owned_prop::<i64>(props, &["TimeToFull", "time-to-full"])),
     })
 }
 
 fn parse_battery_device(path: &str, props: &HashMap<String, OwnedValue>) -> RawBatteryDevice {
     let energy_now_wh = finite_non_negative(owned_prop::<f64>(props, &["Energy", "energy"]));
-    let energy_full_wh = finite_non_negative(owned_prop::<f64>(props, &["EnergyFull", "energy-full"]));
+    let energy_full_wh =
+        finite_non_negative(owned_prop::<f64>(props, &["EnergyFull", "energy-full"]));
     let energy_design_wh = finite_non_negative(owned_prop::<f64>(
         props,
         &["EnergyFullDesign", "energy-full-design"],
@@ -252,8 +258,11 @@ fn build_telemetry(
 
     let energy_now_wh = sum_metric(present_samples.iter().map(|battery| battery.energy_now_wh));
     let energy_full_wh = sum_metric(present_samples.iter().map(|battery| battery.energy_full_wh));
-    let energy_design_wh =
-        sum_metric(present_samples.iter().map(|battery| battery.energy_design_wh));
+    let energy_design_wh = sum_metric(
+        present_samples
+            .iter()
+            .map(|battery| battery.energy_design_wh),
+    );
     let energy_rate_w = sum_metric(present_samples.iter().map(|battery| battery.energy_rate_w));
     let health_percent = percentage_f64(energy_full_wh, energy_design_wh);
 
@@ -280,7 +289,8 @@ async fn get_all_properties(
     path: &str,
     iface: &str,
 ) -> Result<HashMap<String, OwnedValue>, zbus::Error> {
-    let proxy = zbus::Proxy::new(conn, destination, path, "org.freedesktop.DBus.Properties").await?;
+    let proxy =
+        zbus::Proxy::new(conn, destination, path, "org.freedesktop.DBus.Properties").await?;
     proxy.call("GetAll", &(iface,)).await
 }
 
@@ -491,7 +501,10 @@ mod tests {
         }
 
         let mut props = HashMap::new();
-        props.insert("native-path".to_string(), ov_string("/sys/class/power_supply/BAT1"));
+        props.insert(
+            "native-path".to_string(),
+            ov_string("/sys/class/power_supply/BAT1"),
+        );
 
         assert_eq!(
             device_name("/org/freedesktop/UPower/devices/battery_BAT1", &props),

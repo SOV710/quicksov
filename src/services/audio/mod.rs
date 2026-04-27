@@ -647,8 +647,8 @@ mod tests {
     use crate::config::{AudioConfig, Config, ServicesConfig};
 
     use super::{
-        AudioCfg, AudioNode, DEFAULT_AUDIO_BACKEND, MAX_VOLUME_PERCENT, sort_nodes,
-        volume_ratio_from_pct,
+        sort_nodes, volume_ratio_from_pct, AudioCfg, AudioNode, DEFAULT_AUDIO_BACKEND,
+        MAX_VOLUME_PERCENT,
     };
 
     #[test]
