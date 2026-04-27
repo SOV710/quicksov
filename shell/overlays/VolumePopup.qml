@@ -306,10 +306,7 @@ Item {
                                     enabled: !sinkDelegate._isCurrent
                                     hoverEnabled: true
                                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                    onClicked: {
-                                        Audio.setDefaultSink(sinkDelegate.modelData.id);
-                                        root.outputsExpanded = false;
-                                    }
+                                    onClicked: Audio.setDefaultSink(sinkDelegate.modelData.id)
                                 }
                             }
                         }
