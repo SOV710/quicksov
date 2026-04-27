@@ -293,7 +293,7 @@ Item {
 
                         Item {
                             width: Theme.iconSize
-                            height: Theme.iconSize
+                            height: dndButton.height
                             scale: 0.92 + root.dndButtonProgress * 0.12
 
                             Behavior on scale {
