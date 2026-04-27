@@ -17,20 +17,21 @@ Item {
     property string expandedSsid: ""
     property string passwordText: ""
 
+    readonly property int _visibleNetworkCount: Network.visibleNetworkCount
     readonly property bool _showLoadingState: !Network.ready
     readonly property bool _showUnavailableState: Network.ready && Network.isUnavailable
     readonly property bool _showDisabledState: Network.ready && Network.isDisabled
     readonly property bool _showEmptyState: Network.ready
                                          && Network.availability === "ready"
-                                         && Network.networks.length === 0
+                                         && root._visibleNetworkCount === 0
                                          && !Network.scanning
     readonly property bool _showScanningState: Network.ready
                                              && Network.availability === "ready"
-                                             && Network.networks.length === 0
+                                             && root._visibleNetworkCount === 0
                                              && Network.scanning
     readonly property bool _showList: Network.ready
                                     && Network.availability === "ready"
-                                    && Network.networks.length > 0
+                                    && root._visibleNetworkCount > 0
     readonly property real _listMaxHeight: Math.max(
         Theme.spaceXxl * 3,
         Theme.networkPanelMaxHeight - headerRow.implicitHeight - Theme.spaceMd * 5
@@ -51,26 +52,17 @@ Item {
         }
     }
 
-    function _networkSubtitle(network) {
+    function _networkDetailText(network) {
         if (!network)
             return "";
 
         var parts = [];
-        if (network.current)
-            parts.push("Connected");
-        else if (network.saved)
-            parts.push("Saved");
-        else
-            parts.push(network.secure ? network.securityLabel : "Open");
-
-        if (network.current && Network.currentIpv4 !== "")
-            parts.push(Network.currentIpv4);
-        if (!network.current && network.secure)
-            parts.push(network.securityLabel);
         if (network.bandLabel)
             parts.push(network.bandLabel);
         if (network.signalPct >= 0)
             parts.push(String(network.signalPct) + "%");
+        if (parts.length === 0 && network.current && Network.currentIpv4 !== "")
+            parts.push(Network.currentIpv4);
 
         return parts.join(" • ");
     }
@@ -143,7 +135,7 @@ Item {
                     text: "Network"
                     color: Theme.fgPrimary
                     font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontLabel
+                    font.pixelSize: Theme.fontDisplay
                     font.weight: Theme.weightSemibold
                     Layout.fillWidth: true
                 }
@@ -152,43 +144,40 @@ Item {
                     text: root._subtitle()
                     color: Theme.fgMuted
                     font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontBody
+                    font.pixelSize: Theme.fontSmall
                     elide: Text.ElideRight
                     Layout.fillWidth: true
                 }
             }
 
-            HeaderChip {
-                label: Network.scanStopPending ? "Stopping"
-                       : Network.scanStartPending ? "Starting"
-                       : Network.scanning ? "Stop"
-                       : "Refresh"
-                iconPath: Network.scanning ? "lucide/loader-circle.svg" : "lucide/rotate-cw.svg"
-                enabled: Network.ready
-                         && Network.availability === "ready"
-                         && !Network.scanPending
-                active: Network.scanning || Network.scanPending
-                pending: Network.scanPending
-                spinning: Network.scanning
-                onClicked: Network.toggleScan()
-            }
+            RowLayout {
+                spacing: Theme.spaceXs
 
-            HeaderChip {
-                label: Network.powerPending
-                       ? (Network.enabled ? "Turning off" : "Turning on")
-                       : (Network.enabled ? "On" : "Off")
-                enabled: Network.ready && Network.present && Network.rfkillAvailable
-                active: Network.enabled || Network.powerPending
-                pending: Network.powerPending
-                onClicked: Network.toggleEnabled()
-            }
+                IconCircleButton {
+                    iconPath: Theme.iconRefreshStatus
+                    enabled: Network.ready
+                             && Network.availability === "ready"
+                             && !Network.scanPending
+                    active: Network.scanning || Network.scanPending
+                    spinning: Network.scanning || Network.scanPending
+                    onClicked: Network.toggleScan()
+                }
 
-            HeaderChip {
-                label: Network.airplanePending ? "Working" : "Flight"
-                enabled: Network.ready && Network.rfkillAvailable
-                active: Network.airplaneMode || Network.airplanePending
-                pending: Network.airplanePending
-                onClicked: Network.toggleAirplaneMode()
+                IconCircleButton {
+                    iconPath: Theme.iconPowerStatus
+                    enabled: Network.ready && Network.present && Network.rfkillAvailable
+                    active: Network.enabled || Network.powerPending
+                    spinning: Network.powerPending
+                    onClicked: Network.toggleEnabled()
+                }
+
+                IconCircleButton {
+                    iconPath: Theme.iconFlightStatus
+                    enabled: Network.ready && Network.rfkillAvailable
+                    active: Network.airplaneMode || Network.airplanePending
+                    spinning: Network.airplanePending
+                    onClicked: Network.toggleAirplaneMode()
+                }
             }
         }
 
@@ -236,7 +225,7 @@ Item {
             visible: root._showEmptyState
             iconPath: Theme.iconWifiZeroStatus
             title: "No networks found"
-            message: "Use Refresh to scan nearby Wi-Fi networks."
+            message: "Nearby Wi-Fi networks will appear after a scan."
         }
 
         Flickable {
@@ -256,27 +245,13 @@ Item {
                 spacing: Theme.spaceXs
 
                 SectionLabel {
-                    visible: Network.currentNetworks.length > 0
-                    text: "Current"
-                }
-
-                Repeater {
-                    model: Network.currentNetworks
-
-                    delegate: NetworkCard {
-                        required property var modelData
-                        width: listCol.width
-                        network: modelData
-                    }
-                }
-
-                SectionLabel {
-                    visible: Network.savedVisibleNetworks.length > 0
+                    visible: Network.savedColumnNetworks.length > 0
+                    width: parent.width
                     text: "Saved"
                 }
 
                 Repeater {
-                    model: Network.savedVisibleNetworks
+                    model: Network.savedColumnNetworks
 
                     delegate: NetworkCard {
                         required property var modelData
@@ -286,12 +261,13 @@ Item {
                 }
 
                 SectionLabel {
-                    visible: Network.availableNetworks.length > 0
+                    visible: Network.availableColumnNetworks.length > 0
+                    width: parent.width
                     text: "Available"
                 }
 
                 Repeater {
-                    model: Network.availableNetworks
+                    model: Network.availableColumnNetworks
 
                     delegate: NetworkCard {
                         required property var modelData
@@ -303,29 +279,44 @@ Item {
         }
     }
 
-    component HeaderChip: Rectangle {
+    component IconCircleButton: Rectangle {
         id: chip
 
-        property string label: ""
         property string iconPath: ""
         property bool enabled: true
         property bool active: false
-        property bool pending: false
         property bool spinning: false
+        property bool danger: false
+        property real buttonSize: Theme.barHeight
 
         signal clicked()
 
-        implicitWidth: chipRow.implicitWidth + Theme.spaceSm * 2
-        implicitHeight: Theme.barHeight - Theme.spaceXs
-        radius: Theme.radiusSm
+        implicitWidth: buttonSize
+        implicitHeight: buttonSize
+        radius: buttonSize / 2
+        readonly property color _activeFill: danger
+                                             ? Theme.overlay(Theme.bgSurfaceRaised, Theme.colorError, 0.16)
+                                             : Theme.surfaceActive
+        readonly property color _activeBorder: danger ? Theme.dangerBorderSoft : Theme.borderAccent
+        readonly property color _iconColor: !enabled
+                                            ? Theme.fgDisabled
+                                            : danger
+                                              ? Theme.colorError
+                                              : (active || spinning)
+                                                ? Theme.accentBlue
+                                                : Theme.fgSecondary
         color: chipMouse.pressed
                ? Theme.surfaceActive
-               : (active || pending)
-                 ? Theme.surfaceActive
+               : (active || spinning)
+                 ? chip._activeFill
                  : chipMouse.containsMouse
                    ? Theme.surfaceHover
                    : Theme.bgSurfaceRaised
-        border.color: (active || pending) ? Theme.borderAccent : Theme.borderSubtle
+        border.color: (active || spinning)
+                      ? chip._activeBorder
+                      : danger
+                        ? Theme.withAlpha(Theme.colorError, 0.24)
+                        : Theme.borderSubtle
         border.width: 1
         opacity: enabled ? 1.0 : 0.45
         scale: chipMouse.pressed ? 0.98 : 1.0
@@ -333,33 +324,18 @@ Item {
         Behavior on color { ColorAnimation { duration: Theme.motionFast } }
         Behavior on scale { NumberAnimation { duration: Theme.motionFast } }
 
-        Row {
-            id: chipRow
+        SvgIcon {
             anchors.centerIn: parent
-            spacing: Theme.spaceXs
+            iconPath: chip.iconPath
+            size: Theme.iconSize - 2
+            color: chip._iconColor
 
-            SvgIcon {
-                id: chipIcon
-                visible: chip.pending || chip.iconPath !== ""
-                iconPath: chip.pending ? "lucide/loader-circle.svg" : chip.iconPath
-                size: Theme.iconSize - 2
-                color: (chip.active || chip.pending) ? Theme.accentBlue : Theme.fgSecondary
-
-                RotationAnimator on rotation {
-                    running: chip.pending || chip.spinning
-                    from: 0
-                    to: 360
-                    duration: 1000
-                    loops: Animation.Infinite
-                }
-            }
-
-            Text {
-                text: chip.label
-                color: (chip.active || chip.pending) ? Theme.fgPrimary : Theme.fgSecondary
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontBody
-                font.weight: Theme.weightMedium
+            RotationAnimator on rotation {
+                running: chip.spinning
+                from: 0
+                to: 360
+                duration: 1000
+                loops: Animation.Infinite
             }
         }
 
@@ -448,12 +424,33 @@ Item {
 
         readonly property bool _expanded: root.expandedSsid === network.ssid
         readonly property bool _passwordRequired: network && network.secure && !network.saved && !network.current
+        readonly property bool _showInlinePassword: card._passwordRequired && card._expanded
         readonly property bool _busy: Network.networkPending(network.ssid)
                                    || (network.current && Network.pendingDisconnect)
         readonly property bool _showForget: network && network.saved && !network.current && !card._busy
+        readonly property bool _currentActionEnabled: Network.canMutate()
+                                                     && !card._busy
+                                                     && !Network.pendingDisconnect
+                                                     && Network.pendingConnectSsid === ""
+        readonly property bool _connectActionEnabled: !card._showInlinePassword && Network.canConnect(network)
+        readonly property bool _forgetActionEnabled: Network.canMutate()
+                                                    && !card._busy
+                                                    && !Network.pendingDisconnect
+                                                    && Network.pendingConnectSsid === ""
+        readonly property bool _showMetaRow: currentStateIcon.visible
+                                             || savedStateIcon.visible
+                                             || secureStateIcon.visible
+                                             || detailText.text.length > 0
+        readonly property real _actionButtonSize: Theme.iconSize + Theme.spaceLg
 
         radius: Theme.radiusSm
-        color: cardHover.containsMouse ? Theme.surfaceHover : Theme.bgSurfaceRaised
+        color: network && network.current
+               ? Theme.overlay(cardHover.containsMouse ? Theme.surfaceHover : Theme.bgSurfaceRaised,
+                               Theme.accentBlue,
+                               0.14)
+               : cardHover.containsMouse
+                 ? Theme.surfaceHover
+                 : Theme.bgSurfaceRaised
         border.color: network && network.current ? Theme.borderAccent : Theme.borderSubtle
         border.width: 1
         implicitHeight: cardCol.implicitHeight + Theme.spaceSm * 2
@@ -500,45 +497,86 @@ Item {
                         Layout.fillWidth: true
                     }
 
-                    Text {
-                        text: root._networkSubtitle(network)
-                        color: Theme.fgMuted
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSmall
-                        elide: Text.ElideRight
+                    RowLayout {
+                        visible: card._showMetaRow
+                        spacing: Theme.spaceXs
                         Layout.fillWidth: true
+
+                        SvgIcon {
+                            id: currentStateIcon
+                            visible: network && network.current
+                            iconPath: Theme.iconRadioButtonCheckedStatus
+                            size: Theme.fontSmall + 2
+                            color: Theme.accentBlue
+                        }
+
+                        SvgIcon {
+                            id: savedStateIcon
+                            visible: network && !network.current && network.saved
+                            iconPath: Theme.iconBookmarkStatus
+                            size: Theme.fontSmall + 2
+                            color: Theme.accentBlue
+                        }
+
+                        SvgIcon {
+                            id: secureStateIcon
+                            visible: network && network.secure
+                            iconPath: Theme.iconLockStatus
+                            size: Theme.fontSmall + 2
+                            color: Theme.fgMuted
+                        }
+
+                        Text {
+                            id: detailText
+                            visible: text.length > 0
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            text: root._networkDetailText(network)
+                            color: Theme.fgMuted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSmall
+                            elide: Text.ElideRight
+                        }
                     }
                 }
 
-                SvgIcon {
-                    visible: network && network.secure
-                    iconPath: "lucide/lock.svg"
-                    size: Theme.fontSmall + 2
-                    color: Theme.fgMuted
-                }
+                RowLayout {
+                    spacing: Theme.spaceXs
 
-                HeaderChip {
-                    label: Network.primaryActionLabel(network)
-                    active: network && network.current
-                    enabled: network && network.current
-                             ? !Network.pendingDisconnect
-                             : Network.canConnect(network)
-                    pending: false
-                    onClicked: root._connectNetwork(network)
-                }
+                    IconCircleButton {
+                        visible: card._busy || !card._showInlinePassword
+                        buttonSize: card._actionButtonSize
+                        iconPath: card._busy
+                                  ? Theme.iconRefreshStatus
+                                  : (network && network.current ? Theme.iconCloseStatus : Theme.iconCheckStatus)
+                        enabled: card._busy
+                                 ? false
+                                 : (network && network.current ? card._currentActionEnabled : card._connectActionEnabled)
+                        active: !card._busy
+                        spinning: card._busy
+                        onClicked: root._connectNetwork(network)
+                    }
 
-                HeaderChip {
-                    visible: card._showForget
-                    label: "Forget"
-                    enabled: true
-                    onClicked: root._forgetNetwork(network)
+                    IconCircleButton {
+                        visible: card._showForget
+                        buttonSize: card._actionButtonSize
+                        iconPath: Theme.iconDeleteStatus
+                        enabled: card._forgetActionEnabled
+                        danger: true
+                        onClicked: root._forgetNetwork(network)
+                    }
                 }
             }
 
             ColumnLayout {
-                visible: card._passwordRequired && card._expanded
+                visible: card._showInlinePassword
                 Layout.fillWidth: true
                 spacing: Theme.spaceSm
+
+                onVisibleChanged: {
+                    if (visible)
+                        passwordField.forceActiveFocus();
+                }
 
                 Rectangle {
                     Layout.fillWidth: true
@@ -586,18 +624,20 @@ Item {
 
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: Theme.spaceSm
+                    spacing: Theme.spaceXs
 
                     Item { Layout.fillWidth: true }
 
-                    HeaderChip {
-                        label: "Cancel"
+                    IconCircleButton {
+                        buttonSize: card._actionButtonSize
+                        iconPath: Theme.iconCloseStatus
                         enabled: true
                         onClicked: root._expandPassword(null)
                     }
 
-                    HeaderChip {
-                        label: "Connect"
+                    IconCircleButton {
+                        buttonSize: card._actionButtonSize
+                        iconPath: Theme.iconCheckStatus
                         enabled: root.passwordText.trim().length > 0 && Network.canConnect(card.network)
                         active: true
                         onClicked: root._connectNetwork(card.network)

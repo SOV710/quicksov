@@ -232,7 +232,8 @@ Singleton {
     readonly property string iconBatteryStatus: "material/battery_android_6_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
     readonly property string iconBatteryFullStatus: "material/battery_android_full_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
     readonly property string iconBatterySourceStatus: "material/battery_0_bar_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
-    readonly property string iconBatteryExternalPowerStatus: "material/power_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconPowerStatus: "material/power_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconBatteryExternalPowerStatus: iconPowerStatus
     readonly property string iconBatteryChargingBadgeStatus: "material/bolt_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
     readonly property string iconBatteryFullChargeBadgeStatus: "material/check_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
     readonly property string iconBatteryUnknownStatus: "material/battery_unknown_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
@@ -262,6 +263,12 @@ Singleton {
     readonly property string iconDoNotDisturbEnabledStatus: "material/bedtime_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
     readonly property string iconDoNotDisturbDisabledStatus: "material/bedtime_off_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
     readonly property string iconDeleteStatus: "material/delete_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconRefreshStatus: "material/refresh_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconFlightStatus: "material/flight_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconBookmarkStatus: "material/bookmark_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconLockStatus: "material/lock_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconCloseStatus: "material/close_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconCheckStatus: "material/check_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
 
     function batteryIconForLevel(level, chargeStatus) {
         if (chargeStatus === "fully_charged" || level >= 0.99)

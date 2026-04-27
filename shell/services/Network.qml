@@ -69,13 +69,13 @@ Singleton {
     readonly property var currentInterface: wifiConnected ? wifiInterface : wiredInterface
     readonly property string currentIpv4: root._currentIpv4()
     readonly property var networks: root._mergeNetworks(scanResults, savedNetworks, ssid, wifiConnected)
-    readonly property var currentNetworks: root.networks.filter(function(network) { return network.current; })
-    readonly property var savedVisibleNetworks: root.networks.filter(function(network) {
-        return !network.current && network.saved;
+    readonly property var savedColumnNetworks: root.networks.filter(function(network) {
+        return network.current || (network.saved && network.scanVisible && !network.current);
     })
-    readonly property var availableNetworks: root.networks.filter(function(network) {
-        return !network.current && !network.saved;
+    readonly property var availableColumnNetworks: root.networks.filter(function(network) {
+        return network.scanVisible && !network.saved && !network.current;
     })
+    readonly property int visibleNetworkCount: root.savedColumnNetworks.length + root.availableColumnNetworks.length
 
     function _copyPending() {
         var copy = ({});
@@ -344,6 +344,7 @@ Singleton {
                     flags: [],
                     secure: false,
                     securityLabel: "Open",
+                    scanVisible: false,
                     saved: false,
                     current: false
                 };
@@ -361,6 +362,7 @@ Singleton {
                 continue;
 
             var existing = ensureNetwork(scanSsid);
+            existing.scanVisible = true;
             var pct = typeof scan.signal_pct === "number" ? scan.signal_pct : -1;
             if (pct >= existing.signalPct) {
                 existing.bssid = scan.bssid || existing.bssid;
@@ -399,8 +401,6 @@ Singleton {
         list.sort(function(a, b) {
             if (a.current !== b.current)
                 return a.current ? -1 : 1;
-            if (a.saved !== b.saved)
-                return a.saved ? -1 : 1;
             if (a.signalPct !== b.signalPct)
                 return b.signalPct - a.signalPct;
             return a.ssid.localeCompare(b.ssid);
@@ -487,8 +487,8 @@ Singleton {
         if (root.scanning)
             return "Scanning nearby networks";
 
-        if (root.networks.length > 0)
-            return String(root.networks.length) + " networks available";
+        if (root.visibleNetworkCount > 0)
+            return String(root.visibleNetworkCount) + " networks available";
 
         return "Ready";
     }
