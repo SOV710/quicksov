@@ -317,9 +317,10 @@ layer-rule {
 | 数据源 | daemon `audio` service via PipeWire |
 | bar 视觉 | status capsule 内 icon-only，不显示百分比 |
 | Icon | Material volume glyph family |
-| 几何 | click docked panel；内容加载到 `MainBarPanelScene` 的 status panel slot；Applications 列表区上限收回到紧凑规格，避免默认面板过长 |
+| 几何 | click docked panel；内容加载到 `MainBarPanelScene` 的 status panel slot；Master control 使用单行 `icon + slider + percent`；Applications 列表区上限收回到紧凑规格，避免默认面板过长 |
 | 交互 | click → docked panel：大音量 slider、默认 sink 切换、per-app 音量列表；hover 滚轮 → ±5% |
 | Output selector | 顶部 current output row + expand list；展开后保留当前列表状态，切换默认 sink 不自动收起；expanded list 严格沿用后端提供的稳定顺序，不因 default sink 切换而把当前设备移到首位 |
+| Mixer rows | 每行拆为左侧固定 icon 列和右侧控件列；右侧上方是一行流标签，下方是一行 `slider + percent` |
 
 **shell / blur 规则**：
 - volume 页自己不绘制外壳；外壳由 `PanelBackgroundField` 统一负责

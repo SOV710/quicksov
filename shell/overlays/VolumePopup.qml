@@ -37,12 +37,6 @@ Item {
         return sink.description || sink.name || "Unknown output";
     }
 
-    function _streamSubtitle(stream) {
-        if (!stream || !stream.title) return "";
-        if (stream.title === stream.app_name) return "";
-        return stream.title;
-    }
-
     Connections {
         target: Audio
 
@@ -73,85 +67,76 @@ Item {
             color: Theme.bgSurfaceRaised
             border.color: Theme.borderSubtle
             border.width: 1
-            implicitHeight: masterCol.implicitHeight + Theme.spaceSm * 2
+            implicitHeight: masterRow.implicitHeight + Theme.spaceSm * 2
 
-            Column {
-                id: masterCol
+            RowLayout {
+                id: masterRow
                 anchors.fill: parent
                 anchors.margins: Theme.spaceSm
                 spacing: Theme.spaceSm
 
-                RowLayout {
-                    width: parent.width
-                    spacing: Theme.spaceSm
+                Rectangle {
+                    Layout.preferredWidth: Theme.iconSize + Theme.spaceSm
+                    Layout.preferredHeight: Theme.iconSize + Theme.spaceSm
+                    radius: Theme.radiusXs
+                    color: muteHover.hovered ? Theme.surfaceHover : "transparent"
 
-                    Rectangle {
-                        Layout.preferredWidth: Theme.iconSize + Theme.spaceSm
-                        Layout.preferredHeight: Theme.iconSize + Theme.spaceSm
-                        radius: Theme.radiusXs
-                        color: muteHover.hovered ? Theme.surfaceHover : "transparent"
-
-                        SvgIcon {
-                            anchors.centerIn: parent
-                            iconPath: Theme.volumeIconFor(Audio.muted, Audio.volume)
-                            size: Theme.iconSize
-                            color: root._hasAudio
-                                   ? (Audio.muted ? Theme.fgMuted : root._accentFor(Audio.volume))
-                                   : Theme.fgMuted
-                        }
-
-                        HoverHandler {
-                            id: muteHover
-                            enabled: Audio.defaultSink !== null
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            enabled: Audio.defaultSink !== null
-                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                            onClicked: {
-                                if (Audio.defaultSink)
-                                    Audio.setMuted(Audio.defaultSink.id, !Audio.muted);
-                            }
-                        }
-                    }
-
-                    Item {
-                        Layout.fillWidth: true
-                    }
-
-                    Text {
-                        id: masterPercent
-                        text: root._hasAudio ? root._percentText(Audio.volume) : "—"
+                    SvgIcon {
+                        anchors.centerIn: parent
+                        iconPath: Theme.volumeIconFor(Audio.muted, Audio.volume)
+                        size: Theme.iconSize
                         color: root._hasAudio
                                ? (Audio.muted ? Theme.fgMuted : root._accentFor(Audio.volume))
                                : Theme.fgMuted
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontLabel
-                        font.weight: Theme.weightMedium
-                        font.features: { "tnum": 1 }
+                    }
 
-                        MouseArea {
-                            anchors.fill: parent
-                            enabled: Audio.defaultSink !== null
-                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                            onClicked: {
-                                if (Audio.defaultSink)
-                                    Audio.setVolume(Audio.defaultSink.id, 1.0);
-                            }
+                    HoverHandler {
+                        id: muteHover
+                        enabled: Audio.defaultSink !== null
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: Audio.defaultSink !== null
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: {
+                            if (Audio.defaultSink)
+                                Audio.setMuted(Audio.defaultSink.id, !Audio.muted);
                         }
                     }
                 }
 
                 AudioSlider {
                     visible: Audio.defaultSink !== null
-                    width: parent.width
+                    Layout.fillWidth: true
                     modelValue: Audio.defaultSink ? (Audio.defaultSink.volume_pct / 100.0) : 0
                     accentColor: root._accentFor(liveValue)
                     muted: Audio.muted
                     onAdjusted: function(value) {
                         if (Audio.defaultSink)
                             Audio.setVolume(Audio.defaultSink.id, value);
+                    }
+                }
+
+                Text {
+                    id: masterPercent
+                    text: root._hasAudio ? root._percentText(Audio.volume) : "—"
+                    color: root._hasAudio
+                           ? (Audio.muted ? Theme.fgMuted : root._accentFor(Audio.volume))
+                           : Theme.fgMuted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontLabel
+                    font.weight: Theme.weightMedium
+                    font.features: { "tnum": 1 }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: Audio.defaultSink !== null
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: {
+                            if (Audio.defaultSink)
+                                Audio.setVolume(Audio.defaultSink.id, 1.0);
+                        }
                     }
                 }
             }
@@ -358,95 +343,82 @@ Item {
                     required property int stream_id
 
                     readonly property real _volume: volume_pct / 100.0
-                    readonly property string _subtitle: root._streamSubtitle({
-                        app_name: app_name,
-                        title: title
-                    })
+                    readonly property string _label: app_name || "Playback"
 
                     width: streamList.width
                     radius: Theme.radiusSm
                     color: Theme.bgSurfaceRaised
                     border.color: Theme.borderSubtle
                     border.width: 1
-                    implicitHeight: streamCol.implicitHeight + Theme.spaceSm * 2
+                    implicitHeight: streamRow.implicitHeight + Theme.spaceSm * 2
 
-                    Column {
-                        id: streamCol
+                    RowLayout {
+                        id: streamRow
                         anchors.fill: parent
                         anchors.margins: Theme.spaceSm
                         spacing: Theme.spaceSm
 
-                        RowLayout {
-                            width: parent.width
-                            spacing: Theme.spaceSm
+                        Item {
+                            Layout.alignment: Qt.AlignVCenter
+                            Layout.preferredWidth: Theme.iconSize + Theme.spaceMd
+                            Layout.preferredHeight: Theme.iconSize + Theme.spaceMd
 
-                            Item {
-                                Layout.alignment: Qt.AlignTop
-                                Layout.preferredWidth: Theme.iconSize + Theme.spaceSm
-                                Layout.preferredHeight: Theme.iconSize + Theme.spaceSm
-
-                                Image {
-                                    anchors.centerIn: parent
-                                    width: Theme.iconSize + 4
-                                    height: width
-                                    asynchronous: true
-                                    fillMode: Image.PreserveAspectFit
-                                    mipmap: true
-                                    smooth: true
-                                    source: streamDelegate.icon
-                                    visible: streamDelegate.icon !== "" && status === Image.Ready
-                                }
-                            }
-
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 2
-
-                                Text {
-                                    text: streamDelegate.app_name || "Unknown app"
-                                    color: Theme.fgPrimary
-                                    font.family: Theme.fontFamily
-                                    font.pixelSize: Theme.fontBody
-                                    font.weight: Theme.weightMedium
-                                    elide: Text.ElideRight
-                                    Layout.fillWidth: true
-                                }
-
-                                Text {
-                                    visible: streamDelegate._subtitle !== ""
-                                    text: streamDelegate._subtitle
-                                    color: Theme.fgMuted
-                                    font.family: Theme.fontFamily
-                                    font.pixelSize: Theme.fontSmall
-                                    elide: Text.ElideRight
-                                    Layout.fillWidth: true
-                                }
-                            }
-
-                            Text {
-                                id: streamPercent
-                                text: root._percentText(streamDelegate._volume)
-                                color: streamDelegate.muted ? Theme.fgMuted : root._accentFor(streamDelegate._volume)
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.fontBody
-                                font.weight: Theme.weightMedium
-                                font.features: { "tnum": 1 }
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: Audio.setStreamVolume(streamDelegate.stream_id, 1.0)
-                                }
+                            Image {
+                                anchors.centerIn: parent
+                                width: Theme.iconSize + 4
+                                height: width
+                                asynchronous: true
+                                fillMode: Image.PreserveAspectFit
+                                mipmap: true
+                                smooth: true
+                                source: streamDelegate.icon
+                                visible: streamDelegate.icon !== "" && status === Image.Ready
                             }
                         }
 
-                        AudioSlider {
-                            width: parent.width
-                            modelValue: streamDelegate.volume_pct / 100.0
-                            accentColor: root._accentFor(liveValue)
-                            muted: streamDelegate.muted
-                            onAdjusted: function(value) {
-                                Audio.setStreamVolume(streamDelegate.stream_id, value);
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.spaceXs
+
+                            Text {
+                                text: streamDelegate._label
+                                color: Theme.fgMuted
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontSmall
+                                font.weight: Theme.weightMedium
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: Theme.spaceSm
+
+                                AudioSlider {
+                                    Layout.fillWidth: true
+                                    modelValue: streamDelegate.volume_pct / 100.0
+                                    accentColor: root._accentFor(liveValue)
+                                    muted: streamDelegate.muted
+                                    onAdjusted: function(value) {
+                                        Audio.setStreamVolume(streamDelegate.stream_id, value);
+                                    }
+                                }
+
+                                Text {
+                                    id: streamPercent
+                                    text: root._percentText(streamDelegate._volume)
+                                    color: streamDelegate.muted ? Theme.fgMuted : root._accentFor(streamDelegate._volume)
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontBody
+                                    font.weight: Theme.weightMedium
+                                    font.features: { "tnum": 1 }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: Audio.setStreamVolume(streamDelegate.stream_id, 1.0)
+                                    }
+                                }
                             }
                         }
                     }
