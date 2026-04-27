@@ -259,6 +259,7 @@ Singleton {
     readonly property string iconRadioButtonCheckedStatus: "material/radio_button_checked_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
     readonly property string iconRadioButtonUncheckedStatus: "material/radio_button_unchecked_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
     readonly property string iconNotificationStatus: "material/notifications_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconDeleteStatus: "material/delete_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
 
     function batteryIconForLevel(level, chargeStatus) {
         if (chargeStatus === "fully_charged" || level >= 0.99)

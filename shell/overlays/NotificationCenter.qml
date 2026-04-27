@@ -4,6 +4,7 @@
 
 import QtQuick
 import ".."
+import "../components"
 import "../services"
 
 Item {
@@ -19,7 +20,9 @@ Item {
     property double nowMs: Date.now()
     readonly property bool directFollowActive: dragPhase === "dragging"
                                              || dragPhase === "dismiss_flyout"
+    readonly property bool hasNotifications: Notification.notificationModel.count > 0
     readonly property bool motionLocked: dragPhase !== "idle"
+    readonly property bool clearAllEnabled: root.hasNotifications && !root.motionLocked
     readonly property bool revealReady: Notification.ready
     readonly property real measuredNotificationListHeight: notificationMeasureCol.implicitHeight
 
@@ -210,7 +213,64 @@ Item {
         spacing: Theme.spaceSm
 
         Item {
-            visible: Notification.notificationModel.count === 0
+            width: parent.width
+            implicitHeight: clearAllButton.height
+
+            Item {
+                id: clearAllButton
+
+                anchors.right: parent.right
+                width: Theme.statusIconSize + Theme.spaceMd
+                height: width
+                opacity: root.clearAllEnabled ? 1 : 0.48
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: width / 2
+                    color: clearAllMouseArea.containsMouse && root.clearAllEnabled
+                           ? Theme.overlay(Theme.chromeSubtleFill, Theme.colorError, 0.16)
+                           : "transparent"
+                    border.color: root.clearAllEnabled
+                                  ? Theme.withAlpha(
+                                      clearAllMouseArea.containsMouse ? Theme.colorError : Theme.borderDefault,
+                                      clearAllMouseArea.containsMouse ? 0.48 : 0.26
+                                  )
+                                  : Theme.withAlpha(Theme.borderDefault, 0.12)
+                    border.width: 1
+
+                    Behavior on color { ColorAnimation { duration: Theme.motionFast } }
+                    Behavior on border.color { ColorAnimation { duration: Theme.motionFast } }
+                }
+
+                SvgIcon {
+                    anchors.centerIn: parent
+                    iconPath: Theme.iconDeleteStatus
+                    size: Theme.iconSize
+                    color: root.clearAllEnabled
+                           ? (clearAllMouseArea.containsMouse ? Theme.colorError : Theme.fgSecondary)
+                           : Theme.fgDisabled
+
+                    Behavior on color { ColorAnimation { duration: Theme.motionFast } }
+                }
+
+                MouseArea {
+                    id: clearAllMouseArea
+
+                    anchors.fill: parent
+                    enabled: root.clearAllEnabled
+                    hoverEnabled: true
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+
+                    onClicked: {
+                        root.expandedNotificationId = -1;
+                        Notification.dismissAll();
+                    }
+                }
+            }
+        }
+
+        Item {
+            visible: !root.hasNotifications
             width: parent.width
             implicitHeight: 72
 
@@ -227,7 +287,7 @@ Item {
         ListView {
             id: notifList
 
-            visible: Notification.notificationModel.count > 0
+            visible: root.hasNotifications
             width: parent.width
             implicitHeight: root.measuredNotificationListHeight
             height: Math.min(root.measuredNotificationListHeight, Theme.notificationListMaxHeight)
