@@ -162,13 +162,16 @@ Item {
             }
 
             HeaderChip {
-                label: Network.scanPending ? "Starting"
-                       : Network.scanning ? "Scanning"
+                label: Network.scanState === "starting" ? "Starting"
+                       : Network.scanState === "running" ? "Scanning"
                        : "Refresh"
                 iconPath: Network.scanning ? "lucide/loader-circle.svg" : "lucide/rotate-cw.svg"
-                enabled: Network.ready && Network.availability === "ready" && !Network.scanPending && !Network.scanning
-                active: Network.scanning || Network.scanPending
-                pending: Network.scanPending
+                enabled: Network.ready
+                         && Network.availability === "ready"
+                         && Network.scanState === "idle"
+                         && !Network.scanRequestPending
+                active: Network.scanState !== "idle"
+                pending: Network.scanRequestPending
                 spinning: Network.scanning
                 onClicked: Network.scan()
             }

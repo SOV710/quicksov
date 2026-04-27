@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import socket
+import time
 
 from _qsov_testlib import (
     ERR,
@@ -22,6 +24,11 @@ from _qsov_testlib import (
 REQUIRED = [
     "interface",
     "state",
+    "connection_state",
+    "scan_state",
+    "scan_started_at",
+    "scan_finished_at",
+    "scan_last_error",
     "present",
     "enabled",
     "availability",
@@ -39,6 +46,86 @@ REQUIRED = [
     "saved_networks",
     "scan_results",
 ]
+
+CONNECTION_STATES = {"disconnected", "associating", "connected", "unknown"}
+SCAN_STATES = {"idle", "starting", "running"}
+LEGACY_STATES = {"disconnected", "scanning", "associating", "connected", "unknown"}
+
+
+def _is_optional_int(value: object) -> bool:
+    return value is None or type(value) is int
+
+
+def _is_optional_str(value: object) -> bool:
+    return value is None or isinstance(value, str)
+
+
+def _recv_until_reply(client, msg_id: int, timeout: float) -> tuple[dict | None, list[dict]]:
+    sock = client.sock
+    if sock is None:
+        raise RuntimeError("socket is not connected")
+
+    original_timeout = sock.gettimeout()
+    reply = None
+    pubs: list[dict] = []
+    deadline = time.monotonic() + timeout
+    try:
+        while reply is None and time.monotonic() < deadline:
+            remaining = max(deadline - time.monotonic(), 0.05)
+            sock.settimeout(remaining)
+            try:
+                msg = client.recv_obj()
+            except (socket.timeout, TimeoutError):
+                break
+            if not isinstance(msg, dict):
+                continue
+            if msg.get("id") == msg_id:
+                reply = msg
+            elif msg.get("kind") == PUB and msg.get("topic") == "net.wifi":
+                pubs.append(msg)
+    finally:
+        sock.settimeout(original_timeout)
+
+    return reply, pubs
+
+
+def _collect_wifi_pubs(client, timeout: float, *, stop_on_idle: bool = False) -> list[dict]:
+    sock = client.sock
+    if sock is None:
+        raise RuntimeError("socket is not connected")
+
+    original_timeout = sock.gettimeout()
+    pubs: list[dict] = []
+    deadline = time.monotonic() + timeout
+    try:
+        while time.monotonic() < deadline:
+            remaining = max(deadline - time.monotonic(), 0.05)
+            sock.settimeout(remaining)
+            try:
+                msg = client.recv_obj()
+            except (socket.timeout, TimeoutError):
+                break
+            if not isinstance(msg, dict):
+                continue
+            if msg.get("kind") != PUB or msg.get("topic") != "net.wifi":
+                continue
+            pubs.append(msg)
+            payload = msg.get("payload")
+            if stop_on_idle and isinstance(payload, dict) and payload.get("scan_state") == "idle":
+                break
+    finally:
+        sock.settimeout(original_timeout)
+
+    return pubs
+
+
+def _pub_payloads(messages: list[dict]) -> list[dict]:
+    payloads: list[dict] = []
+    for msg in messages:
+        payload = msg.get("payload")
+        if isinstance(payload, dict):
+            payloads.append(payload)
+    return payloads
 
 
 def run() -> int:
@@ -65,21 +152,34 @@ def run() -> int:
         if env and assert_dict_keys(h, env.get("payload"), REQUIRED, "net.wifi snapshot"):
             snapshot = env["payload"]
             maybe_warn_unavailable(h, "net.wifi", snapshot)
-            if snapshot.get("state") in {
-                "disconnected",
-                "scanning",
-                "associating",
-                "connected",
-                "unknown",
-            }:
+            if snapshot.get("state") in LEGACY_STATES:
                 h.ok("net.wifi.state enum is valid")
             else:
                 h.error(f"net.wifi.state invalid: {snapshot!r}")
+            if snapshot.get("connection_state") in CONNECTION_STATES:
+                h.ok("net.wifi.connection_state enum is valid")
+            else:
+                h.error(f"net.wifi.connection_state invalid: {snapshot!r}")
+            if snapshot.get("scan_state") in SCAN_STATES:
+                h.ok("net.wifi.scan_state enum is valid")
+            else:
+                h.error(f"net.wifi.scan_state invalid: {snapshot!r}")
             if snapshot.get("availability") in {"ready", "disabled", "unavailable"}:
                 h.ok("net.wifi.availability enum is valid")
             else:
                 h.error(f"net.wifi.availability invalid: {snapshot!r}")
-        client.unsub("net.wifi")
+            if _is_optional_int(snapshot.get("scan_started_at")):
+                h.ok("net.wifi.scan_started_at type is valid")
+            else:
+                h.error(f"net.wifi.scan_started_at invalid: {snapshot!r}")
+            if _is_optional_int(snapshot.get("scan_finished_at")):
+                h.ok("net.wifi.scan_finished_at type is valid")
+            else:
+                h.error(f"net.wifi.scan_finished_at invalid: {snapshot!r}")
+            if _is_optional_str(snapshot.get("scan_last_error")):
+                h.ok("net.wifi.scan_last_error type is valid")
+            else:
+                h.error(f"net.wifi.scan_last_error invalid: {snapshot!r}")
 
         bad_action = client.req("net.wifi", "no_such_action", {})
         if expect_envelope(h, bad_action, kind=ERR, topic="net.wifi", code="E_ACTION_UNKNOWN"):
@@ -101,8 +201,48 @@ def run() -> int:
         if expect_envelope(h, bad_set_airplane, kind=ERR, topic="net.wifi", code="E_ACTION_PAYLOAD"):
             h.ok("net.wifi set_airplane_mode {} returns E_ACTION_PAYLOAD")
 
-        scan = client.req("net.wifi", "scan", {})
-        expect_rep_or_warn_service_err(h, scan, "net.wifi", "net.wifi scan {}")
+        scan_req_id = client.send_envelope(0, "net.wifi", "scan", {})
+        scan, scan_pubs = _recv_until_reply(client, scan_req_id, max(args.timeout, 6.0))
+        first_scan_ok = False
+        if scan is None:
+            h.error("net.wifi scan {} reply timed out")
+        else:
+            first_scan_ok = expect_rep_or_warn_service_err(h, scan, "net.wifi", "net.wifi scan {}")
+
+        second_scan_ok = False
+        second_scan_pubs: list[dict] = []
+        if first_scan_ok:
+            second_req_id = client.send_envelope(0, "net.wifi", "scan", {})
+            second_scan, second_scan_pubs = _recv_until_reply(client, second_req_id, max(args.timeout, 6.0))
+            if second_scan is None:
+                h.error("second net.wifi scan {} reply timed out")
+            else:
+                second_scan_ok = expect_rep_or_warn_service_err(
+                    h,
+                    second_scan,
+                    "net.wifi",
+                    "second net.wifi scan {}",
+                )
+
+        if first_scan_ok:
+            transition_payloads = [snapshot] if isinstance(snapshot, dict) else []
+            transition_payloads.extend(_pub_payloads(scan_pubs))
+            transition_payloads.extend(_pub_payloads(second_scan_pubs))
+
+            if any(payload.get("scan_state") in {"starting", "running"} for payload in transition_payloads):
+                h.ok("net.wifi scan pushes snapshot into starting/running state")
+            else:
+                h.error(f"net.wifi scan never reported starting/running: {transition_payloads!r}")
+
+        if first_scan_ok and second_scan_ok:
+            idle_pubs = _collect_wifi_pubs(client, max(args.timeout, 10.0), stop_on_idle=True)
+            idle_payloads = _pub_payloads(idle_pubs)
+            if any(payload.get("scan_state") == "idle" for payload in idle_payloads):
+                h.ok("net.wifi scan returns to idle after completion")
+            else:
+                h.error(f"net.wifi scan did not return to idle: {idle_payloads!r}")
+
+        client.unsub("net.wifi")
 
         if args.mutate:
             if args.ssid:

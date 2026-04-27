@@ -264,7 +264,15 @@
     "net.wifi": {
       "state_snapshot": {
         "type": "object",
-        "required": ["interface", "state"],
+        "required": [
+          "interface",
+          "state",
+          "connection_state",
+          "scan_state",
+          "scan_started_at",
+          "scan_finished_at",
+          "scan_last_error"
+        ],
         "properties": {
           "interface": { "type": "string" },
           "state": {
@@ -277,6 +285,26 @@
               "unknown"
             ]
           },
+          "connection_state": {
+            "type": "string",
+            "enum": [
+              "disconnected",
+              "associating",
+              "connected",
+              "unknown"
+            ]
+          },
+          "scan_state": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "starting",
+              "running"
+            ]
+          },
+          "scan_started_at": { "type": ["integer", "null"] },
+          "scan_finished_at": { "type": ["integer", "null"] },
+          "scan_last_error": { "type": ["string", "null"] },
           "present": { "type": "boolean" },
           "enabled": { "type": "boolean" },
           "availability": {

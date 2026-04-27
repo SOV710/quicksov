@@ -245,10 +245,25 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 ```json
 {
   "type": "object",
-  "required": ["interface", "state"],
+  "required": ["interface", "state", "connection_state", "scan_state", "scan_started_at", "scan_finished_at", "scan_last_error"],
   "properties": {
     "interface": { "type": "string", "example": "wlo1" },
-    "state":     { "type": "string", "enum": ["disconnected","scanning","associating","connected","unknown"] },
+    "state":     {
+      "type": "string",
+      "enum": ["disconnected","scanning","associating","connected","unknown"],
+      "description": "Legacy compatibility field derived from connection_state + scan_state"
+    },
+    "connection_state": {
+      "type": "string",
+      "enum": ["disconnected", "associating", "connected", "unknown"]
+    },
+    "scan_state": {
+      "type": "string",
+      "enum": ["idle", "starting", "running"]
+    },
+    "scan_started_at": { "type": ["integer","null"], "description": "Unix ms when the current or latest scan started" },
+    "scan_finished_at": { "type": ["integer","null"], "description": "Unix ms when the latest completed scan finished" },
+    "scan_last_error": { "type": ["string","null"], "description": "Most recent real scan failure; FAIL-BUSY does not populate this field" },
     "present":   { "type": "boolean", "description": "Whether the target Wi-Fi interface exists in sysfs" },
     "enabled":   { "type": "boolean", "description": "Whether Wi-Fi operations are currently enabled and usable" },
     "availability": {
@@ -307,6 +322,14 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
   }
 }
 ```
+
+兼容映射规则：
+
+- `scan_state != "idle"` → `state = "scanning"`
+- 否则 `connection_state == "associating"` → `state = "associating"`
+- 否则 `connection_state == "connected"` → `state = "connected"`
+- 否则 `connection_state == "disconnected"` → `state = "disconnected"`
+- 其他情况 → `state = "unknown"`
 
 **Actions**:
 - `scan` — 触发扫描，payload `{}`

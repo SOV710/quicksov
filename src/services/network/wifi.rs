@@ -11,7 +11,7 @@ use std::io;
 use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 use tokio::net::UnixDatagram;
@@ -44,7 +44,15 @@ pub fn spawn_wifi(cfg: &Config) -> ServiceHandle {
 }
 
 fn unavailable_snapshot(iface: &str) -> Value {
-    build_wifi_snapshot(iface, &WifiStatus::default(), &WifiStateSnapshot::default())
+    build_wifi_snapshot(
+        iface,
+        &WifiStatus::default(),
+        &WifiReadState::default(),
+        WifiScanState::Idle,
+        None,
+        None,
+        None,
+    )
 }
 
 fn resolve_wifi_control(cfg: &Config) -> (String, String) {
@@ -149,7 +157,7 @@ async fn run(
     info!(ctrl = %ctrl_path, "net.wifi service started");
 
     let mut runtime = WifiRuntime::new(ctrl_path, iface);
-    let mut last_snapshot = runtime.refresh_snapshot().await;
+    let mut last_snapshot = runtime.refresh_snapshot(true).await;
     state_tx.send_replace(last_snapshot.clone());
 
     let mut buf = vec![0u8; 4096];
@@ -174,8 +182,9 @@ async fn run(
                     match result {
                         Ok(n) => {
                             let msg = String::from_utf8_lossy(&buf[..n]);
-                            if is_relevant_wpa_event(&msg) {
-                                publish_snapshot(&mut runtime, &state_tx, &mut last_snapshot).await;
+                            if runtime.observe_wpa_event(&msg) {
+                                publish_snapshot(&mut runtime, &state_tx, &mut last_snapshot, true)
+                                    .await;
                             }
                             if runtime.cmd_sock.is_some() {
                                 runtime.event_sock = Some(event_sock);
@@ -187,7 +196,7 @@ async fn run(
                     }
                 }
                 _ = poll_interval.tick() => {
-                    publish_snapshot(&mut runtime, &state_tx, &mut last_snapshot).await;
+                    publish_snapshot(&mut runtime, &state_tx, &mut last_snapshot, true).await;
                     if runtime.cmd_sock.is_some() {
                         runtime.event_sock = Some(event_sock);
                     }
@@ -200,7 +209,7 @@ async fn run(
                     handle_request(req, &mut runtime, &state_tx, &mut last_snapshot).await;
                 }
                 _ = poll_interval.tick() => {
-                    publish_snapshot(&mut runtime, &state_tx, &mut last_snapshot).await;
+                    publish_snapshot(&mut runtime, &state_tx, &mut last_snapshot, true).await;
                 }
             }
         }
@@ -215,7 +224,8 @@ async fn handle_request(
     state_tx: &watch::Sender<Value>,
     last_snapshot: &mut Value,
 ) {
-    let result = match req.action.as_str() {
+    let action = req.action.clone();
+    let result = match action.as_str() {
         "scan" => runtime.handle_scan().await,
         "connect" => runtime.handle_connect(&req.payload).await,
         "disconnect" => runtime.handle_disconnect().await,
@@ -227,7 +237,9 @@ async fn handle_request(
         }),
     };
 
-    publish_snapshot(runtime, state_tx, last_snapshot).await;
+    let allow_scan_promotion =
+        !(action == "scan" && result.is_ok() && runtime.scan_state == WifiScanState::Starting);
+    publish_snapshot(runtime, state_tx, last_snapshot, allow_scan_promotion).await;
     req.reply.send(result).ok();
 }
 
@@ -235,20 +247,13 @@ async fn publish_snapshot(
     runtime: &mut WifiRuntime,
     state_tx: &watch::Sender<Value>,
     last_snapshot: &mut Value,
+    allow_scan_promotion: bool,
 ) {
-    let snapshot = runtime.refresh_snapshot().await;
+    let snapshot = runtime.refresh_snapshot(allow_scan_promotion).await;
     if snapshot != *last_snapshot {
         *last_snapshot = snapshot.clone();
         state_tx.send_replace(snapshot);
     }
-}
-
-fn is_relevant_wpa_event(message: &str) -> bool {
-    message.contains("CTRL-EVENT-SCAN-RESULTS")
-        || message.contains("CTRL-EVENT-CONNECTED")
-        || message.contains("CTRL-EVENT-DISCONNECTED")
-        || message.contains("CTRL-EVENT-SSID-TEMP-DISABLED")
-        || message.contains("CTRL-EVENT-SSID-REENABLED")
 }
 
 // ---------------------------------------------------------------------------
@@ -260,6 +265,10 @@ struct WifiRuntime {
     iface: String,
     cmd_sock: Option<UnixDatagram>,
     event_sock: Option<UnixDatagram>,
+    scan_state: WifiScanState,
+    scan_started_at: Option<i64>,
+    scan_finished_at: Option<i64>,
+    scan_last_error: Option<String>,
 }
 
 impl WifiRuntime {
@@ -269,6 +278,10 @@ impl WifiRuntime {
             iface,
             cmd_sock: None,
             event_sock: None,
+            scan_state: WifiScanState::Idle,
+            scan_started_at: None,
+            scan_finished_at: None,
+            scan_last_error: None,
         }
     }
 
@@ -306,32 +319,98 @@ impl WifiRuntime {
         }
     }
 
-    async fn refresh_snapshot(&mut self) -> Value {
+    fn mark_scan_starting(&mut self) {
+        self.scan_state = WifiScanState::Starting;
+        self.scan_started_at = Some(unix_ms_now());
+        self.scan_last_error = None;
+    }
+
+    fn mark_scan_running(&mut self) {
+        self.scan_state = WifiScanState::Running;
+        if self.scan_started_at.is_none() {
+            self.scan_started_at = Some(unix_ms_now());
+        }
+    }
+
+    fn mark_scan_finished(&mut self) {
+        self.scan_state = WifiScanState::Idle;
+        self.scan_finished_at = Some(unix_ms_now());
+    }
+
+    fn mark_scan_failed(&mut self, error: String) {
+        self.scan_state = WifiScanState::Idle;
+        self.scan_last_error = Some(error);
+    }
+
+    fn clear_scan_activity(&mut self) {
+        self.scan_state = WifiScanState::Idle;
+    }
+
+    fn observe_status_scan(&mut self, status_scan_active: bool) {
+        if status_scan_active {
+            self.mark_scan_running();
+        }
+    }
+
+    fn observe_wpa_event(&mut self, message: &str) -> bool {
+        let mut relevant = false;
+
+        if message.contains("CTRL-EVENT-SCAN-STARTED") {
+            self.mark_scan_running();
+            relevant = true;
+        }
+
+        if message.contains("CTRL-EVENT-SCAN-RESULTS") {
+            self.mark_scan_finished();
+            relevant = true;
+        }
+
+        relevant
+            || message.contains("CTRL-EVENT-CONNECTED")
+            || message.contains("CTRL-EVENT-DISCONNECTED")
+            || message.contains("CTRL-EVENT-SSID-TEMP-DISABLED")
+            || message.contains("CTRL-EVENT-SSID-REENABLED")
+    }
+
+    async fn refresh_snapshot(&mut self, allow_scan_promotion: bool) -> Value {
         let probe = inspect_environment(&self.iface, &self.ctrl_path);
-        let mut wifi_state = WifiStateSnapshot::default();
+        let mut wifi_state = WifiReadState::default();
         let mut ctrl_problem = None;
         let mut backend_ready = false;
 
         if probe.present {
             match self.read_wpa_state().await {
                 Ok(state) => {
+                    if allow_scan_promotion {
+                        self.observe_status_scan(state.status_scan_active);
+                    }
                     wifi_state = state;
                     backend_ready = true;
                 }
                 Err(err) => {
                     ctrl_problem = Some(availability_reason_from_wifi_error(&err));
+                    self.clear_scan_activity();
                     self.drop_sockets();
                 }
             }
         } else {
+            self.clear_scan_activity();
             self.drop_sockets();
         }
 
         let status = classify_status(&probe, backend_ready, ctrl_problem);
-        build_wifi_snapshot(&self.iface, &status, &wifi_state)
+        build_wifi_snapshot(
+            &self.iface,
+            &status,
+            &wifi_state,
+            self.scan_state,
+            self.scan_started_at,
+            self.scan_finished_at,
+            self.scan_last_error.as_deref(),
+        )
     }
 
-    async fn read_wpa_state(&mut self) -> Result<WifiStateSnapshot, WifiError> {
+    async fn read_wpa_state(&mut self) -> Result<WifiReadState, WifiError> {
         self.ensure_command_socket().await?;
 
         let sock = self.cmd_sock.as_ref().ok_or_else(|| WifiError::Io {
@@ -379,9 +458,15 @@ impl WifiRuntime {
                 msg: "wifi backend unavailable after socket setup".to_string(),
             })?;
 
-        wpa_request_scan(sock)
-            .await
-            .map_err(service_error_from_wifi_error)?;
+        match wpa_request_scan(sock).await {
+            Ok(ScanRequestOutcome::Started) => self.mark_scan_starting(),
+            Ok(ScanRequestOutcome::Busy) => self.mark_scan_running(),
+            Err(err) => {
+                let error_text = err.to_string();
+                self.mark_scan_failed(error_text);
+                return Err(service_error_from_wifi_error(err));
+            }
+        }
 
         Ok(Value::Null)
     }
@@ -601,6 +686,60 @@ impl AvailabilityReason {
             Self::BackendError => "backend_error",
             Self::Unknown => "unknown",
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum WifiConnectionState {
+    Disconnected,
+    Associating,
+    Connected,
+    #[default]
+    Unknown,
+}
+
+impl WifiConnectionState {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Disconnected => "disconnected",
+            Self::Associating => "associating",
+            Self::Connected => "connected",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum WifiScanState {
+    #[default]
+    Idle,
+    Starting,
+    Running,
+}
+
+impl WifiScanState {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Idle => "idle",
+            Self::Starting => "starting",
+            Self::Running => "running",
+        }
+    }
+}
+
+fn derive_legacy_state(
+    connection_state: WifiConnectionState,
+    scan_state: WifiScanState,
+) -> &'static str {
+    if scan_state != WifiScanState::Idle {
+        return "scanning";
+    }
+
+    match connection_state {
+        WifiConnectionState::Associating => "associating",
+        WifiConnectionState::Connected => "connected",
+        WifiConnectionState::Disconnected => "disconnected",
+        WifiConnectionState::Unknown => "unknown",
     }
 }
 
@@ -893,11 +1032,15 @@ async fn wpa_expect_ok(sock: &UnixDatagram, cmd: &str) -> Result<(), WifiError> 
     })
 }
 
-async fn wpa_request_scan(sock: &UnixDatagram) -> Result<(), WifiError> {
+async fn wpa_request_scan(sock: &UnixDatagram) -> Result<ScanRequestOutcome, WifiError> {
     let reply = wpa_cmd(sock, "SCAN").await?;
     let trimmed = reply.trim();
     if scan_reply_is_accepted(trimmed) {
-        return Ok(());
+        return Ok(if trimmed == "FAIL-BUSY" {
+            ScanRequestOutcome::Busy
+        } else {
+            ScanRequestOutcome::Started
+        });
     }
     Err(WifiError::CommandFailed {
         cmd: "SCAN".to_string(),
@@ -925,8 +1068,9 @@ fn parse_network_id(reply: &str, cmd: &str) -> Result<String, WifiError> {
 // ---------------------------------------------------------------------------
 
 #[derive(Clone, Debug, PartialEq)]
-struct WifiStateSnapshot {
-    state: String,
+struct WifiReadState {
+    connection_state: WifiConnectionState,
+    status_scan_active: bool,
     ssid: Option<String>,
     bssid: Option<String>,
     rssi_dbm: Option<i64>,
@@ -936,10 +1080,11 @@ struct WifiStateSnapshot {
     scan_results: Vec<Value>,
 }
 
-impl Default for WifiStateSnapshot {
+impl Default for WifiReadState {
     fn default() -> Self {
         Self {
-            state: "unknown".to_string(),
+            connection_state: WifiConnectionState::Unknown,
+            status_scan_active: false,
             ssid: None,
             bssid: None,
             rssi_dbm: None,
@@ -951,15 +1096,12 @@ impl Default for WifiStateSnapshot {
     }
 }
 
-async fn read_full_state(
-    sock: &UnixDatagram,
-    _iface: &str,
-) -> Result<WifiStateSnapshot, WifiError> {
+async fn read_full_state(sock: &UnixDatagram, _iface: &str) -> Result<WifiReadState, WifiError> {
     let status = wpa_cmd(sock, "STATUS").await?;
     let parsed = parse_status(&status);
 
     let wpa_state = parsed.get("wpa_state").cloned().unwrap_or_default();
-    let state_str = map_wpa_state(&wpa_state).to_string();
+    let connection_state = map_wpa_connection_state(&wpa_state);
     let ssid = parsed.get("ssid").cloned();
     let bssid = parsed.get("bssid").cloned();
     let frequency = parsed.get("freq").and_then(|s| s.parse().ok());
@@ -968,8 +1110,9 @@ async fn read_full_state(
     let saved_networks = read_saved_networks(sock).await;
     let scan_results = read_scan_results(sock).await;
 
-    Ok(WifiStateSnapshot {
-        state: state_str,
+    Ok(WifiReadState {
+        connection_state,
+        status_scan_active: wpa_state == "SCANNING",
         ssid,
         bssid,
         rssi_dbm,
@@ -980,10 +1123,29 @@ async fn read_full_state(
     })
 }
 
-fn build_wifi_snapshot(iface: &str, status: &WifiStatus, state: &WifiStateSnapshot) -> Value {
+fn build_wifi_snapshot(
+    iface: &str,
+    status: &WifiStatus,
+    state: &WifiReadState,
+    scan_state: WifiScanState,
+    scan_started_at: Option<i64>,
+    scan_finished_at: Option<i64>,
+    scan_last_error: Option<&str>,
+) -> Value {
     json_map([
         ("interface", Value::from(iface)),
-        ("state", Value::from(state.state.as_str())),
+        (
+            "state",
+            Value::from(derive_legacy_state(state.connection_state, scan_state)),
+        ),
+        (
+            "connection_state",
+            Value::from(state.connection_state.as_str()),
+        ),
+        ("scan_state", Value::from(scan_state.as_str())),
+        ("scan_started_at", opt_i64_value(scan_started_at)),
+        ("scan_finished_at", opt_i64_value(scan_finished_at)),
+        ("scan_last_error", opt_str_value(scan_last_error)),
         ("present", Value::Bool(status.present)),
         ("enabled", Value::Bool(status.enabled)),
         ("availability", Value::from(status.availability.as_str())),
@@ -1029,13 +1191,23 @@ fn opt_i64_value(value: Option<i64>) -> Value {
     }
 }
 
-fn map_wpa_state(s: &str) -> &'static str {
+fn unix_ms_now() -> i64 {
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    i64::try_from(duration.as_millis()).unwrap_or(i64::MAX)
+}
+
+fn map_wpa_connection_state(s: &str) -> WifiConnectionState {
     match s {
-        "COMPLETED" => "connected",
-        "SCANNING" => "scanning",
-        "ASSOCIATING" | "ASSOCIATED" | "4WAY_HANDSHAKE" | "GROUP_HANDSHAKE" => "associating",
-        "DISCONNECTED" | "INACTIVE" | "INTERFACE_DISABLED" => "disconnected",
-        _ => "unknown",
+        "COMPLETED" => WifiConnectionState::Connected,
+        "ASSOCIATING" | "ASSOCIATED" | "4WAY_HANDSHAKE" | "GROUP_HANDSHAKE" => {
+            WifiConnectionState::Associating
+        }
+        "DISCONNECTED" | "INACTIVE" | "INTERFACE_DISABLED" | "SCANNING" => {
+            WifiConnectionState::Disconnected
+        }
+        _ => WifiConnectionState::Unknown,
     }
 }
 
@@ -1294,11 +1466,23 @@ enum WifiError {
     CommandFailed { cmd: String, reply: String },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ScanRequestOutcome {
+    Started,
+    Busy,
+}
+
 #[cfg(test)]
 mod tests {
+    use serde_json::Value;
+
     use crate::config::{Config, NetworkConfig, ServicesConfig};
 
-    use super::{iface_from_ctrl_path, resolve_wifi_control, DEFAULT_WIFI_INTERFACE};
+    use super::{
+        build_wifi_snapshot, derive_legacy_state, iface_from_ctrl_path, resolve_wifi_control,
+        AvailabilityReason, WifiAvailability, WifiConnectionState, WifiReadState, WifiRuntime,
+        WifiScanState, WifiStatus, DEFAULT_WIFI_INTERFACE,
+    };
 
     #[test]
     fn explicit_wpa_ctrl_path_wins_over_interfaces() {
@@ -1339,6 +1523,87 @@ mod tests {
         assert!(super::scan_reply_is_accepted("OK"));
         assert!(super::scan_reply_is_accepted("FAIL-BUSY"));
         assert!(!super::scan_reply_is_accepted("FAIL"));
+    }
+
+    #[test]
+    fn legacy_state_is_derived_from_orthogonal_states() {
+        assert_eq!(
+            derive_legacy_state(WifiConnectionState::Disconnected, WifiScanState::Idle),
+            "disconnected"
+        );
+        assert_eq!(
+            derive_legacy_state(WifiConnectionState::Associating, WifiScanState::Idle),
+            "associating"
+        );
+        assert_eq!(
+            derive_legacy_state(WifiConnectionState::Connected, WifiScanState::Idle),
+            "connected"
+        );
+        assert_eq!(
+            derive_legacy_state(WifiConnectionState::Connected, WifiScanState::Running),
+            "scanning"
+        );
+        assert_eq!(
+            derive_legacy_state(WifiConnectionState::Unknown, WifiScanState::Idle),
+            "unknown"
+        );
+    }
+
+    #[test]
+    fn snapshot_exposes_connected_and_scanning_orthogonally() {
+        let status = WifiStatus {
+            present: true,
+            enabled: true,
+            availability: WifiAvailability::Ready,
+            availability_reason: AvailabilityReason::None,
+            interface_operstate: Some("up".to_string()),
+            rfkill_available: true,
+            rfkill_soft_blocked: false,
+            rfkill_hard_blocked: false,
+            airplane_mode: false,
+        };
+        let state = WifiReadState {
+            connection_state: WifiConnectionState::Connected,
+            ssid: Some("Office".to_string()),
+            ..Default::default()
+        };
+
+        let snapshot = build_wifi_snapshot(
+            "wlo1",
+            &status,
+            &state,
+            WifiScanState::Running,
+            Some(1_000),
+            Some(2_000),
+            Some("last error"),
+        );
+
+        assert_eq!(
+            snapshot.get("connection_state").and_then(Value::as_str),
+            Some("connected")
+        );
+        assert_eq!(
+            snapshot.get("scan_state").and_then(Value::as_str),
+            Some("running")
+        );
+        assert_eq!(
+            snapshot.get("state").and_then(Value::as_str),
+            Some("scanning")
+        );
+        assert_eq!(
+            snapshot.get("scan_last_error").and_then(Value::as_str),
+            Some("last error")
+        );
+    }
+
+    #[test]
+    fn scan_failure_records_last_error() {
+        let mut runtime =
+            WifiRuntime::new("/run/wpa_supplicant/wlo1".to_string(), "wlo1".to_string());
+        runtime.mark_scan_failed("FAIL-BOOM".to_string());
+
+        assert_eq!(runtime.scan_state, WifiScanState::Idle);
+        assert_eq!(runtime.scan_last_error.as_deref(), Some("FAIL-BOOM"));
     }
 
     #[test]

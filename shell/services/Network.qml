@@ -24,7 +24,9 @@ Singleton {
 
     // net.wifi snapshot
     property string interfaceName: ""
-    property string wifiState: "unknown"
+    property string scanState: "idle"
+    property double scanStartedAt: 0
+    property double scanFinishedAt: 0
     property bool present: false
     property bool enabled: false
     property string availability: "unavailable"
@@ -48,13 +50,14 @@ Singleton {
     property double pendingConnectStartedAt: 0
     property bool pendingDisconnect: false
     property double pendingDisconnectStartedAt: 0
-    property double lastScanAt: 0
 
     readonly property bool wifiAvailable: availability !== "unavailable"
+    // `scanPending` remains a short transport fallback until the daemon snapshot confirms state.
     readonly property bool scanPending: isPending("scan")
+    readonly property bool scanRequestPending: scanPending && scanState === "idle"
     readonly property bool powerPending: isPending("power")
     readonly property bool airplanePending: isPending("airplane")
-    readonly property bool scanning: wifiState === "scanning" || scanPending
+    readonly property bool scanning: scanState === "starting" || scanState === "running"
     readonly property bool isDisabled: availability === "disabled"
     readonly property bool isUnavailable: availability === "unavailable"
     readonly property bool wiredConnected: !!root._activeWiredInterface()
@@ -179,9 +182,32 @@ Singleton {
             root.status = "ok";
     }
 
+    function _legacyConnectionState(state) {
+        switch (state) {
+        case "connected":
+            return "connected";
+        case "associating":
+            return "associating";
+        case "disconnected":
+        case "scanning":
+            return "disconnected";
+        default:
+            return "unknown";
+        }
+    }
+
+    function _legacyScanState(state) {
+        return state === "scanning" ? "running" : "idle";
+    }
+
     function _onWifiSnapshot(payload) {
+        var legacyState = payload.state || "unknown";
+        var connectionState = payload.connection_state || root._legacyConnectionState(legacyState);
+
         root.interfaceName = payload.interface || "";
-        root.wifiState = payload.state || "unknown";
+        root.scanState = payload.scan_state || root._legacyScanState(legacyState);
+        root.scanStartedAt = typeof payload.scan_started_at === "number" ? payload.scan_started_at : 0;
+        root.scanFinishedAt = typeof payload.scan_finished_at === "number" ? payload.scan_finished_at : 0;
         root.present = payload.present === true;
         root.enabled = payload.enabled === true;
         root.availability = payload.availability || "unavailable";
@@ -191,15 +217,13 @@ Singleton {
         root.rfkillSoftBlocked = payload.rfkill_soft_blocked === true;
         root.rfkillHardBlocked = payload.rfkill_hard_blocked === true;
         root.airplaneMode = payload.airplane_mode === true;
-        root.wifiConnected = root.wifiState === "connected";
+        root.wifiConnected = connectionState === "connected";
         root.ssid = payload.ssid || "";
         root.signalDbm = typeof payload.rssi_dbm === "number" ? payload.rssi_dbm : 0;
         root.signalPct = typeof payload.signal_pct === "number" ? payload.signal_pct : -1;
         root.frequency = typeof payload.frequency === "number" ? payload.frequency : 0;
         root.savedNetworks = payload.saved_networks || [];
         root.scanResults = payload.scan_results || [];
-        if (root.wifiState === "scanning")
-            root.lastScanAt = Date.now();
 
         root.wifiReady = true;
         root.ready = root.linkReady && root.wifiReady;
@@ -444,6 +468,8 @@ Singleton {
                 parts.push(String(root.signalPct) + "%");
             if (root.currentIpv4 !== "")
                 parts.push(root.currentIpv4);
+            if (root.scanning)
+                parts.push("scanning");
             return parts.join(" • ");
         }
 
@@ -451,6 +477,8 @@ Singleton {
             var wired = ["Ethernet"];
             if (root.currentIpv4 !== "")
                 wired.push(root.currentIpv4);
+            if (root.scanning)
+                wired.push("scanning");
             return wired.join(" • ");
         }
 
@@ -518,17 +546,17 @@ Singleton {
     }
 
     function scan() {
-        if (!root.canMutate() || root.availability !== "ready" || root.scanPending || root.scanning)
+        if (!root.canMutate() || root.availability !== "ready" || root.scanState !== "idle" || root.scanRequestPending)
             return;
-        root.lastScanAt = Date.now();
         root._request("scan", {}, "scan", "Scanning");
     }
 
     function maybeRefreshScan() {
-        if (!root.canMutate() || root.availability !== "ready" || root.scanning)
+        if (!root.canMutate() || root.availability !== "ready" || root.scanState !== "idle" || root.scanRequestPending)
             return;
 
-        var stale = (Date.now() - root.lastScanAt) > 15000;
+        var lastScanAt = root.scanFinishedAt > 0 ? root.scanFinishedAt : root.scanStartedAt;
+        var stale = lastScanAt <= 0 || (Date.now() - lastScanAt) > 15000;
         if (root.scanResults.length === 0 || stale)
             root.scan();
     }
@@ -620,7 +648,9 @@ Singleton {
             root.lastError = "";
             root.interfaces = [];
             root.interfaceName = "";
-            root.wifiState = "unknown";
+            root.scanState = "idle";
+            root.scanStartedAt = 0;
+            root.scanFinishedAt = 0;
             root.present = false;
             root.enabled = false;
             root.availability = "unavailable";
