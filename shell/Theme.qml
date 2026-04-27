@@ -393,9 +393,9 @@ Singleton {
     function volumeIconFor(muted, level) {
         var volume = (typeof level === "number") ? Math.max(0.0, Math.min(1.0, level)) : 0.0;
         if (muted === true)
-            return iconVolumeMuteStatus;
-        if (volume <= 0.0)
             return iconVolumeOffStatus;
+        if (volume <= 0.0)
+            return iconVolumeMuteStatus;
         if (volume <= 0.5)
             return iconVolumeDownStatus;
         return iconVolumeUpStatus;
