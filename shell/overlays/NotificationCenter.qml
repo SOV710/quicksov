@@ -208,7 +208,7 @@ Item {
             top: parent.top
             left: parent.left
             right: parent.right
-            margins: Theme.spaceMd
+            margins: Theme.spaceSm
         }
         spacing: Theme.spaceSm
 
