@@ -76,15 +76,15 @@ Item {
                 spacing: Theme.spaceSm
 
                 Rectangle {
-                    Layout.preferredWidth: Theme.iconSize + Theme.spaceSm
-                    Layout.preferredHeight: Theme.iconSize + Theme.spaceSm
+                    Layout.preferredWidth: Theme.statusIconSize + Theme.spaceSm
+                    Layout.preferredHeight: Theme.statusIconSize + Theme.spaceSm
                     radius: Theme.radiusXs
                     color: muteHover.hovered ? Theme.surfaceHover : "transparent"
 
                     SvgIcon {
                         anchors.centerIn: parent
                         iconPath: Theme.volumeIconFor(Audio.muted, Audio.volume)
-                        size: Theme.iconSize
+                        size: Theme.statusIconSize + 2
                         color: root._hasAudio
                                ? (Audio.muted ? Theme.fgMuted : root._accentFor(Audio.volume))
                                : Theme.fgMuted
