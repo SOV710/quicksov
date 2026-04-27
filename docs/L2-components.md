@@ -334,10 +334,10 @@ layer-rule {
 | bar 视觉 | `bell` icon；有未读时右上角小红点；不显示数量 |
 | Icon | Material notifications glyph family |
 | 几何 | click docked panel；内容加载到 `MainBarPanelScene` 的 status panel slot；保持 content-only panel，不额外绘制外壳；通知列表区上限收回到紧凑规格 |
-| 内容 | 纯 notification 列表，无标题；顶部右上角提供圆形 `clear-all` icon button；空态仅显示 muted `No notifications` |
+| 内容 | 纯 notification 列表，无标题；顶部右上角提供两个圆形 icon button：左侧 `DND`（`bedtime_off` / `bedtime` 切换），右侧 `clear-all`；空态仅显示 muted `No notifications` |
 | 卡片 | flat card；左侧大 icon tile（优先本地图标路径，失败回退 bell glyph），右侧只保留 title + details 两层文本；右上角相对时间使用 `now / 1m / 2h / 3d` |
 | 展开 | click 卡片摘要区切换展开；同一时刻只允许一条展开；展开后显示完整 details、D-Bus action buttons、以及末尾固定 `I got it` 按钮 |
-| 删除/已读 | 提供右上角 clear-all（调用 `dismiss_all {}` 清空 daemon 中全部通知）；单条删除保留两种方式：展开态 `I got it`，或向右拖拽超过阈值后 dismiss；panel 打开即对全部未读发送 `mark_read {}`，panel 打开期间新通知也立即标记为已读 |
+| DND / 删除 / 已读 | `DND` 调用 `set_do_not_disturb { enabled }` 切换 daemon 持有状态；开启后仍接收通知、仍写入 history、仍累计 unread，但不再弹出新 toast，并立即收起当前 toast；clear-all 继续调用 `dismiss_all {}` 清空 daemon 中全部通知；单条删除保留两种方式：展开态 `I got it`，或向右拖拽超过阈值后 dismiss；panel 打开即对全部未读发送 `mark_read {}`，panel 打开期间新通知也立即标记为已读；bar 上的 notification button 不反映 DND 状态 |
 | 动效 | 右拖当前卡片时，其他卡片都会被带动，但随距离按梯度衰减；最邻近卡偏移最大，越远越弱；释放或删除后通过 spring 回弹；本轮只做位移+弹簧，不做 shader/gooey 形变 |
 
 **shell / blur 规则**：

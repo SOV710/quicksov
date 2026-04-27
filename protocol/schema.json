@@ -676,8 +676,9 @@
     "notification": {
       "state_snapshot": {
         "type": "object",
-        "required": ["unread_count", "history"],
+        "required": ["do_not_disturb", "unread_count", "history"],
         "properties": {
+          "do_not_disturb": { "type": "boolean" },
           "unread_count": { "type": "integer" },
           "history": {
             "type": "array",
@@ -766,6 +767,14 @@
           "request": {
             "type": "object",
             "properties": { "id": { "type": "integer" } }
+          },
+          "response": { "type": "null" }
+        },
+        "set_do_not_disturb": {
+          "request": {
+            "type": "object",
+            "required": ["enabled"],
+            "properties": { "enabled": { "type": "boolean" } }
           },
           "response": { "type": "null" }
         }

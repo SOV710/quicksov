@@ -220,7 +220,7 @@ ServiceHandle {
 
 - **`mpsc` 请求 channel**：router 向 service 发请求，每个请求带一个 `oneshot::Sender` 作为回复通道
 - **`watch` 状态 channel**：service 持续发布最新状态；新订阅者 clone receiver 后立即可读当前值（天然支持"订阅时立即推送快照"）；自动合并中间态（电量快速变化时 qs 只看到最新值）
-- **`broadcast` 事件 channel**（可选）：仅用于**离散、不可合并**的事件流，典型是 `notification` service——每条通知都必须送达，不能被后来的通知覆盖
+- **`broadcast` 事件 channel**（可选）：仅用于**离散、不可合并**的事件流，典型是 `notification` service——toast 需要的 `new` / `closed` 事件走这里；当 notification `do_not_disturb=true` 时，service 仍刷新 watch snapshot，但不再广播新的 `new`
 
 #### Service 的内部循环
 

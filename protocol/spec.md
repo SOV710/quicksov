@@ -463,8 +463,9 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 ```json
 {
   "type": "object",
-  "required": ["unread_count","history"],
+  "required": ["do_not_disturb","unread_count","history"],
   "properties": {
+    "do_not_disturb": { "type": "boolean" },
     "unread_count": { "type": "integer" },
     "history": {
       "type": "array",
@@ -487,7 +488,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 ```
 
 **Events** (广播通道, 非状态合并):
-- `new` — 新通知到达，payload 为单条 notification 对象
+- `new` — 新通知到达，payload 为单条 notification 对象；当 `do_not_disturb=true` 时不广播，但通知仍进入 `history` 且继续累计 `unread_count`
 - `closed` — 通知被关闭，payload `{ id: int, reason: "expired"|"dismissed"|"closed"|"undefined" }`
 
 **Actions**:
@@ -496,8 +497,9 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 - `dismiss` — payload `{ id: int }`
 - `dismiss_all` — payload `{}`
 - `mark_read` — payload `{ id?: int }`（省略即全部）
+- `set_do_not_disturb` — payload `{ enabled: boolean }`
 
-**后端**: daemon 实现 `org.freedesktop.Notifications` D-Bus server，取代 mako/dunst。
+**后端**: daemon 实现 `org.freedesktop.Notifications` D-Bus server，取代 mako/dunst；`do_not_disturb` 只保存在当前 daemon 会话，不跨重启持久化。
 
 ---
 

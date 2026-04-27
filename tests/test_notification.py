@@ -17,7 +17,7 @@ from _qsov_testlib import (
     main_guard,
 )
 
-REQUIRED = ["unread_count", "history"]
+REQUIRED = ["do_not_disturb", "unread_count", "history"]
 HISTORY_REQUIRED = ["id", "app_name", "summary", "body", "icon", "urgency", "timestamp", "actions"]
 
 
@@ -46,9 +46,15 @@ def run() -> int:
         snapshot = None
         selected_id = args.id
         selected_action_id = args.action_id
+        initial_dnd = False
         if env and assert_dict_keys(h, env.get("payload"), REQUIRED, "notification snapshot"):
             snapshot = env["payload"]
             history = snapshot.get("history")
+            if isinstance(snapshot.get("do_not_disturb"), bool):
+                initial_dnd = snapshot["do_not_disturb"]
+                h.ok("notification.do_not_disturb is a bool")
+            else:
+                h.error(f"notification.do_not_disturb invalid: {snapshot!r}")
             if isinstance(snapshot.get("unread_count"), int):
                 h.ok("notification.unread_count is an int")
             else:
@@ -75,12 +81,24 @@ def run() -> int:
         if expect_envelope(h, bad_action, kind=ERR, topic="notification", code="E_ACTION_UNKNOWN"):
             h.ok("notification unknown action returns E_ACTION_UNKNOWN")
 
-        for action in ["dismiss", "invoke_action", "invoke_action_and_dismiss"]:
+        for action in ["dismiss", "invoke_action", "invoke_action_and_dismiss", "set_do_not_disturb"]:
             reply = client.req("notification", action, {})
             if expect_envelope(h, reply, kind=ERR, topic="notification", code="E_ACTION_PAYLOAD"):
                 h.ok(f"notification {action} {{}} returns E_ACTION_PAYLOAD")
 
         if args.mutate:
+            for enabled in [True, False]:
+                reply = client.req("notification", "set_do_not_disturb", {"enabled": enabled})
+                env = expect_envelope(h, reply, kind=REP, topic="notification")
+                if env:
+                    h.ok(f"notification set_do_not_disturb {{enabled:{enabled}}} returned REP")
+
+            if initial_dnd:
+                reply = client.req("notification", "set_do_not_disturb", {"enabled": True})
+                env = expect_envelope(h, reply, kind=REP, topic="notification")
+                if env:
+                    h.ok("notification set_do_not_disturb restored initial enabled state")
+
             if args.mark_read_all:
                 reply = client.req("notification", "mark_read", {})
                 env = expect_envelope(h, reply, kind=REP, topic="notification")
