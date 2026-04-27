@@ -17,9 +17,11 @@ Singleton {
     property int _centerOpenCount: 0
     property int _toastRevisionSeed: 0
     property bool _lastDoNotDisturb: false
+    property var _queuedToastCloseIds: []
     property var _centerVisibility: ({})
 
     readonly property bool notificationCenterOpen: root._centerOpenCount > 0
+    readonly property int dndToastRetreatStaggerMs: 32
     readonly property int toastEnterPhaseMs: 24
                                            + DebugVisuals.duration(Theme.motionFast)
                                            + Math.max(
@@ -146,8 +148,23 @@ Singleton {
 
     function _syncDoNotDisturbState() {
         if (!root._lastDoNotDisturb && Notification.doNotDisturb)
-            root.clearToastState();
+            root.retreatToastsForDoNotDisturb();
         root._lastDoNotDisturb = Notification.doNotDisturb;
+    }
+
+    function _drainQueuedToastClose() {
+        if (root._queuedToastCloseIds.length === 0) {
+            toastRetreatTimer.stop();
+            return;
+        }
+
+        var nextIds = root._queuedToastCloseIds.slice();
+        var notificationId = nextIds.shift();
+        root._queuedToastCloseIds = nextIds;
+        root.beginToastClose(notificationId);
+
+        if (root._queuedToastCloseIds.length === 0)
+            toastRetreatTimer.stop();
     }
 
     function _onEvent(eventName, payload) {
@@ -165,6 +182,8 @@ Singleton {
     }
 
     function clearToastState() {
+        root._queuedToastCloseIds = [];
+        toastRetreatTimer.stop();
         toastModel.clear();
         lifecycleSweepTimer.stop();
     }
@@ -222,6 +241,29 @@ Singleton {
         Notification.invokeActionAndDismiss(notificationId, actionId);
     }
 
+    function retreatToastsForDoNotDisturb() {
+        var notificationIds = [];
+
+        for (var i = 0; i < toastModel.count; ++i)
+            notificationIds.push(toastModel.get(i).notification_id);
+
+        if (notificationIds.length === 0) {
+            root._queuedToastCloseIds = [];
+            toastRetreatTimer.stop();
+            return;
+        }
+
+        root.beginToastClose(notificationIds[0]);
+        root._queuedToastCloseIds = notificationIds.slice(1);
+
+        if (root._queuedToastCloseIds.length > 0) {
+            toastRetreatTimer.interval = root.dndToastRetreatStaggerMs;
+            toastRetreatTimer.restart();
+        } else {
+            toastRetreatTimer.stop();
+        }
+    }
+
     function upsertToast(notification) {
         if (!notification || notification.id === undefined || root.notificationCenterOpen)
             return;
@@ -269,6 +311,15 @@ Singleton {
         repeat: false
         running: false
         onTriggered: root._advanceLifecycleState(Date.now())
+    }
+
+    Timer {
+        id: toastRetreatTimer
+
+        interval: root.dndToastRetreatStaggerMs
+        repeat: true
+        running: false
+        onTriggered: root._drainQueuedToastClose()
     }
 
     Component.onCompleted: {

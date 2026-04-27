@@ -18,6 +18,7 @@ Item {
     property int expandedNotificationId: -1
     property string _uiVisibilityKey: "notification-center-" + Math.random().toString(36).slice(2)
     property double nowMs: Date.now()
+    readonly property real dndButtonProgress: Notification.doNotDisturb ? 1 : 0
     readonly property bool directFollowActive: dragPhase === "dragging"
                                              || dragPhase === "dismiss_flyout"
     readonly property bool hasNotifications: Notification.notificationModel.count > 0
@@ -202,6 +203,15 @@ Item {
         onTriggered: root.nowMs = Date.now()
     }
 
+    TextMetrics {
+        id: dndLabelMetrics
+
+        font.family: Theme.fontFamily
+        font.pixelSize: Theme.fontBody
+        font.weight: Theme.weightMedium
+        text: "DND"
+    }
+
     Column {
         id: contentCol
 
@@ -226,19 +236,48 @@ Item {
                 Item {
                     id: dndButton
 
-                    width: Theme.statusIconSize + Theme.spaceMd
-                    height: width
+                    readonly property real collapsedWidth: Theme.statusIconSize + Theme.spaceMd
+                    readonly property real expandedWidth: collapsedWidth
+                                                       + dndLabelMetrics.advanceWidth
+                                                       + Theme.spaceSm
+                                                       + Theme.spaceMd
+
+                    width: collapsedWidth + (expandedWidth - collapsedWidth) * root.dndButtonProgress
+                    height: collapsedWidth
                     opacity: root.dndToggleEnabled ? 1 : 0.48
+                    scale: dndMouseArea.pressed ? 0.98 : 1.0
+
+                    Behavior on width {
+                        NumberAnimation {
+                            duration: Theme.motionFast + 40
+                            easing.type: Easing.OutCubic
+                        }
+                    }
+
+                    Behavior on scale {
+                        NumberAnimation {
+                            duration: Theme.motionFast
+                            easing.type: Easing.OutCubic
+                        }
+                    }
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: width / 2
-                        color: dndMouseArea.containsMouse && root.dndToggleEnabled
-                               ? Theme.overlay(Theme.chromeSubtleFill, Theme.accentBlue, 0.16)
-                               : "transparent"
+                        radius: height / 2
+                        color: !root.dndToggleEnabled
+                               ? "transparent"
+                               : Notification.doNotDisturb
+                                 ? (dndMouseArea.containsMouse
+                                    ? Theme.overlay(Theme.surfaceActive, Theme.accentBlue, 0.12)
+                                    : Theme.surfaceActive)
+                                 : dndMouseArea.containsMouse
+                                   ? Theme.overlay(Theme.chromeSubtleFill, Theme.accentBlue, 0.16)
+                                   : "transparent"
                         border.color: root.dndToggleEnabled
                                       ? Theme.withAlpha(
-                                          dndMouseArea.containsMouse ? Theme.accentBlue : Theme.borderDefault,
+                                          Notification.doNotDisturb || dndMouseArea.containsMouse
+                                          ? Theme.accentBlue
+                                          : Theme.borderDefault,
                                           dndMouseArea.containsMouse ? 0.48 : 0.26
                                       )
                                       : Theme.withAlpha(Theme.borderDefault, 0.12)
@@ -248,17 +287,82 @@ Item {
                         Behavior on border.color { ColorAnimation { duration: Theme.motionFast } }
                     }
 
-                    SvgIcon {
+                    Row {
                         anchors.centerIn: parent
-                        iconPath: Notification.doNotDisturb
-                                  ? Theme.iconDoNotDisturbEnabledStatus
-                                  : Theme.iconDoNotDisturbDisabledStatus
-                        size: Theme.iconSize
-                        color: root.dndToggleEnabled
-                               ? (dndMouseArea.containsMouse ? Theme.fgPrimary : Theme.fgSecondary)
-                               : Theme.fgDisabled
+                        spacing: Theme.spaceXs
 
-                        Behavior on color { ColorAnimation { duration: Theme.motionFast } }
+                        Item {
+                            width: Theme.iconSize
+                            height: Theme.iconSize
+                            scale: 0.92 + root.dndButtonProgress * 0.12
+
+                            Behavior on scale {
+                                NumberAnimation {
+                                    duration: Theme.motionFast + 40
+                                    easing.type: Easing.OutCubic
+                                }
+                            }
+
+                            SvgIcon {
+                                anchors.centerIn: parent
+                                iconPath: Theme.iconDoNotDisturbDisabledStatus
+                                size: Theme.iconSize
+                                opacity: 1 - root.dndButtonProgress
+                                color: root.dndToggleEnabled
+                                       ? (dndMouseArea.containsMouse ? Theme.fgPrimary : Theme.fgSecondary)
+                                       : Theme.fgDisabled
+
+                                Behavior on opacity { NumberAnimation { duration: Theme.motionFast + 40 } }
+                                Behavior on color { ColorAnimation { duration: Theme.motionFast } }
+                            }
+
+                            SvgIcon {
+                                anchors.centerIn: parent
+                                iconPath: Theme.iconDoNotDisturbEnabledStatus
+                                size: Theme.iconSize
+                                opacity: root.dndButtonProgress
+                                color: root.dndToggleEnabled
+                                       ? Theme.fgPrimary
+                                       : Theme.fgDisabled
+
+                                Behavior on opacity { NumberAnimation { duration: Theme.motionFast + 40 } }
+                                Behavior on color { ColorAnimation { duration: Theme.motionFast } }
+                            }
+                        }
+
+                        Item {
+                            width: dndLabelMetrics.advanceWidth * root.dndButtonProgress
+                            height: dndButton.height
+                            clip: true
+
+                            Behavior on width {
+                                NumberAnimation {
+                                    duration: Theme.motionFast + 40
+                                    easing.type: Easing.OutCubic
+                                }
+                            }
+
+                            Text {
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "DND"
+                                color: root.dndToggleEnabled ? Theme.fgPrimary : Theme.fgDisabled
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontBody
+                                font.weight: Theme.weightMedium
+                                opacity: root.dndButtonProgress
+                                scale: 0.96 + root.dndButtonProgress * 0.04
+
+                                Behavior on opacity { NumberAnimation { duration: Theme.motionFast + 40 } }
+                                Behavior on scale {
+                                    NumberAnimation {
+                                        duration: Theme.motionFast + 40
+                                        easing.type: Easing.OutCubic
+                                    }
+                                }
+                                Behavior on color { ColorAnimation { duration: Theme.motionFast } }
+                            }
+                        }
                     }
 
                     MouseArea {
