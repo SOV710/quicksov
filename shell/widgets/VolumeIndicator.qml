@@ -15,9 +15,7 @@ Item {
 
     signal clicked()
 
-    readonly property string _iconPath: {
-        return Theme.iconVolumeStatus;
-    }
+    readonly property string _iconPath: Theme.volumeIconFor(Audio.muted, Audio.volume)
 
     readonly property color _color: Audio.muted ? Theme.fgMuted : Theme.fgPrimary
 

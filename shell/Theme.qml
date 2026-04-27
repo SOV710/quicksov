@@ -248,7 +248,16 @@ Singleton {
     readonly property string iconWifiFourStatus: "material/signal_wifi_4_bar_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
     readonly property string iconBluetoothStatus: "material/bluetooth_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
     readonly property string iconBluetoothOffStatus: "material/bluetooth_disabled_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
-    readonly property string iconVolumeStatus: "material/volume_up_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconVolumeOffStatus: "material/volume_off_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconVolumeDownStatus: "material/volume_down_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconVolumeUpStatus: "material/volume_up_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconVolumeMuteStatus: "material/volume_mute_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconVolumeStatus: iconVolumeUpStatus
+    readonly property string iconSpeakerStatus: "material/speaker_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconKeyboardArrowDownStatus: "material/keyboard_arrow_down_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconKeyboardArrowUpStatus: "material/keyboard_arrow_up_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconRadioButtonCheckedStatus: "material/radio_button_checked_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
+    readonly property string iconRadioButtonUncheckedStatus: "material/radio_button_unchecked_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
     readonly property string iconNotificationStatus: "material/notifications_24dp_E3E3E3_FILL0_wght400_GRAD0_opsz24.svg"
 
     function batteryIconForLevel(level, chargeStatus) {
@@ -379,6 +388,17 @@ Singleton {
         if (signalPct < 80)
             return iconWifiThreeStatus;
         return iconWifiFourStatus;
+    }
+
+    function volumeIconFor(muted, level) {
+        var volume = (typeof level === "number") ? Math.max(0.0, Math.min(1.0, level)) : 0.0;
+        if (muted === true)
+            return iconVolumeMuteStatus;
+        if (volume <= 0.0)
+            return iconVolumeOffStatus;
+        if (volume <= 0.5)
+            return iconVolumeDownStatus;
+        return iconVolumeUpStatus;
     }
 
     function _applySnapshot(snap) {

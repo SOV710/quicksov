@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Layouts
 import ".."
@@ -17,12 +19,10 @@ Item {
         Theme.volumePanelMaxHeight
     )
 
+    property bool outputsExpanded: false
+
     readonly property bool _hasAudio: Audio.ready && Audio.defaultSink !== null
     readonly property bool _hasMultipleSinks: Audio.sinks.length > 1
-
-    function _iconPath(muted, value) {
-        return Theme.iconVolumeStatus;
-    }
 
     function _percentText(value) {
         return Math.round(value * 100) + "%";
@@ -43,6 +43,20 @@ Item {
         return stream.title;
     }
 
+    Connections {
+        target: Audio
+
+        function onSinksChanged() {
+            if (Audio.sinks.length <= 1)
+                root.outputsExpanded = false;
+        }
+
+        function onReadyChanged() {
+            if (!Audio.ready)
+                root.outputsExpanded = false;
+        }
+    }
+
     Column {
         id: contentCol
         anchors {
@@ -52,28 +66,6 @@ Item {
             margins: Theme.spaceMd
         }
         spacing: Theme.spaceMd
-
-        RowLayout {
-            width: parent.width
-
-            Text {
-                text: "Audio"
-                color: Theme.fgPrimary
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontLabel
-                font.weight: Theme.weightSemibold
-                Layout.fillWidth: true
-            }
-
-            Text {
-                text: Audio.streamsModel.count > 0 ? String(Audio.streamsModel.count) : ""
-                visible: text !== ""
-                color: Theme.fgMuted
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontBody
-                font.features: { "tnum": 1 }
-            }
-        }
 
         Rectangle {
             width: parent.width
@@ -91,37 +83,51 @@ Item {
 
                 RowLayout {
                     width: parent.width
+                    spacing: Theme.spaceSm
 
-                    ColumnLayout {
+                    Rectangle {
+                        Layout.preferredWidth: Theme.iconSize + Theme.spaceSm
+                        Layout.preferredHeight: Theme.iconSize + Theme.spaceSm
+                        radius: Theme.radiusXs
+                        color: muteHover.hovered ? Theme.surfaceHover : "transparent"
+
+                        SvgIcon {
+                            anchors.centerIn: parent
+                            iconPath: Theme.volumeIconFor(Audio.muted, Audio.volume)
+                            size: Theme.iconSize
+                            color: root._hasAudio
+                                   ? (Audio.muted ? Theme.fgMuted : root._accentFor(Audio.volume))
+                                   : Theme.fgMuted
+                        }
+
+                        HoverHandler {
+                            id: muteHover
+                            enabled: Audio.defaultSink !== null
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: Audio.defaultSink !== null
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: {
+                                if (Audio.defaultSink)
+                                    Audio.setMuted(Audio.defaultSink.id, !Audio.muted);
+                            }
+                        }
+                    }
+
+                    Item {
                         Layout.fillWidth: true
-                        spacing: 2
-
-                        Text {
-                            text: root._sinkLabel(Audio.defaultSink)
-                            color: Theme.fgPrimary
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontBody
-                            font.weight: Theme.weightMedium
-                            elide: Text.ElideRight
-                            Layout.fillWidth: true
-                        }
-
-                        Text {
-                            text: root._hasAudio ? "Master output" : "Audio unavailable"
-                            color: Theme.fgMuted
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontSmall
-                            elide: Text.ElideRight
-                            Layout.fillWidth: true
-                        }
                     }
 
                     Text {
                         id: masterPercent
                         text: root._hasAudio ? root._percentText(Audio.volume) : "—"
-                        color: Audio.muted ? Theme.fgMuted : root._accentFor(Audio.volume)
+                        color: root._hasAudio
+                               ? (Audio.muted ? Theme.fgMuted : root._accentFor(Audio.volume))
+                               : Theme.fgMuted
                         font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontBody
+                        font.pixelSize: Theme.fontLabel
                         font.weight: Theme.weightMedium
                         font.features: { "tnum": 1 }
 
@@ -132,32 +138,6 @@ Item {
                             onClicked: {
                                 if (Audio.defaultSink)
                                     Audio.setVolume(Audio.defaultSink.id, 1.0);
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        visible: Audio.defaultSink !== null
-                        width: Theme.iconSize + Theme.spaceSm
-                        height: Theme.iconSize + Theme.spaceSm
-                        radius: Theme.radiusXs
-                        color: muteHover.containsMouse ? Theme.surfaceHover : "transparent"
-
-                        SvgIcon {
-                            anchors.centerIn: parent
-                            iconPath: root._iconPath(Audio.muted, Audio.volume)
-                            size: Theme.iconSize
-                            color: Audio.muted ? Theme.fgMuted : root._accentFor(Audio.volume)
-                        }
-
-                        HoverHandler { id: muteHover }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                if (Audio.defaultSink)
-                                    Audio.setMuted(Audio.defaultSink.id, !Audio.defaultSink.muted);
                             }
                         }
                     }
@@ -178,66 +158,160 @@ Item {
         }
 
         Column {
-            visible: root._hasMultipleSinks
             width: parent.width
-            spacing: Theme.spaceSm
+            spacing: Theme.spaceXs
 
             Text {
-                text: "Outputs"
-                color: Theme.fgSecondary
+                text: "Output"
+                color: Theme.fgMuted
                 font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontBody
+                font.pixelSize: Theme.fontSmall
                 font.weight: Theme.weightMedium
             }
 
-            Column {
+            Rectangle {
                 width: parent.width
-                spacing: Theme.spaceXs
+                radius: Theme.radiusSm
+                color: Theme.bgSurfaceRaised
+                border.color: root.outputsExpanded ? Theme.borderAccent : Theme.borderSubtle
+                border.width: 1
+                implicitHeight: outputsCol.implicitHeight + Theme.spaceSm * 2
 
-                Repeater {
-                    model: Audio.sinks
+                Column {
+                    id: outputsCol
+                    anchors.fill: parent
+                    anchors.margins: Theme.spaceSm
+                    spacing: Theme.spaceSm
 
-                    delegate: Rectangle {
-                        required property var modelData
-
-                        readonly property bool _isCurrent: Audio.defaultSink && Audio.defaultSink.name === modelData.name
-
+                    Rectangle {
                         width: parent.width
-                        radius: Theme.radiusSm
-                        color: _isCurrent ? Theme.surfaceActive : Theme.bgSurfaceRaised
-                        border.color: _isCurrent ? Theme.borderAccent : Theme.borderSubtle
-                        border.width: 1
-                        implicitHeight: sinkRow.implicitHeight + Theme.spaceSm * 2
+                        radius: Theme.radiusXs
+                        color: outputRowMouse.pressed
+                               ? Theme.surfaceActive
+                               : root.outputsExpanded
+                                 ? Theme.surfaceActive
+                               : outputHover.hovered
+                                 ? Theme.surfaceHover
+                                 : "transparent"
+                        implicitHeight: currentOutputRow.implicitHeight + Theme.spaceXs * 2
 
                         RowLayout {
-                            id: sinkRow
+                            id: currentOutputRow
                             anchors.fill: parent
-                            anchors.margins: Theme.spaceSm
+                            anchors.margins: Theme.spaceXs
+                            spacing: Theme.spaceSm
+
+                            SvgIcon {
+                                iconPath: Theme.iconSpeakerStatus
+                                size: Theme.iconSize
+                                color: Theme.fgSecondary
+                            }
 
                             Text {
-                                text: modelData.description || modelData.name || "Unknown output"
+                                text: root._sinkLabel(Audio.defaultSink)
                                 color: Theme.fgPrimary
                                 font.family: Theme.fontFamily
                                 font.pixelSize: Theme.fontBody
-                                font.weight: _isCurrent ? Theme.weightMedium : Theme.weightRegular
+                                font.weight: Theme.weightMedium
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
                             }
 
-                            Text {
-                                text: _isCurrent ? "Default" : "Use"
-                                color: _isCurrent ? Theme.accentBlue : Theme.fgMuted
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.fontSmall
-                                font.weight: _isCurrent ? Theme.weightMedium : Theme.weightRegular
+                            SvgIcon {
+                                visible: root._hasMultipleSinks
+                                iconPath: root.outputsExpanded
+                                          ? Theme.iconKeyboardArrowUpStatus
+                                          : Theme.iconKeyboardArrowDownStatus
+                                size: Theme.iconSize
+                                color: Theme.fgMuted
                             }
                         }
 
+                        HoverHandler {
+                            id: outputHover
+                            enabled: root._hasMultipleSinks
+                        }
+
                         MouseArea {
+                            id: outputRowMouse
                             anchors.fill: parent
-                            enabled: !parent._isCurrent
+                            enabled: root._hasMultipleSinks
                             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                            onClicked: Audio.setDefaultSink(modelData.id)
+                            onClicked: root.outputsExpanded = !root.outputsExpanded
+                        }
+                    }
+
+                    Rectangle {
+                        visible: root.outputsExpanded && root._hasMultipleSinks
+                        width: parent.width
+                        height: 1
+                        color: Theme.borderSubtle
+                    }
+
+                    Column {
+                        visible: root.outputsExpanded && root._hasMultipleSinks
+                        width: parent.width
+                        spacing: Theme.spaceXs
+
+                        Repeater {
+                            model: Audio.sinks
+
+                            delegate: Rectangle {
+                                id: sinkDelegate
+                                required property var modelData
+
+                                readonly property bool _isCurrent: Audio.defaultSink && Audio.defaultSink.id === modelData.id
+
+                                width: parent.width
+                                radius: Theme.radiusXs
+                                color: _isCurrent
+                                       ? Theme.surfaceActive
+                                       : sinkHover.hovered
+                                         ? Theme.surfaceHover
+                                         : "transparent"
+                                implicitHeight: sinkRow.implicitHeight + Theme.spaceXs * 2
+
+                                RowLayout {
+                                    id: sinkRow
+                                    anchors.fill: parent
+                                    anchors.margins: Theme.spaceXs
+                                    spacing: Theme.spaceSm
+
+                                    SvgIcon {
+                                        iconPath: sinkDelegate._isCurrent
+                                                  ? Theme.iconRadioButtonCheckedStatus
+                                                  : Theme.iconRadioButtonUncheckedStatus
+                                        size: Theme.iconSize
+                                        color: sinkDelegate._isCurrent ? Theme.accentBlue : Theme.fgMuted
+                                    }
+
+                                    Text {
+                                        text: root._sinkLabel(sinkDelegate.modelData)
+                                        color: Theme.fgPrimary
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: Theme.fontBody
+                                        font.weight: sinkDelegate._isCurrent ? Theme.weightMedium : Theme.weightRegular
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
+                                    }
+                                }
+
+                                HoverHandler {
+                                    id: sinkHover
+                                }
+
+                                MouseArea {
+                                    id: sinkMouse
+                                    anchors.fill: parent
+                                    enabled: !sinkDelegate._isCurrent
+                                    hoverEnabled: true
+                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    onClicked: {
+                                        Audio.setDefaultSink(sinkDelegate.modelData.id);
+                                        root.outputsExpanded = false;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -247,14 +321,6 @@ Item {
         Column {
             width: parent.width
             spacing: Theme.spaceSm
-
-            Text {
-                text: "Applications"
-                color: Theme.fgSecondary
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontBody
-                font.weight: Theme.weightMedium
-            }
 
             Item {
                 visible: Audio.streamsModel.count === 0
@@ -286,13 +352,19 @@ Item {
                 interactive: contentHeight > height
 
                 delegate: Rectangle {
+                    id: streamDelegate
                     required property string app_name
                     required property string title
+                    required property string icon
                     required property int volume_pct
                     required property bool muted
                     required property int stream_id
 
                     readonly property real _volume: volume_pct / 100.0
+                    readonly property string _subtitle: root._streamSubtitle({
+                        app_name: app_name,
+                        title: title
+                    })
 
                     width: streamList.width
                     radius: Theme.radiusSm
@@ -309,13 +381,32 @@ Item {
 
                         RowLayout {
                             width: parent.width
+                            spacing: Theme.spaceSm
+
+                            Item {
+                                Layout.alignment: Qt.AlignTop
+                                Layout.preferredWidth: Theme.iconSize + Theme.spaceSm
+                                Layout.preferredHeight: Theme.iconSize + Theme.spaceSm
+
+                                Image {
+                                    anchors.centerIn: parent
+                                    width: Theme.iconSize + 4
+                                    height: width
+                                    asynchronous: true
+                                    fillMode: Image.PreserveAspectFit
+                                    mipmap: true
+                                    smooth: true
+                                    source: streamDelegate.icon
+                                    visible: streamDelegate.icon !== "" && status === Image.Ready
+                                }
+                            }
 
                             ColumnLayout {
                                 Layout.fillWidth: true
                                 spacing: 2
 
                                 Text {
-                                    text: app_name || "Unknown app"
+                                    text: streamDelegate.app_name || "Unknown app"
                                     color: Theme.fgPrimary
                                     font.family: Theme.fontFamily
                                     font.pixelSize: Theme.fontBody
@@ -325,8 +416,8 @@ Item {
                                 }
 
                                 Text {
-                                    visible: root._streamSubtitle({ app_name: app_name, title: title }) !== ""
-                                    text: root._streamSubtitle({ app_name: app_name, title: title })
+                                    visible: streamDelegate._subtitle !== ""
+                                    text: streamDelegate._subtitle
                                     color: Theme.fgMuted
                                     font.family: Theme.fontFamily
                                     font.pixelSize: Theme.fontSmall
@@ -337,8 +428,8 @@ Item {
 
                             Text {
                                 id: streamPercent
-                                text: root._percentText(_volume)
-                                color: muted ? Theme.fgMuted : root._accentFor(_volume)
+                                text: root._percentText(streamDelegate._volume)
+                                color: streamDelegate.muted ? Theme.fgMuted : root._accentFor(streamDelegate._volume)
                                 font.family: Theme.fontFamily
                                 font.pixelSize: Theme.fontBody
                                 font.weight: Theme.weightMedium
@@ -347,18 +438,18 @@ Item {
                                 MouseArea {
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: Audio.setStreamVolume(stream_id, 1.0)
+                                    onClicked: Audio.setStreamVolume(streamDelegate.stream_id, 1.0)
                                 }
                             }
                         }
 
                         AudioSlider {
                             width: parent.width
-                            modelValue: volume_pct / 100.0
+                            modelValue: streamDelegate.volume_pct / 100.0
                             accentColor: root._accentFor(liveValue)
-                            muted: muted
+                            muted: streamDelegate.muted
                             onAdjusted: function(value) {
-                                Audio.setStreamVolume(stream_id, value);
+                                Audio.setStreamVolume(streamDelegate.stream_id, value);
                             }
                         }
                     }
@@ -476,7 +567,7 @@ Item {
 
             onCanceled: {
                 lastSentPct = -1;
-                liveValue = modelValue;
+                slider.liveValue = slider.modelValue;
             }
         }
     }
