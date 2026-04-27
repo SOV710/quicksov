@@ -364,9 +364,8 @@ Item {
                             Layout.preferredHeight: Theme.iconSize + Theme.spaceSm
 
                             Image {
-                                anchors.centerIn: parent
-                                width: Theme.iconSize + 4
-                                height: width
+                                anchors.fill: parent
+                                anchors.margins: 2
                                 asynchronous: true
                                 fillMode: Image.PreserveAspectFit
                                 mipmap: true
