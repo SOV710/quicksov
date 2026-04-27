@@ -44,17 +44,6 @@ Region {
     radius: primitives ? primitives.barRadius : 0
 
     Region {
-        x: root.primitives && root.primitives.panelActive ? root.regionX(root.primitives.neckX) : 0
-        y: root.primitives && root.primitives.panelActive ? root.regionY(root.primitives.neckY) : 0
-        width: root.primitives && root.primitives.panelActive
-               ? root.regionWidth(root.primitives.neckX, root.primitives.neckWidth)
-               : 0
-        height: root.primitives && root.primitives.panelActive
-                ? root.regionHeight(root.primitives.neckY, root.primitives.neckHeight)
-                : 0
-    }
-
-    Region {
         id: bodyRegion
 
         x: root.primitives && root.primitives.panelActive ? root.regionX(root.primitives.bodyX) : 0

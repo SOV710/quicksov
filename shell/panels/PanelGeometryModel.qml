@@ -19,7 +19,6 @@ QtObject {
     property real maxBodyHeight: 0
     property real contentImplicitHeight: 0
     property bool open: false
-    property int shoulderDepth: Theme.statusDockShoulderDepth
     property int lowerRadius: Theme.statusDockLowerRadius
     property int seamOverlap: Theme.statusDockSeamOverlap
     property real _barSceneX: 0
@@ -125,30 +124,13 @@ QtObject {
     readonly property real x: Math.max(barLeft, Math.min(barRight - panelWidth, preferredX))
     readonly property real y: Math.max(0, attachY - seamOverlap)
     readonly property real width: panelWidth
-    readonly property real height: shoulderDepth + bodyHeight
+    readonly property real height: seamOverlap + bodyHeight
     readonly property real contentX: x
-    readonly property real contentY: shoulderBottomY
+    readonly property real contentY: attachY
     readonly property real contentWidth: width
     readonly property real contentHeight: bodyHeight
     readonly property real attachY: hasBarMapping ? _barSceneY + _barSceneHeight : 0
-    readonly property real shoulderBottomY: y + shoulderDepth
-    readonly property real shoulderHeight: Math.max(0, shoulderBottomY - attachY)
-    readonly property real bodyY: contentY
-    readonly property real bodyBottomY: bodyY + bodyHeight
-    readonly property real leftShoulderWidth: Math.max(
-        0,
-        Math.min(shoulderDepth, x - barLeft)
-    )
-    readonly property real rightShoulderWidth: Math.max(
-        0,
-        Math.min(shoulderDepth, barRight - (x + width))
-    )
-    readonly property real leftShoulderTopX: x - leftShoulderWidth
-    readonly property real rightShoulderTopX: x + width + rightShoulderWidth
-    readonly property real leftAttachX: leftShoulderTopX
-    readonly property real rightAttachX: rightShoulderTopX
-    readonly property real topLeftRadius: leftShoulderWidth
-    readonly property real topRightRadius: rightShoulderWidth
+    readonly property real bodyY: y
 
     Behavior on bodyHeight {
         NumberAnimation {

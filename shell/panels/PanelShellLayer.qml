@@ -21,18 +21,6 @@ Item {
     }
 
     Rectangle {
-        x: root.primitives ? root.primitives.neckX : 0
-        y: root.primitives ? root.primitives.neckY : 0
-        width: root.primitives ? root.primitives.neckWidth : 0
-        height: root.primitives ? root.primitives.neckHeight : 0
-        color: root.color
-        visible: root.primitives
-                 && root.primitives.panelActive
-                 && width > 0
-                 && height > 0
-    }
-
-    Rectangle {
         x: root.primitives ? root.primitives.bodyX : 0
         y: root.primitives ? root.primitives.bodyY : 0
         width: root.primitives ? root.primitives.bodyWidth : 0
