@@ -106,12 +106,13 @@ Singleton {
     }
 
     function _onSnapshot(payload) {
+        // Preserve backend-provided sink/source ordering for UI selectors.
         root.sinks   = payload.sinks   || [];
         root.sources = payload.sources || [];
         root.streams = payload.streams || [];
         root._syncStreamsModel(root.streams);
 
-        // default_sink is a NAME string; resolve to the sink object in sinks[]
+        // default_sink/default_source are NAME strings; resolve them without reshuffling arrays.
         var dsName = payload.default_sink || "";
         root.defaultSink = root.sinks.find(function(s) { return s.name === dsName; }) || null;
 

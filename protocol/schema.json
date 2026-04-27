@@ -481,6 +481,7 @@
           "default_source": { "type": "string" },
           "sinks": {
             "type": "array",
+            "description": "Deterministic display order for output-device selectors. Order is stable across volume, mute, and default-sink changes and is sorted case-insensitively by description, then name, then id.",
             "items": {
               "type": "object",
               "properties": {
@@ -498,6 +499,7 @@
           },
           "sources": {
             "type": "array",
+            "description": "Same structure and stable ordering contract as sinks: case-insensitive description, then name, then id.",
             "items": {
               "type": "object",
               "properties": {

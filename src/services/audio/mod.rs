@@ -249,8 +249,8 @@ fn refresh_snapshot_blocking(apps: &AppResolver) -> Result<AudioSnapshot, AudioE
     let mut sources = collect_audio_nodes(&objects, "Audio/Source");
     let mut streams = collect_audio_streams(&objects, apps);
 
-    sort_nodes(&mut sinks, &default_sink);
-    sort_nodes(&mut sources, &default_source);
+    sort_nodes(&mut sinks);
+    sort_nodes(&mut sources);
     streams.sort_by(|lhs, rhs| {
         lhs.app_name
             .to_ascii_lowercase()
@@ -400,16 +400,15 @@ fn preferred_stream_name(props: &serde_json::Map<String, Value>) -> String {
     "Unknown app".to_string()
 }
 
-fn sort_nodes(nodes: &mut [AudioNode], default_name: &str) {
+fn sort_nodes(nodes: &mut [AudioNode]) {
     nodes.sort_by(|lhs, rhs| {
-        let lhs_default = lhs.name == default_name;
-        let rhs_default = rhs.name == default_name;
-        rhs_default
-            .cmp(&lhs_default)
+        lhs.description
+            .to_ascii_lowercase()
+            .cmp(&rhs.description.to_ascii_lowercase())
             .then_with(|| {
-                lhs.description
+                lhs.name
                     .to_ascii_lowercase()
-                    .cmp(&rhs.description.to_ascii_lowercase())
+                    .cmp(&rhs.name.to_ascii_lowercase())
             })
             .then_with(|| lhs.id.cmp(&rhs.id))
     });
@@ -647,7 +646,10 @@ enum AudioError {
 mod tests {
     use crate::config::{AudioConfig, Config, ServicesConfig};
 
-    use super::{volume_ratio_from_pct, AudioCfg, DEFAULT_AUDIO_BACKEND, MAX_VOLUME_PERCENT};
+    use super::{
+        AudioCfg, AudioNode, DEFAULT_AUDIO_BACKEND, MAX_VOLUME_PERCENT, sort_nodes,
+        volume_ratio_from_pct,
+    };
 
     #[test]
     fn unsupported_backend_falls_back_to_pipewire() {
@@ -676,6 +678,56 @@ mod tests {
         assert_eq!(
             volume_ratio_from_pct(MAX_VOLUME_PERCENT + 25),
             (MAX_VOLUME_PERCENT as f64) / 100.0
+        );
+    }
+
+    fn audio_node(id: u32, name: &str, description: &str) -> AudioNode {
+        AudioNode {
+            id,
+            name: name.to_string(),
+            description: description.to_string(),
+            volume_pct: 100,
+            muted: false,
+        }
+    }
+
+    #[test]
+    fn node_sort_order_is_independent_of_default_selection() {
+        let mut lhs_default = vec![
+            audio_node(47, "alsa_output.usb", "USB Audio"),
+            audio_node(36, "alsa_output.internal", "Built-in Audio"),
+        ];
+        let mut rhs_default = vec![
+            audio_node(36, "alsa_output.internal", "Built-in Audio"),
+            audio_node(47, "alsa_output.usb", "USB Audio"),
+        ];
+
+        sort_nodes(&mut lhs_default);
+        sort_nodes(&mut rhs_default);
+
+        assert_eq!(lhs_default, rhs_default);
+        assert_eq!(
+            lhs_default
+                .iter()
+                .map(|node| node.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["alsa_output.internal", "alsa_output.usb"]
+        );
+    }
+
+    #[test]
+    fn node_sort_uses_name_then_id_to_break_description_ties() {
+        let mut nodes = vec![
+            audio_node(41, "alsa_output.zeta", "Monitor"),
+            audio_node(39, "alsa_output.alpha", "Monitor"),
+            audio_node(35, "alsa_output.alpha", "Monitor"),
+        ];
+
+        sort_nodes(&mut nodes);
+
+        assert_eq!(
+            nodes.iter().map(|node| node.id).collect::<Vec<_>>(),
+            vec![35, 39, 41]
         );
     }
 }

@@ -296,7 +296,7 @@ qsovd/                              # Rust crate
     │   ├── bluetooth/
     │   │   └── mod.rs              # BlueZ D-Bus
     │   ├── audio/
-    │   │   └── mod.rs              # PipeWire client
+    │   │   └── mod.rs              # PipeWire snapshot loop + stable sink/source ordering
     │   ├── mpris/
     │   │   └── mod.rs              # MPRIS D-Bus 多播放器追踪
     │   ├── notification/

@@ -373,6 +373,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
     "default_source": { "type": "string" },
     "sinks": {
       "type": "array",
+      "description": "Deterministic display order for output-device selectors. Order is stable across volume/mute/default changes and is sorted case-insensitively by description, then name, then id.",
       "items": {
         "type": "object",
         "properties": {
@@ -384,7 +385,9 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
         }
       }
     },
-    "sources": { "description": "同 sinks 结构" },
+    "sources": {
+      "description": "同 sinks 结构；同样使用与 default 无关的稳定排序（description -> name -> id，大小写不敏感）"
+    },
     "streams": {
       "type": "array",
       "items": {

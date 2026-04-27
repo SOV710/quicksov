@@ -23,6 +23,17 @@ NODE_REQUIRED = ["id", "name", "description", "volume_pct", "muted"]
 STREAM_REQUIRED = ["id", "app_name", "binary", "title", "icon", "volume_pct", "muted"]
 
 
+def _canonical_node_order_key(node: dict[str, Any]) -> tuple[str, str, int]:
+    description = node.get("description")
+    name = node.get("name")
+    node_id = node.get("id")
+    return (
+        description.lower() if isinstance(description, str) else "",
+        name.lower() if isinstance(name, str) else "",
+        node_id if isinstance(node_id, int) else -1,
+    )
+
+
 def _read_snapshot(h: Harness, socket_path: str, timeout: float) -> dict[str, Any] | None:
     client, _ack = connect_and_hello(h, socket_path, timeout, "audio")
     try:
@@ -44,6 +55,13 @@ def _read_snapshot(h: Harness, socket_path: str, timeout: float) -> dict[str, An
                         assert_dict_keys(h, node, NODE_REQUIRED, f"audio.{list_name}[{idx}]")
                     else:
                         h.error(f"audio.{list_name}[{idx}] is not a map: {node!r}")
+
+                canonical = [node for node in nodes if isinstance(node, dict)]
+                h.expect(
+                    canonical == sorted(canonical, key=_canonical_node_order_key),
+                    f"audio.{list_name} uses stable backend order (description/name/id)",
+                    f"audio.{list_name} order does not match canonical description/name/id sort",
+                )
             else:
                 h.error(f"audio.{list_name} is not a list: {snapshot!r}")
 
