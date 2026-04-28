@@ -15,6 +15,21 @@ use crate::util::json_map;
 use super::error::WifiError;
 use super::model::{SavedNetworkRow, ScanRequestOutcome, WifiConnectionState, WifiReadState};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum WpaNetworkSecurity {
+    Open,
+    Psk,
+    Sae,
+    SaeTransition,
+    Unsupported,
+}
+
+impl WpaNetworkSecurity {
+    pub(super) fn requires_passphrase(self) -> bool {
+        matches!(self, Self::Psk | Self::Sae | Self::SaeTransition)
+    }
+}
+
 pub(super) struct WpaCtrlClient {
     ctrl_path: String,
     cmd_sock: Option<UnixDatagram>,
@@ -90,8 +105,8 @@ impl WpaCtrlClient {
         list_saved_networks(self.command_socket()?).await
     }
 
-    pub(super) async fn scan_result_requires_psk(&self, ssid: &str) -> bool {
-        scan_result_requires_psk(self.command_socket().ok(), ssid).await
+    pub(super) async fn scan_result_security(&self, ssid: &str) -> Option<WpaNetworkSecurity> {
+        scan_result_security(self.command_socket().ok(), ssid).await
     }
 
     pub(super) async fn add_network(&self) -> Result<String, WifiError> {
@@ -123,6 +138,42 @@ impl WpaCtrlClient {
         .await
     }
 
+    pub(super) async fn set_network_sae_password(
+        &self,
+        id: &str,
+        escaped_password: &str,
+    ) -> Result<(), WifiError> {
+        wpa_expect_ok(
+            self.command_socket()?,
+            &format!("SET_NETWORK {id} sae_password \"{escaped_password}\""),
+        )
+        .await
+    }
+
+    pub(super) async fn set_network_key_mgmt(
+        &self,
+        id: &str,
+        key_mgmt: &str,
+    ) -> Result<(), WifiError> {
+        wpa_expect_ok(
+            self.command_socket()?,
+            &format!("SET_NETWORK {id} key_mgmt {key_mgmt}"),
+        )
+        .await
+    }
+
+    pub(super) async fn set_network_ieee80211w(
+        &self,
+        id: &str,
+        value: u8,
+    ) -> Result<(), WifiError> {
+        wpa_expect_ok(
+            self.command_socket()?,
+            &format!("SET_NETWORK {id} ieee80211w {value}"),
+        )
+        .await
+    }
+
     pub(super) async fn set_network_open(&self, id: &str) -> Result<(), WifiError> {
         wpa_expect_ok(
             self.command_socket()?,
@@ -137,6 +188,19 @@ impl WpaCtrlClient {
 
     pub(super) async fn select_network(&self, id: &str) -> Result<(), WifiError> {
         wpa_expect_ok(self.command_socket()?, &format!("SELECT_NETWORK {id}")).await
+    }
+
+    pub(super) async fn set_network_disabled(
+        &self,
+        id: &str,
+        disabled: bool,
+    ) -> Result<(), WifiError> {
+        let value = if disabled { 1 } else { 0 };
+        wpa_expect_ok(
+            self.command_socket()?,
+            &format!("SET_NETWORK {id} disabled {value}"),
+        )
+        .await
     }
 
     pub(super) async fn save_config(&self) -> Result<(), WifiError> {
@@ -362,10 +426,11 @@ async fn list_saved_networks(sock: &UnixDatagram) -> Result<Vec<SavedNetworkRow>
         .collect())
 }
 
-async fn scan_result_requires_psk(sock: Option<&UnixDatagram>, ssid: &str) -> bool {
-    let Some(sock) = sock else {
-        return false;
-    };
+async fn scan_result_security(
+    sock: Option<&UnixDatagram>,
+    ssid: &str,
+) -> Option<WpaNetworkSecurity> {
+    let sock = sock?;
 
     let results = read_scan_results(sock).await;
     for result in results {
@@ -384,24 +449,40 @@ async fn scan_result_requires_psk(sock: Option<&UnixDatagram>, ssid: &str) -> bo
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
-        return flags_require_psk(&flags);
+        return Some(security_from_flags(&flags));
     }
 
-    false
+    None
 }
 
-fn flags_require_psk(flags: &[Value]) -> bool {
+pub(super) fn security_from_flags(flags: &[Value]) -> WpaNetworkSecurity {
+    let has_sae = flags_contain(flags, "SAE");
+    let has_psk = flags_contain(flags, "PSK");
+    let has_eap = flags_contain(flags, "802.1X") || flags_contain(flags, "EAP");
+    let has_wep = flags_contain(flags, "WEP");
+    let has_owe = flags_contain(flags, "OWE");
+
+    if has_sae && has_psk {
+        return WpaNetworkSecurity::SaeTransition;
+    }
+    if has_sae {
+        return WpaNetworkSecurity::Sae;
+    }
+    if has_psk {
+        return WpaNetworkSecurity::Psk;
+    }
+    if has_owe || has_eap || has_wep {
+        return WpaNetworkSecurity::Unsupported;
+    }
+    WpaNetworkSecurity::Open
+}
+
+fn flags_contain(flags: &[Value], needle: &str) -> bool {
     flags.iter().any(|flag| {
         let Some(flag) = flag.as_str() else {
             return false;
         };
-        flag.contains("WPA")
-            || flag.contains("RSN")
-            || flag.contains("PSK")
-            || flag.contains("SAE")
-            || flag.contains("WEP")
-            || flag.contains("OWE")
-            || flag.contains("802.1X")
+        flag.contains(needle)
     })
 }
 

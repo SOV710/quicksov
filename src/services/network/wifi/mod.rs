@@ -155,7 +155,10 @@ mod tests {
 
     use crate::config::{Config, NetworkConfig, ServicesConfig};
 
-    use super::client::{scan_reply_is_accepted, wpa_abort_scan, wpa_request_scan};
+    use super::client::{
+        scan_reply_is_accepted, security_from_flags, wpa_abort_scan, wpa_request_scan,
+        WpaNetworkSecurity,
+    };
     use super::model::{
         derive_legacy_state, AvailabilityReason, WifiAvailability, WifiConnectionState,
         WifiReadState, WifiScanState, WifiStatus,
@@ -220,6 +223,34 @@ mod tests {
         assert!(scan_reply_is_accepted("OK"));
         assert!(scan_reply_is_accepted("FAIL-BUSY"));
         assert!(!scan_reply_is_accepted("FAIL"));
+    }
+
+    #[test]
+    fn scan_flags_detect_sae_transition_networks() {
+        let flags = vec![
+            Value::from("WPA2-PSK+SAE-CCMP"),
+            Value::from("SAE-H2E"),
+            Value::from("ESS"),
+        ];
+
+        assert_eq!(
+            security_from_flags(&flags),
+            WpaNetworkSecurity::SaeTransition
+        );
+    }
+
+    #[test]
+    fn scan_flags_detect_pure_sae_networks() {
+        let flags = vec![Value::from("SAE-H2E"), Value::from("ESS")];
+
+        assert_eq!(security_from_flags(&flags), WpaNetworkSecurity::Sae);
+    }
+
+    #[test]
+    fn scan_flags_do_not_treat_enterprise_as_psk() {
+        let flags = vec![Value::from("WPA2-EAP-CCMP"), Value::from("ESS")];
+
+        assert_eq!(security_from_flags(&flags), WpaNetworkSecurity::Unsupported);
     }
 
     #[test]

@@ -9,7 +9,7 @@ use tokio::net::UnixDatagram;
 
 use crate::bus::ServiceError;
 
-use super::client::WpaCtrlClient;
+use super::client::{WpaCtrlClient, WpaNetworkSecurity};
 use super::command::{enabled_from_payload, escape_wpa_string, ConnectRequest, ForgetRequest};
 use super::error::{service_error_from_wifi_error, WifiError};
 use super::model::{ScanRequestOutcome, WifiReadState, WifiScanState};
@@ -178,15 +178,21 @@ impl WifiRuntime {
             .find(|network| network.ssid == request.ssid)
         {
             if let Some(key) = escaped_psk.as_deref() {
-                self.client
-                    .set_network_psk(&existing.id, key)
-                    .await
-                    .map_err(service_error_from_wifi_error)?;
+                let security = self.network_security_for_request(&request.ssid, true).await;
+                self.configure_network_security(&existing.id, &request.ssid, security, Some(key))
+                    .await?;
             }
             existing.id.clone()
         } else {
-            let secure = self.client.scan_result_requires_psk(&request.ssid).await;
-            if secure && request.psk.is_none() {
+            let security = self
+                .network_security_for_request(&request.ssid, request.psk.is_some())
+                .await;
+            if security == WpaNetworkSecurity::Unsupported {
+                return Err(ServiceError::ActionPayload {
+                    msg: format!("network '{}' uses unsupported security", request.ssid),
+                });
+            }
+            if security.requires_passphrase() && request.psk.is_none() {
                 return Err(ServiceError::ActionPayload {
                     msg: format!("network '{}' requires a psk", request.ssid),
                 });
@@ -202,20 +208,17 @@ impl WifiRuntime {
                 .await
                 .map_err(service_error_from_wifi_error)?;
 
-            if let Some(key) = escaped_psk.as_deref() {
-                self.client
-                    .set_network_psk(&id, key)
-                    .await
-                    .map_err(service_error_from_wifi_error)?;
-            } else {
-                self.client
-                    .set_network_open(&id)
-                    .await
-                    .map_err(service_error_from_wifi_error)?;
-            }
+            self.configure_network_security(&id, &request.ssid, security, escaped_psk.as_deref())
+                .await?;
 
             id
         };
+
+        let restore_enabled_ids = saved_networks
+            .iter()
+            .filter(|network| network.id != id && !network.flags.contains("[DISABLED]"))
+            .map(|network| network.id.clone())
+            .collect::<Vec<_>>();
 
         if request.save {
             self.client
@@ -229,6 +232,13 @@ impl WifiRuntime {
             .await
             .map_err(service_error_from_wifi_error)?;
 
+        for restore_id in restore_enabled_ids {
+            self.client
+                .set_network_disabled(&restore_id, false)
+                .await
+                .map_err(service_error_from_wifi_error)?;
+        }
+
         if request.save {
             self.client
                 .save_config()
@@ -237,6 +247,65 @@ impl WifiRuntime {
         }
 
         Ok(Value::Null)
+    }
+
+    async fn network_security_for_request(&self, ssid: &str, has_psk: bool) -> WpaNetworkSecurity {
+        self.client
+            .scan_result_security(ssid)
+            .await
+            .unwrap_or(if has_psk {
+                WpaNetworkSecurity::Psk
+            } else {
+                WpaNetworkSecurity::Open
+            })
+    }
+
+    async fn configure_network_security(
+        &self,
+        id: &str,
+        ssid: &str,
+        security: WpaNetworkSecurity,
+        escaped_psk: Option<&str>,
+    ) -> Result<(), ServiceError> {
+        match (security, escaped_psk) {
+            (WpaNetworkSecurity::Unsupported, _) => Err(ServiceError::ActionPayload {
+                msg: format!("network '{ssid}' uses unsupported security"),
+            }),
+            (WpaNetworkSecurity::Open, None) => self
+                .client
+                .set_network_open(id)
+                .await
+                .map_err(service_error_from_wifi_error),
+            (WpaNetworkSecurity::Open | WpaNetworkSecurity::Psk, Some(key)) => {
+                self.client
+                    .set_network_key_mgmt(id, "WPA-PSK")
+                    .await
+                    .map_err(service_error_from_wifi_error)?;
+                self.client
+                    .set_network_psk(id, key)
+                    .await
+                    .map_err(service_error_from_wifi_error)
+            }
+            (WpaNetworkSecurity::Psk, None)
+            | (WpaNetworkSecurity::Sae, None)
+            | (WpaNetworkSecurity::SaeTransition, None) => Err(ServiceError::ActionPayload {
+                msg: format!("network '{ssid}' requires a psk"),
+            }),
+            (WpaNetworkSecurity::Sae | WpaNetworkSecurity::SaeTransition, Some(key)) => {
+                self.client
+                    .set_network_key_mgmt(id, "SAE")
+                    .await
+                    .map_err(service_error_from_wifi_error)?;
+                self.client
+                    .set_network_sae_password(id, key)
+                    .await
+                    .map_err(service_error_from_wifi_error)?;
+                self.client
+                    .set_network_ieee80211w(id, 2)
+                    .await
+                    .map_err(service_error_from_wifi_error)
+            }
+        }
     }
 
     pub(super) async fn handle_disconnect(&mut self) -> Result<Value, ServiceError> {
