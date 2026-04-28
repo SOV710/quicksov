@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import QtQuick
+import Quickshell
 import Quickshell.Services.SystemTray
 import ".."
 
@@ -32,6 +33,31 @@ Item {
         height: chip.height
 
         readonly property bool _hovered: hoverHandler.hovered
+
+        function openMenu() {
+            if (!trayItem || !trayItem.hasMenu || !trayItem.menu)
+                return;
+
+            if (menuAnchor.visible) {
+                menuAnchor.close();
+                return;
+            }
+
+            menuAnchor.anchor.rect = root.QsWindow.itemRect(chip);
+            menuAnchor.open();
+        }
+
+        QsMenuAnchor {
+            id: menuAnchor
+            menu: trayItem && trayItem.hasMenu ? trayItem.menu : null
+
+            anchor {
+                window: root.QsWindow.window
+                edges: Edges.Bottom | Edges.Right
+                gravity: Edges.Bottom | Edges.Left
+                adjustment: PopupAdjustment.All
+            }
+        }
 
         Rectangle {
             id: chip
@@ -75,10 +101,10 @@ Item {
             onClicked: function(mouse) {
                 if (!trayItem) return;
                 if (mouse.button === Qt.RightButton) {
-                    if (trayItem.menu) trayItem.menu.display(Window.window, mouseX, mouseY);
+                    openMenu();
                 } else {
-                    if (!trayItem.onlyMenu) trayItem.activate(mouseX, mouseY);
-                    else if (trayItem.menu) trayItem.menu.display(Window.window, mouseX, mouseY);
+                    if (!trayItem.onlyMenu) trayItem.activate();
+                    else openMenu();
                 }
             }
         }
