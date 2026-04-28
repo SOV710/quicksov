@@ -24,7 +24,8 @@ PanelWindow {
     exclusionMode: ExclusionMode.Ignore
     exclusiveZone: 0
     aboveWindows: true
-    focusable: false
+    focusable: root.popupWantsKeyboardFocus
+    WlrLayershell.keyboardFocus: root.popupWantsKeyboardFocus ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
     color: "transparent"
     mask: popupController.anyOpen
           ? (DebugVisuals.forceShellRegionMaskWhilePopupOpen ? panelScene.shellRegion : captureMask)
@@ -88,9 +89,23 @@ PanelWindow {
         0,
         Math.min(Theme.clockPanelMaxWidth, _barAvailableWidth)
     )
+    readonly property string popupKeyboardFocusPolicy: popupController.anyOpen
+                                                       ? panelScene.currentPopupKeyboardFocusPolicy
+                                                       : "none"
+    readonly property bool popupWantsKeyboardFocus: popupKeyboardFocusPolicy === "on_demand"
 
     function closeAllPopups() {
         popupController.close();
+    }
+
+    function _schedulePopupKeyboardFocusActivation() {
+        if (!popupController.anyOpen || !root.popupWantsKeyboardFocus || !popupFocusScope.activeFocus)
+            return;
+
+        Qt.callLater(function() {
+            if (popupController.anyOpen && root.popupWantsKeyboardFocus && popupFocusScope.activeFocus)
+                panelScene.activateCurrentPopupKeyboardFocus();
+        });
     }
 
     Item {
@@ -102,6 +117,67 @@ PanelWindow {
     Region {
         id: captureMask
         item: windowBounds
+    }
+
+    FocusScope {
+        id: popupFocusScope
+        z: 1
+        anchors.fill: parent
+        focus: root.popupWantsKeyboardFocus && popupController.anyOpen
+
+        Keys.onEscapePressed: function(event) {
+            if (!popupController.anyOpen)
+                return;
+
+            if (!panelScene.handleCurrentPopupEscape())
+                root.closeAllPopups();
+
+            event.accepted = true;
+        }
+
+        onActiveFocusChanged: {
+            if (activeFocus)
+                root._schedulePopupKeyboardFocusActivation();
+        }
+
+        MainBarPanelScene {
+            id: panelScene
+            z: 1
+            anchors.fill: parent
+            barItem: barRect
+            clockTriggerItem: clockWidget
+            statusTriggerItem: statusCapsule
+            controller: popupController
+            availableWidth: root._barAvailableWidth
+            clockPreferredWidth: root._clockPreferredWidth
+            clockMaxBodyHeight: root._clockMaxBodyHeight
+            statusPreferredWidth: Theme.rightPopupWidth
+            statusMaxBodyHeight: root._statusMaxBodyHeight
+            clockContentComponent: clockPopupComponent
+            statusContentComponent: popupController.statusPopup === "battery"
+                                    ? batteryPopupComponent
+                                    : popupController.statusPopup === "network"
+                                      ? networkPopupComponent
+                                      : popupController.statusPopup === "bluetooth"
+                                        ? bluetoothPopupComponent
+                                        : popupController.statusPopup === "volume"
+                                          ? volumePopupComponent
+                                          : popupController.statusPopup === "notification"
+                                            ? notificationPopupComponent
+                                            : null
+        }
+    }
+
+    Connections {
+        target: panelScene
+
+        function onCurrentPopupSlotChanged() {
+            root._schedulePopupKeyboardFocusActivation();
+        }
+
+        function onCurrentPopupWantsKeyboardFocusChanged() {
+            root._schedulePopupKeyboardFocusActivation();
+        }
     }
 
     MouseArea {
@@ -120,33 +196,6 @@ PanelWindow {
         height: Theme.barHeight
         radius: Theme.barRadius + 1
         color: Theme.barShadowColor
-    }
-
-    MainBarPanelScene {
-        id: panelScene
-        z: 1
-        anchors.fill: parent
-        barItem: barRect
-        clockTriggerItem: clockWidget
-        statusTriggerItem: statusCapsule
-        controller: popupController
-        availableWidth: root._barAvailableWidth
-        clockPreferredWidth: root._clockPreferredWidth
-        clockMaxBodyHeight: root._clockMaxBodyHeight
-        statusPreferredWidth: Theme.rightPopupWidth
-        statusMaxBodyHeight: root._statusMaxBodyHeight
-        clockContentComponent: clockPopupComponent
-        statusContentComponent: popupController.statusPopup === "battery"
-                                ? batteryPopupComponent
-                                : popupController.statusPopup === "network"
-                                  ? networkPopupComponent
-                                  : popupController.statusPopup === "bluetooth"
-                                    ? bluetoothPopupComponent
-                                    : popupController.statusPopup === "volume"
-                                      ? volumePopupComponent
-                                      : popupController.statusPopup === "notification"
-                                        ? notificationPopupComponent
-                                        : null
     }
 
     Rectangle {

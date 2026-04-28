@@ -13,10 +13,25 @@ Item {
     property Component contentComponent: null
     property Component _retainedContentComponent: null
 
-    readonly property bool contentRevealReady: contentLoader.item && contentLoader.item.revealReady !== undefined
-                                               ? contentLoader.item.revealReady
-                                               : true
-    readonly property real rawContentImplicitHeight: contentLoader.item ? contentLoader.item.implicitHeight : 0
+    readonly property string keyboardFocusPolicy: {
+        var popupItem = contentLoader.item;
+        if (!popupItem)
+            return "none";
+        var focusPolicy = popupItem["keyboardFocusPolicy"];
+        return focusPolicy === "on_demand" ? "on_demand" : "none";
+    }
+    readonly property bool wantsKeyboardFocus: keyboardFocusPolicy === "on_demand"
+    readonly property bool contentRevealReady: {
+        var popupItem = contentLoader.item;
+        if (!popupItem)
+            return true;
+        var revealReady = popupItem["revealReady"];
+        return revealReady !== undefined ? revealReady : true;
+    }
+    readonly property real rawContentImplicitHeight: {
+        var popupItem = contentLoader.item;
+        return popupItem ? popupItem["implicitHeight"] : 0;
+    }
     readonly property real contentImplicitHeight: contentRevealReady ? rawContentImplicitHeight : 0
     readonly property real finalContentHeight: geometry ? Math.min(contentImplicitHeight, geometry.maxBodyHeight) : 0
     readonly property string transitionPhase: geometry
@@ -77,6 +92,20 @@ Item {
             opacity: root.opacity,
             slotHeight: root.height
         });
+    }
+
+    function activateKeyboardFocus() {
+        var popupItem = contentLoader.item;
+        if (!popupItem || typeof popupItem["activateKeyboardFocus"] !== "function")
+            return;
+        popupItem["activateKeyboardFocus"]();
+    }
+
+    function handleEscape() {
+        var popupItem = contentLoader.item;
+        if (!popupItem || typeof popupItem["handleEscape"] !== "function")
+            return false;
+        return popupItem["handleEscape"]() === true;
     }
 
     Loader {

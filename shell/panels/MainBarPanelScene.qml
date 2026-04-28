@@ -35,6 +35,18 @@ Item {
     readonly property alias clockPanel: clockModel
     readonly property alias statusPanel: statusModel
     readonly property alias shellRegion: shellRegionItem
+    readonly property var currentPopupSlot: clockModel.open ? clockSlot : (statusModel.open ? statusSlot : null)
+    readonly property string currentPopupKeyboardFocusPolicy: currentPopupSlot ? currentPopupSlot.keyboardFocusPolicy : "none"
+    readonly property bool currentPopupWantsKeyboardFocus: currentPopupSlot ? currentPopupSlot.wantsKeyboardFocus : false
+
+    function activateCurrentPopupKeyboardFocus() {
+        if (currentPopupSlot)
+            currentPopupSlot.activateKeyboardFocus();
+    }
+
+    function handleCurrentPopupEscape() {
+        return currentPopupSlot ? currentPopupSlot.handleEscape() : false;
+    }
 
     PanelBackgroundField {
         id: backgroundField

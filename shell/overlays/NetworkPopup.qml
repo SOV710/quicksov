@@ -16,8 +16,10 @@ Item {
 
     property string expandedSsid: ""
     property string passwordText: ""
+    property Item activePasswordField: null
 
     readonly property int _visibleNetworkCount: Network.visibleNetworkCount
+    readonly property bool _showInlinePassword: activePasswordField && activePasswordField.visible
     readonly property bool _showLoadingState: !Network.ready
     readonly property bool _showUnavailableState: Network.ready && Network.isUnavailable
     readonly property bool _showDisabledState: Network.ready && Network.isDisabled
@@ -36,6 +38,7 @@ Item {
         Theme.spaceXxl * 3,
         Theme.networkPanelMaxHeight - headerRow.implicitHeight - Theme.spaceMd * 5
     )
+    readonly property string keyboardFocusPolicy: root._showInlinePassword ? "on_demand" : "none"
 
     function _subtitle() {
         return Network.subtitle();
@@ -105,6 +108,29 @@ Item {
         if (root.expandedSsid === network.ssid)
             root._expandPassword(null);
         Network.forgetNetwork(network);
+    }
+
+    function _updateActivePasswordField(field, active) {
+        if (active) {
+            root.activePasswordField = field;
+            return;
+        }
+
+        if (root.activePasswordField === field)
+            root.activePasswordField = null;
+    }
+
+    function activateKeyboardFocus() {
+        if (root._showInlinePassword && root.activePasswordField)
+            root.activePasswordField.forceActiveFocus();
+    }
+
+    function handleEscape() {
+        if (!root._showInlinePassword)
+            return false;
+
+        root._expandPassword(null);
+        return true;
     }
 
     onVisibleChanged: {
@@ -574,8 +600,7 @@ Item {
                 spacing: Theme.spaceSm
 
                 onVisibleChanged: {
-                    if (visible)
-                        passwordField.forceActiveFocus();
+                    root._updateActivePasswordField(passwordField, visible);
                 }
 
                 Rectangle {
@@ -603,11 +628,7 @@ Item {
                             selectByMouse: true
                             onTextChanged: root.passwordText = text
                             Keys.onReturnPressed: root._connectNetwork(card.network)
-
-                            Component.onCompleted: {
-                                if (card._expanded)
-                                    forceActiveFocus();
-                            }
+                            Component.onDestruction: root._updateActivePasswordField(passwordField, false)
                         }
 
                         Text {
