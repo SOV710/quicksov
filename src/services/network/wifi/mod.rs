@@ -18,6 +18,7 @@ use crate::config::Config;
 mod client;
 mod command;
 mod error;
+mod manual;
 mod model;
 mod probe;
 mod runtime;
@@ -25,6 +26,7 @@ mod scan;
 mod service;
 mod snapshot;
 
+use manual::ManualConnectTracker;
 use model::{WifiReadState, WifiStatus};
 use scan::ScanTracker;
 use snapshot::build_wifi_snapshot;
@@ -56,6 +58,7 @@ fn unavailable_snapshot(iface: &str) -> Value {
         &WifiStatus::default(),
         &WifiReadState::default(),
         &ScanTracker::default(),
+        &ManualConnectTracker::default(),
     )
 }
 
@@ -156,9 +159,10 @@ mod tests {
     use crate::config::{Config, NetworkConfig, ServicesConfig};
 
     use super::client::{
-        scan_reply_is_accepted, security_from_flags, wpa_abort_scan, wpa_request_scan,
-        WpaNetworkSecurity,
+        enable_network_no_connect_command, read_full_state, scan_reply_is_accepted,
+        security_from_flags, wpa_abort_scan, wpa_request_scan, WpaNetworkSecurity,
     };
+    use super::manual::{ManualConnectReason, ManualConnectState, ManualConnectTracker};
     use super::model::{
         derive_legacy_state, AvailabilityReason, WifiAvailability, WifiConnectionState,
         WifiReadState, WifiScanState, WifiStatus,
@@ -179,6 +183,23 @@ mod tests {
             let command = String::from_utf8_lossy(&buf[..size]).to_string();
             assert_eq!(command, expected_cmd);
             server.send(reply.as_bytes()).await.expect("send reply");
+        });
+
+        (client, task)
+    }
+
+    async fn spawn_wpa_script(
+        script: Vec<(&'static str, &'static str)>,
+    ) -> (UnixDatagram, tokio::task::JoinHandle<()>) {
+        let (server, client) = UnixDatagram::pair().expect("create unix datagram pair");
+        let task = tokio::spawn(async move {
+            let mut buf = [0u8; 1024];
+            for (expected_cmd, reply) in script {
+                let size = server.recv(&mut buf).await.expect("receive command");
+                let command = String::from_utf8_lossy(&buf[..size]).to_string();
+                assert_eq!(command, expected_cmd);
+                server.send(reply.as_bytes()).await.expect("send reply");
+            }
         });
 
         (client, task)
@@ -304,7 +325,8 @@ mod tests {
             false,
         );
 
-        let snapshot = build_wifi_snapshot("wlo1", &status, &state, &scan);
+        let manual_connect = ManualConnectTracker::default();
+        let snapshot = build_wifi_snapshot("wlo1", &status, &state, &scan, &manual_connect);
 
         assert_eq!(
             snapshot.get("connection_state").and_then(Value::as_str),
@@ -322,6 +344,155 @@ mod tests {
             snapshot.get("scan_last_error").and_then(Value::as_str),
             Some("last error")
         );
+        assert_eq!(
+            snapshot.get("manual_connect_state").and_then(Value::as_str),
+            Some("idle")
+        );
+    }
+
+    #[tokio::test]
+    async fn status_id_is_parsed_and_exposed_as_network_id() {
+        let (client, task) = spawn_wpa_script(vec![
+            (
+                "STATUS",
+                "wpa_state=COMPLETED\nid=7\nssid=Office\nbssid=00:11:22:33:44:55\nfreq=2412\n",
+            ),
+            ("SIGNAL_POLL", "RSSI=-44\n"),
+            (
+                "LIST_NETWORKS",
+                "network id / ssid / bssid / flags\n7\tOffice\tany\t[CURRENT]\n",
+            ),
+            (
+                "SCAN_RESULTS",
+                "bssid / frequency / signal level / flags / ssid\n",
+            ),
+        ])
+        .await;
+
+        let state = read_full_state(&client).await.expect("read full state");
+        assert_eq!(state.network_id.as_deref(), Some("7"));
+
+        let status = WifiStatus {
+            present: true,
+            enabled: true,
+            availability: WifiAvailability::Ready,
+            availability_reason: AvailabilityReason::None,
+            interface_operstate: Some("up".to_string()),
+            rfkill_available: true,
+            rfkill_soft_blocked: false,
+            rfkill_hard_blocked: false,
+            airplane_mode: false,
+        };
+        let scan = ScanTracker::default();
+        let manual_connect = ManualConnectTracker::default();
+        let snapshot = build_wifi_snapshot("wlo1", &status, &state, &scan, &manual_connect);
+
+        assert_eq!(
+            snapshot.get("network_id").and_then(Value::as_str),
+            Some("7")
+        );
+        task.await.expect("server task");
+    }
+
+    #[test]
+    fn enable_network_no_connect_command_uses_wpa_no_connect_suffix() {
+        assert_eq!(
+            enable_network_no_connect_command("42"),
+            "ENABLE_NETWORK 42 no-connect"
+        );
+    }
+
+    #[tokio::test]
+    async fn manual_connect_completes_only_for_target_network_id() {
+        let mut runtime = WifiRuntime::new("/unused".to_string(), "lo".to_string());
+        runtime.start_manual_connect_for_test("7", "Office", 1_000, Vec::new());
+
+        let wrong_network = WifiReadState {
+            connection_state: WifiConnectionState::Connected,
+            network_id: Some("3".to_string()),
+            ssid: Some("Office".to_string()),
+            ..Default::default()
+        };
+        assert!(
+            !runtime
+                .reconcile_manual_connect_for_test(&wrong_network, 2_000)
+                .await
+        );
+        assert_eq!(
+            runtime.manual_connect_state(),
+            ManualConnectState::Connecting
+        );
+
+        let target_network = WifiReadState {
+            connection_state: WifiConnectionState::Connected,
+            network_id: Some("7".to_string()),
+            ssid: Some("Office".to_string()),
+            ..Default::default()
+        };
+        assert!(
+            runtime
+                .reconcile_manual_connect_for_test(&target_network, 3_000)
+                .await
+        );
+        assert_eq!(runtime.manual_connect_state(), ManualConnectState::Idle);
+    }
+
+    #[tokio::test]
+    async fn temp_disabled_event_fails_manual_connect_and_restores_enabled_networks() {
+        let (client, task) = spawn_wpa_script(vec![
+            ("ENABLE_NETWORK 1 no-connect", "OK"),
+            ("ENABLE_NETWORK 2 no-connect", "OK"),
+        ])
+        .await;
+        let mut runtime = WifiRuntime::new("/unused".to_string(), "lo".to_string());
+        runtime.set_command_socket_for_test(client);
+        runtime.start_manual_connect_for_test(
+            "7",
+            "Office",
+            1_000,
+            vec!["1".to_string(), "2".to_string()],
+        );
+
+        let relevant = runtime
+            .handle_wpa_event(
+                "<3>CTRL-EVENT-SSID-TEMP-DISABLED bssid=00:11:22:33:44:55 id=7 ssid=\"Office\" auth_failures=1",
+            )
+            .await;
+
+        assert!(relevant);
+        assert_eq!(runtime.manual_connect_state(), ManualConnectState::Failed);
+        assert_eq!(
+            runtime.manual_connect_reason(),
+            ManualConnectReason::AuthFailed
+        );
+        task.await.expect("server task");
+    }
+
+    #[tokio::test]
+    async fn manual_connect_timeout_fails_and_restores_enabled_networks() {
+        let (client, task) = spawn_wpa_script(vec![("ENABLE_NETWORK 4 no-connect", "OK")]).await;
+        let mut runtime = WifiRuntime::new("/unused".to_string(), "lo".to_string());
+        runtime.set_command_socket_for_test(client);
+        runtime.start_manual_connect_for_test("7", "Office", 1_000, vec!["4".to_string()]);
+        let state = WifiReadState {
+            connection_state: WifiConnectionState::Associating,
+            network_id: Some("7".to_string()),
+            ssid: Some("Office".to_string()),
+            ..Default::default()
+        };
+
+        assert!(
+            runtime
+                .reconcile_manual_connect_for_test(&state, 31_000)
+                .await
+        );
+        assert_eq!(runtime.manual_connect_state(), ManualConnectState::Failed);
+        assert_eq!(
+            runtime.manual_connect_reason(),
+            ManualConnectReason::Timeout
+        );
+        assert_eq!(runtime.manual_connect_target_id(), Some("7"));
+        task.await.expect("server task");
     }
 
     #[test]

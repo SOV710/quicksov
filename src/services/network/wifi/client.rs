@@ -182,25 +182,16 @@ impl WpaCtrlClient {
         .await
     }
 
-    pub(super) async fn enable_network(&self, id: &str) -> Result<(), WifiError> {
-        wpa_expect_ok(self.command_socket()?, &format!("ENABLE_NETWORK {id}")).await
+    pub(super) async fn enable_network_no_connect(&self, id: &str) -> Result<(), WifiError> {
+        wpa_expect_ok(
+            self.command_socket()?,
+            &enable_network_no_connect_command(id),
+        )
+        .await
     }
 
     pub(super) async fn select_network(&self, id: &str) -> Result<(), WifiError> {
         wpa_expect_ok(self.command_socket()?, &format!("SELECT_NETWORK {id}")).await
-    }
-
-    pub(super) async fn set_network_disabled(
-        &self,
-        id: &str,
-        disabled: bool,
-    ) -> Result<(), WifiError> {
-        let value = if disabled { 1 } else { 0 };
-        wpa_expect_ok(
-            self.command_socket()?,
-            &format!("SET_NETWORK {id} disabled {value}"),
-        )
-        .await
     }
 
     pub(super) async fn save_config(&self) -> Result<(), WifiError> {
@@ -220,6 +211,11 @@ impl WpaCtrlClient {
             context: "missing wpa_supplicant command socket after connect".to_string(),
             source: io::Error::new(io::ErrorKind::NotConnected, "command socket unavailable"),
         })
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_command_socket_for_test(&mut self, sock: UnixDatagram) {
+        self.cmd_sock = Some(sock);
     }
 }
 
@@ -311,12 +307,13 @@ fn parse_network_id(reply: &str, cmd: &str) -> Result<String, WifiError> {
     })
 }
 
-async fn read_full_state(sock: &UnixDatagram) -> Result<WifiReadState, WifiError> {
+pub(super) async fn read_full_state(sock: &UnixDatagram) -> Result<WifiReadState, WifiError> {
     let status = wpa_cmd(sock, "STATUS").await?;
     let parsed = parse_status(&status);
 
     let wpa_state = parsed.get("wpa_state").cloned().unwrap_or_default();
     let connection_state = map_wpa_connection_state(&wpa_state);
+    let network_id = parsed.get("id").cloned();
     let ssid = parsed.get("ssid").cloned();
     let bssid = parsed.get("bssid").cloned();
     let frequency = parsed.get("freq").and_then(|s| s.parse().ok());
@@ -328,6 +325,7 @@ async fn read_full_state(sock: &UnixDatagram) -> Result<WifiReadState, WifiError
     Ok(WifiReadState {
         connection_state,
         status_scan_active: wpa_state == "SCANNING",
+        network_id,
         ssid,
         bssid,
         rssi_dbm,
@@ -336,6 +334,10 @@ async fn read_full_state(sock: &UnixDatagram) -> Result<WifiReadState, WifiError
         saved_networks,
         scan_results,
     })
+}
+
+pub(super) fn enable_network_no_connect_command(id: &str) -> String {
+    format!("ENABLE_NETWORK {id} no-connect")
 }
 
 fn map_wpa_connection_state(s: &str) -> WifiConnectionState {

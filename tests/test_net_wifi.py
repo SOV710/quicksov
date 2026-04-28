@@ -29,6 +29,10 @@ REQUIRED = [
     "scan_started_at",
     "scan_finished_at",
     "scan_last_error",
+    "manual_connect_state",
+    "manual_connect_ssid",
+    "manual_connect_reason",
+    "manual_connect_started_at",
     "present",
     "enabled",
     "availability",
@@ -38,6 +42,7 @@ REQUIRED = [
     "rfkill_soft_blocked",
     "rfkill_hard_blocked",
     "airplane_mode",
+    "network_id",
     "ssid",
     "bssid",
     "rssi_dbm",
@@ -49,6 +54,8 @@ REQUIRED = [
 
 CONNECTION_STATES = {"disconnected", "associating", "connected", "unknown"}
 SCAN_STATES = {"idle", "starting", "running"}
+MANUAL_CONNECT_STATES = {"idle", "connecting", "failed"}
+MANUAL_CONNECT_REASONS = {"none", "auth_failed", "timeout", "backend_error"}
 LEGACY_STATES = {"disconnected", "scanning", "associating", "connected", "unknown"}
 
 
@@ -180,6 +187,26 @@ def run() -> int:
                 h.ok("net.wifi.scan_last_error type is valid")
             else:
                 h.error(f"net.wifi.scan_last_error invalid: {snapshot!r}")
+            if snapshot.get("manual_connect_state") in MANUAL_CONNECT_STATES:
+                h.ok("net.wifi.manual_connect_state enum is valid")
+            else:
+                h.error(f"net.wifi.manual_connect_state invalid: {snapshot!r}")
+            if _is_optional_str(snapshot.get("manual_connect_ssid")):
+                h.ok("net.wifi.manual_connect_ssid type is valid")
+            else:
+                h.error(f"net.wifi.manual_connect_ssid invalid: {snapshot!r}")
+            if snapshot.get("manual_connect_reason") in MANUAL_CONNECT_REASONS:
+                h.ok("net.wifi.manual_connect_reason enum is valid")
+            else:
+                h.error(f"net.wifi.manual_connect_reason invalid: {snapshot!r}")
+            if _is_optional_int(snapshot.get("manual_connect_started_at")):
+                h.ok("net.wifi.manual_connect_started_at type is valid")
+            else:
+                h.error(f"net.wifi.manual_connect_started_at invalid: {snapshot!r}")
+            if _is_optional_str(snapshot.get("network_id")):
+                h.ok("net.wifi.network_id type is valid")
+            else:
+                h.error(f"net.wifi.network_id invalid: {snapshot!r}")
 
         bad_action = client.req("net.wifi", "no_such_action", {})
         if expect_envelope(h, bad_action, kind=ERR, topic="net.wifi", code="E_ACTION_UNKNOWN"):

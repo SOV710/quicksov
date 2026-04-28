@@ -48,7 +48,7 @@ pub(super) async fn run(
                     match result {
                         Ok(n) => {
                             let msg = String::from_utf8_lossy(&buf[..n]);
-                            if runtime.observe_wpa_event(&msg) {
+                            if runtime.handle_wpa_event(&msg).await {
                                 publish_snapshot(&mut runtime, &state_tx, &mut last_snapshot, true)
                                     .await;
                             }

@@ -3,15 +3,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::process::{Command, Output};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 use tokio::net::UnixDatagram;
+use tracing::warn;
 
 use crate::bus::ServiceError;
 
 use super::client::{WpaCtrlClient, WpaNetworkSecurity};
 use super::command::{enabled_from_payload, escape_wpa_string, ConnectRequest, ForgetRequest};
 use super::error::{service_error_from_wifi_error, WifiError};
+use super::manual::{ManualConnectOutcome, ManualConnectTracker};
+#[cfg(test)]
+use super::manual::{ManualConnectReason, ManualConnectState};
 use super::model::{ScanRequestOutcome, WifiReadState, WifiScanState};
 use super::probe::{availability_reason_from_wifi_error, classify_status, inspect_environment};
 use super::scan::ScanTracker;
@@ -21,6 +26,7 @@ pub(super) struct WifiRuntime {
     iface: String,
     client: WpaCtrlClient,
     pub(super) scan: ScanTracker,
+    manual_connect: ManualConnectTracker,
 }
 
 impl WifiRuntime {
@@ -29,6 +35,7 @@ impl WifiRuntime {
             iface,
             client: WpaCtrlClient::new(ctrl_path),
             scan: ScanTracker::default(),
+            manual_connect: ManualConnectTracker::default(),
         }
     }
 
@@ -81,8 +88,17 @@ impl WifiRuntime {
         self.scan.observe_status_scan(status_scan_active);
     }
 
+    #[cfg(test)]
     pub(super) fn observe_wpa_event(&mut self, message: &str) -> bool {
         self.scan.observe_wpa_event(message)
+    }
+
+    pub(super) async fn handle_wpa_event(&mut self, message: &str) -> bool {
+        let scan_relevant = self.scan.observe_wpa_event(message);
+        let manual_outcome = self.manual_connect.observe_wpa_event(message);
+        let manual_relevant = manual_outcome.changed();
+        self.apply_manual_connect_outcome(manual_outcome).await;
+        scan_relevant || manual_relevant
     }
 
     pub(super) fn finish_scan_start(
@@ -110,6 +126,51 @@ impl WifiRuntime {
         self.scan.mark_runtime_failed(error);
     }
 
+    #[cfg(test)]
+    pub(super) fn set_command_socket_for_test(&mut self, sock: UnixDatagram) {
+        self.client.set_command_socket_for_test(sock);
+    }
+
+    #[cfg(test)]
+    pub(super) fn start_manual_connect_for_test(
+        &mut self,
+        target_id: &str,
+        target_ssid: &str,
+        started_at: i64,
+        restore_enabled_ids: Vec<String>,
+    ) {
+        self.manual_connect.start(
+            target_id.to_string(),
+            target_ssid.to_string(),
+            started_at,
+            restore_enabled_ids,
+        );
+    }
+
+    #[cfg(test)]
+    pub(super) fn manual_connect_state(&self) -> ManualConnectState {
+        self.manual_connect.state()
+    }
+
+    #[cfg(test)]
+    pub(super) fn manual_connect_reason(&self) -> ManualConnectReason {
+        self.manual_connect.reason()
+    }
+
+    #[cfg(test)]
+    pub(super) fn manual_connect_target_id(&self) -> Option<&str> {
+        self.manual_connect.target_id()
+    }
+
+    #[cfg(test)]
+    pub(super) async fn reconcile_manual_connect_for_test(
+        &mut self,
+        state: &WifiReadState,
+        now_ms: i64,
+    ) -> bool {
+        self.reconcile_manual_connect(state, now_ms).await
+    }
+
     pub(super) async fn refresh_snapshot(&mut self, allow_scan_promotion: bool) -> Value {
         let probe = inspect_environment(&self.iface, self.client.ctrl_path());
         let mut wifi_state = WifiReadState::default();
@@ -122,22 +183,33 @@ impl WifiRuntime {
                     if allow_scan_promotion {
                         self.scan.observe_status_scan(state.status_scan_active);
                     }
+                    self.reconcile_manual_connect(&state, unix_ms_now()).await;
                     wifi_state = state;
                     backend_ready = true;
                 }
                 Err(err) => {
                     ctrl_problem = Some(availability_reason_from_wifi_error(&err));
                     self.scan.clear_activity();
+                    let outcome = self.manual_connect.observe_backend_error();
+                    self.apply_manual_connect_outcome(outcome).await;
                     self.client.drop_sockets();
                 }
             }
         } else {
             self.scan.clear_activity();
+            let outcome = self.manual_connect.observe_backend_error();
+            self.apply_manual_connect_outcome(outcome).await;
             self.client.drop_sockets();
         }
 
         let status = classify_status(&probe, backend_ready, ctrl_problem);
-        build_wifi_snapshot(&self.iface, &status, &wifi_state, &self.scan)
+        build_wifi_snapshot(
+            &self.iface,
+            &status,
+            &wifi_state,
+            &self.scan,
+            &self.manual_connect,
+        )
     }
 
     pub(super) async fn handle_scan_start(&mut self) -> Result<Value, ServiceError> {
@@ -222,29 +294,25 @@ impl WifiRuntime {
 
         if request.save {
             self.client
-                .enable_network(&id)
+                .enable_network_no_connect(&id)
                 .await
                 .map_err(service_error_from_wifi_error)?;
-        }
-
-        self.client
-            .select_network(&id)
-            .await
-            .map_err(service_error_from_wifi_error)?;
-
-        for restore_id in restore_enabled_ids {
-            self.client
-                .set_network_disabled(&restore_id, false)
-                .await
-                .map_err(service_error_from_wifi_error)?;
-        }
-
-        if request.save {
             self.client
                 .save_config()
                 .await
                 .map_err(service_error_from_wifi_error)?;
         }
+
+        if let Err(err) = self.client.select_network(&id).await {
+            self.manual_connect
+                .start(id, request.ssid, unix_ms_now(), restore_enabled_ids);
+            let outcome = self.manual_connect.observe_backend_error();
+            self.apply_manual_connect_outcome(outcome).await;
+            return Err(service_error_from_wifi_error(err));
+        }
+
+        self.manual_connect
+            .start(id, request.ssid, unix_ms_now(), restore_enabled_ids);
 
         Ok(Value::Null)
     }
@@ -351,6 +419,8 @@ impl WifiRuntime {
     ) -> Result<Value, ServiceError> {
         let enabled = enabled_from_payload(payload)?;
         run_rfkill(["unblock", "wifi"], ["block", "wifi"], enabled).await?;
+        let outcome = self.manual_connect.observe_backend_error();
+        self.apply_manual_connect_outcome(outcome).await;
         self.client.drop_sockets();
         Ok(Value::Null)
     }
@@ -361,6 +431,8 @@ impl WifiRuntime {
     ) -> Result<Value, ServiceError> {
         let enabled = enabled_from_payload(payload)?;
         run_rfkill(["unblock", "all"], ["block", "all"], !enabled).await?;
+        let outcome = self.manual_connect.observe_backend_error();
+        self.apply_manual_connect_outcome(outcome).await;
         self.client.drop_sockets();
         Ok(Value::Null)
     }
@@ -392,6 +464,42 @@ impl WifiRuntime {
             .map_err(service_error_from_wifi_error)?;
 
         Ok(())
+    }
+
+    async fn reconcile_manual_connect(&mut self, state: &WifiReadState, now_ms: i64) -> bool {
+        let outcome = self.manual_connect.observe_read_state(state, now_ms);
+        let changed = outcome.changed();
+        self.apply_manual_connect_outcome(outcome).await;
+        changed
+    }
+
+    async fn apply_manual_connect_outcome(&mut self, outcome: ManualConnectOutcome) {
+        match outcome {
+            ManualConnectOutcome::None => {}
+            ManualConnectOutcome::Succeeded {
+                restore_enabled_ids,
+            }
+            | ManualConnectOutcome::Failed {
+                restore_enabled_ids,
+            } => {
+                self.restore_manual_enabled_networks(restore_enabled_ids)
+                    .await
+            }
+        }
+    }
+
+    async fn restore_manual_enabled_networks(&mut self, restore_enabled_ids: Vec<String>) {
+        for id in restore_enabled_ids {
+            if let Err(error) = self.client.enable_network_no_connect(&id).await {
+                warn!(
+                    network_id = %id,
+                    error = %error,
+                    "failed to restore enabled Wi-Fi network after manual connect"
+                );
+                self.client.drop_sockets();
+                break;
+            }
+        }
     }
 }
 
@@ -439,4 +547,11 @@ fn command_error_text(output: &Output) -> String {
     } else {
         stderr
     }
+}
+
+fn unix_ms_now() -> i64 {
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    i64::try_from(duration.as_millis()).unwrap_or(i64::MAX)
 }

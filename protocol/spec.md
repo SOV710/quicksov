@@ -245,7 +245,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 ```json
 {
   "type": "object",
-  "required": ["interface", "state", "connection_state", "scan_state", "scan_started_at", "scan_finished_at", "scan_last_error"],
+  "required": ["interface", "state", "connection_state", "scan_state", "scan_started_at", "scan_finished_at", "scan_last_error", "manual_connect_state", "manual_connect_ssid", "manual_connect_reason", "manual_connect_started_at", "network_id"],
   "properties": {
     "interface": { "type": "string", "example": "wlo1" },
     "state":     {
@@ -264,6 +264,17 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
     "scan_started_at": { "type": ["integer","null"], "description": "Unix ms when the current or latest scan started" },
     "scan_finished_at": { "type": ["integer","null"], "description": "Unix ms when the latest scan left an active state, including results, abort, or backend failure" },
     "scan_last_error": { "type": ["string","null"], "description": "Most recent real scan failure; FAIL-BUSY does not populate this field" },
+    "manual_connect_state": {
+      "type": "string",
+      "enum": ["idle", "connecting", "failed"],
+      "description": "Daemon-authoritative state for the latest user-requested connect action"
+    },
+    "manual_connect_ssid": { "type": ["string","null"], "description": "Target SSID for the active or most recently failed manual connect" },
+    "manual_connect_reason": {
+      "type": "string",
+      "enum": ["none", "auth_failed", "timeout", "backend_error"]
+    },
+    "manual_connect_started_at": { "type": ["integer","null"], "description": "Unix ms when the manual connect attempt started" },
     "present":   { "type": "boolean", "description": "Whether the target Wi-Fi interface exists in sysfs" },
     "enabled":   { "type": "boolean", "description": "Whether Wi-Fi operations are currently enabled and usable" },
     "availability": {
@@ -289,6 +300,7 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
     "rfkill_soft_blocked": { "type": "boolean" },
     "rfkill_hard_blocked": { "type": "boolean" },
     "airplane_mode": { "type": "boolean", "description": "Best-effort derived state: all wireless rfkill entries blocked" },
+    "network_id": { "type": ["string","null"], "description": "Current wpa_supplicant STATUS id; used to disambiguate same-SSID networks" },
     "ssid":      { "type": ["string","null"] },
     "bssid":     { "type": ["string","null"] },
     "rssi_dbm":  { "type": ["integer","null"] },
@@ -342,6 +354,8 @@ Major version 不匹配（例如 server 是 `qsov/2`）→ server 回 `E_PROTO_V
 - `set_airplane_mode` — payload `{ enabled: boolean }`，通过 `rfkill block/unblock all` 控制全局飞行模式 soft block
 
 Wi-Fi 扫描生命周期是显式控制的：客户端打开 popup 时不自动触发扫描；需要通过 `scan_start` 发起，通过 `scan_stop` 终止。
+
+`connect` 的完成态只表示 wpa_supplicant 已完成目标 AP 接入：`STATUS wpa_state=COMPLETED` 且 `STATUS id` 等于本次 `SELECT_NETWORK` 的目标 id。daemon 不用 DNS、默认路由或网站可达性判定 Wi-Fi 接入是否成功。手动连接默认 30 秒超时；失败后通过 `manual_connect_state="failed"` 和 `manual_connect_reason` 暴露原因。
 
 **后端**: `wpa_supplicant` ctrl socket `/run/wpa_supplicant/wlo1`，通过 `wpa_cli` 协议（`SCAN`, `ABORT_SCAN`, `SCAN_RESULTS`, `ADD_NETWORK`, `SET_NETWORK`, `ENABLE_NETWORK`, `SELECT_NETWORK` 等）。
 

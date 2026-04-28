@@ -37,12 +37,17 @@ Singleton {
     property bool rfkillHardBlocked: false
     property bool airplaneMode: false
     property bool wifiConnected: false
+    property string networkId: ""
     property string ssid: ""
     property int signalDbm: 0
     property int signalPct: -1
     property int frequency: 0
     property var savedNetworks: []
     property var scanResults: []
+    property string manualConnectState: "idle"
+    property string manualConnectSsid: ""
+    property string manualConnectReason: "none"
+    property double manualConnectStartedAt: 0
 
     // local UI state
     property var pendingActions: ({})
@@ -102,14 +107,18 @@ Singleton {
     }
 
     function networkPending(ssid) {
+        var name = String(ssid || "");
         return root.isPending(root._networkKey(ssid))
-            || root.pendingConnectSsid === String(ssid || "");
+            || root.pendingConnectSsid === name
+            || (root.manualConnectState === "connecting" && root.manualConnectSsid === name);
     }
 
     function networkPendingLabel(ssid) {
+        var name = String(ssid || "");
         if (root.isPending(root._networkKey(ssid)))
             return root.pendingActions[root._networkKey(ssid)];
-        if (root.pendingConnectSsid === String(ssid || ""))
+        if (root.pendingConnectSsid === name
+                || (root.manualConnectState === "connecting" && root.manualConnectSsid === name))
             return "Connecting";
         return "";
     }
@@ -220,12 +229,19 @@ Singleton {
         root.rfkillHardBlocked = payload.rfkill_hard_blocked === true;
         root.airplaneMode = payload.airplane_mode === true;
         root.wifiConnected = connectionState === "connected";
+        root.networkId = payload.network_id || "";
         root.ssid = payload.ssid || "";
         root.signalDbm = typeof payload.rssi_dbm === "number" ? payload.rssi_dbm : 0;
         root.signalPct = typeof payload.signal_pct === "number" ? payload.signal_pct : -1;
         root.frequency = typeof payload.frequency === "number" ? payload.frequency : 0;
         root.savedNetworks = payload.saved_networks || [];
         root.scanResults = payload.scan_results || [];
+        root.manualConnectState = payload.manual_connect_state || "idle";
+        root.manualConnectSsid = payload.manual_connect_ssid || "";
+        root.manualConnectReason = payload.manual_connect_reason || "none";
+        root.manualConnectStartedAt = typeof payload.manual_connect_started_at === "number"
+            ? payload.manual_connect_started_at
+            : 0;
 
         root.wifiReady = true;
         root.ready = root.linkReady && root.wifiReady;
@@ -238,11 +254,15 @@ Singleton {
         var now = Date.now();
 
         if (root.pendingConnectSsid !== "") {
-            if (root.wifiConnected && root.ssid === root.pendingConnectSsid)
+            var daemonStillConnecting = root.manualConnectState === "connecting"
+                                      && root.manualConnectSsid === root.pendingConnectSsid;
+            var daemonFailedThisAttempt = root.manualConnectState === "failed"
+                                       && root.manualConnectSsid === root.pendingConnectSsid
+                                       && (root.manualConnectStartedAt <= 0
+                                           || root.manualConnectStartedAt >= root.pendingConnectStartedAt);
+            if (!daemonStillConnecting && root.wifiConnected && root.ssid === root.pendingConnectSsid)
                 root._clearConnectPending();
-            else if (root.availability !== "ready")
-                root._clearConnectPending();
-            else if (now - root.pendingConnectStartedAt > 20000)
+            else if (daemonFailedThisAttempt)
                 root._clearConnectPending();
         }
 
@@ -619,7 +639,9 @@ Singleton {
             return "";
         if (root.isPending(root._networkKey(network.ssid)))
             return root.pendingActions[root._networkKey(network.ssid)];
-        if (root.pendingConnectSsid === network.ssid)
+        if (root.pendingConnectSsid === network.ssid
+                || (root.manualConnectState === "connecting"
+                    && root.manualConnectSsid === network.ssid))
             return "Connecting";
         if (network.current)
             return root.pendingDisconnect ? "Disconnecting" : "Disconnect";
@@ -636,6 +658,10 @@ Singleton {
         if (root.pendingDisconnect)
             return false;
         if (root.pendingConnectSsid !== "" && root.pendingConnectSsid !== network.ssid)
+            return false;
+        if (root.manualConnectState === "connecting"
+                && root.manualConnectSsid !== ""
+                && root.manualConnectSsid !== network.ssid)
             return false;
         return true;
     }
@@ -666,12 +692,17 @@ Singleton {
             root.rfkillHardBlocked = false;
             root.airplaneMode = false;
             root.wifiConnected = false;
+            root.networkId = "";
             root.ssid = "";
             root.signalDbm = 0;
             root.signalPct = -1;
             root.frequency = 0;
             root.savedNetworks = [];
             root.scanResults = [];
+            root.manualConnectState = "idle";
+            root.manualConnectSsid = "";
+            root.manualConnectReason = "none";
+            root.manualConnectStartedAt = 0;
             root.pendingActions = ({});
             root._clearConnectPending();
             root._clearDisconnectPending();

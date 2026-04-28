@@ -136,6 +136,7 @@ impl Default for WifiStatus {
 pub(super) struct WifiReadState {
     pub(super) connection_state: WifiConnectionState,
     pub(super) status_scan_active: bool,
+    pub(super) network_id: Option<String>,
     pub(super) ssid: Option<String>,
     pub(super) bssid: Option<String>,
     pub(super) rssi_dbm: Option<i64>,
@@ -150,6 +151,7 @@ impl Default for WifiReadState {
         Self {
             connection_state: WifiConnectionState::Unknown,
             status_scan_active: false,
+            network_id: None,
             ssid: None,
             bssid: None,
             rssi_dbm: None,

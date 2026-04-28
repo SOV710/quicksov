@@ -6,6 +6,7 @@ use serde_json::Value;
 
 use crate::util::json_map;
 
+use super::manual::ManualConnectTracker;
 use super::model::{derive_legacy_state, WifiReadState, WifiStatus};
 use super::scan::ScanTracker;
 
@@ -14,12 +15,14 @@ pub(super) fn build_wifi_snapshot(
     status: &WifiStatus,
     state: &WifiReadState,
     scan: &ScanTracker,
+    manual_connect: &ManualConnectTracker,
 ) -> Value {
     WifiSnapshot {
         iface,
         status,
         state,
         scan,
+        manual_connect,
     }
     .into()
 }
@@ -29,6 +32,7 @@ struct WifiSnapshot<'a> {
     status: &'a WifiStatus,
     state: &'a WifiReadState,
     scan: &'a ScanTracker,
+    manual_connect: &'a ManualConnectTracker,
 }
 
 impl From<WifiSnapshot<'_>> for Value {
@@ -53,6 +57,22 @@ impl From<WifiSnapshot<'_>> for Value {
                 opt_i64_value(snapshot.scan.finished_at()),
             ),
             ("scan_last_error", opt_str_value(snapshot.scan.last_error())),
+            (
+                "manual_connect_state",
+                Value::from(snapshot.manual_connect.state().as_str()),
+            ),
+            (
+                "manual_connect_ssid",
+                opt_str_value(snapshot.manual_connect.target_ssid()),
+            ),
+            (
+                "manual_connect_reason",
+                Value::from(snapshot.manual_connect.reason().as_str()),
+            ),
+            (
+                "manual_connect_started_at",
+                opt_i64_value(snapshot.manual_connect.started_at()),
+            ),
             ("present", Value::Bool(snapshot.status.present)),
             ("enabled", Value::Bool(snapshot.status.enabled)),
             (
@@ -80,6 +100,10 @@ impl From<WifiSnapshot<'_>> for Value {
                 Value::Bool(snapshot.status.rfkill_hard_blocked),
             ),
             ("airplane_mode", Value::Bool(snapshot.status.airplane_mode)),
+            (
+                "network_id",
+                opt_str_value(snapshot.state.network_id.as_deref()),
+            ),
             ("ssid", opt_str_value(snapshot.state.ssid.as_deref())),
             ("bssid", opt_str_value(snapshot.state.bssid.as_deref())),
             ("rssi_dbm", opt_i64_value(snapshot.state.rssi_dbm)),

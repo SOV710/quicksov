@@ -271,7 +271,12 @@
           "scan_state",
           "scan_started_at",
           "scan_finished_at",
-          "scan_last_error"
+          "scan_last_error",
+          "manual_connect_state",
+          "manual_connect_ssid",
+          "manual_connect_reason",
+          "manual_connect_started_at",
+          "network_id"
         ],
         "properties": {
           "interface": { "type": "string" },
@@ -305,6 +310,16 @@
           "scan_started_at": { "type": ["integer", "null"] },
           "scan_finished_at": { "type": ["integer", "null"], "description": "Unix ms when the latest scan left an active state, including results, abort, or backend failure" },
           "scan_last_error": { "type": ["string", "null"] },
+          "manual_connect_state": {
+            "type": "string",
+            "enum": ["idle", "connecting", "failed"]
+          },
+          "manual_connect_ssid": { "type": ["string", "null"] },
+          "manual_connect_reason": {
+            "type": "string",
+            "enum": ["none", "auth_failed", "timeout", "backend_error"]
+          },
+          "manual_connect_started_at": { "type": ["integer", "null"] },
           "present": { "type": "boolean" },
           "enabled": { "type": "boolean" },
           "availability": {
@@ -329,6 +344,7 @@
           "rfkill_soft_blocked": { "type": "boolean" },
           "rfkill_hard_blocked": { "type": "boolean" },
           "airplane_mode": { "type": "boolean" },
+          "network_id": { "type": ["string", "null"] },
           "ssid": { "type": ["string", "null"] },
           "bssid": { "type": ["string", "null"] },
           "rssi_dbm": { "type": ["integer", "null"] },
