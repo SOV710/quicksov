@@ -26,6 +26,9 @@ Singleton {
     readonly property var connectedDevices: root.sortedDevices.filter(function(d) { return d.connected; })
     readonly property var pairedDevices: root.sortedDevices.filter(function(d) { return !d.connected && d.paired; })
     readonly property var availableDevices: root.sortedDevices.filter(function(d) { return !d.connected && !d.paired; })
+    readonly property var savedColumnDevices: root.sortedDevices.filter(function(d) { return d.connected || d.paired; })
+    readonly property var availableColumnDevices: root.sortedDevices.filter(function(d) { return !d.connected && !d.paired; })
+    readonly property int visibleDeviceCount: root.savedColumnDevices.length + root.availableColumnDevices.length
     readonly property bool scanPending: root.isPending("scan")
     readonly property bool powerPending: root.isPending("power")
     readonly property string scanBlockedReason: root._scanBlockedReason()

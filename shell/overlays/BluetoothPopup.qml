@@ -14,20 +14,21 @@ Item {
     width: parent ? parent.width : Theme.bluetoothPanelWidth
     implicitHeight: Math.min(contentCol.implicitHeight + Theme.spaceMd * 2, Theme.bluetoothPanelMaxHeight)
 
+    readonly property int _visibleDeviceCount: Bluetooth.visibleDeviceCount
     readonly property bool _showLoadingState: !Bluetooth.ready
     readonly property bool _showUnavailableState: Bluetooth.ready && !Bluetooth.btAvailable
     readonly property bool _showDisabledState: Bluetooth.ready && Bluetooth.btAvailable && !Bluetooth.btEnabled
     readonly property bool _showEmptyState: Bluetooth.ready
                                             && Bluetooth.btAvailable
                                             && Bluetooth.btEnabled
-                                            && Bluetooth.devices.length === 0
+                                            && root._visibleDeviceCount === 0
     readonly property bool _showDeviceList: Bluetooth.ready
                                             && Bluetooth.btAvailable
                                             && Bluetooth.btEnabled
-                                            && Bluetooth.devices.length > 0
+                                            && root._visibleDeviceCount > 0
     readonly property real _listMaxHeight: Math.max(
         Theme.spaceXxl * 3,
-        Theme.bluetoothPanelMaxHeight - headerRow.implicitHeight - Theme.spaceMd * 4
+        Theme.bluetoothPanelMaxHeight - headerRow.implicitHeight - Theme.spaceMd * 5
     )
 
     function _subtitle() {
@@ -36,30 +37,45 @@ Item {
         if (!Bluetooth.btEnabled) return "Bluetooth is off";
 
         var connected = Bluetooth.connectedDevices.length;
-        if (Bluetooth.discovering) {
-            return connected > 0 ? String(connected) + " connected • scanning" : "Scanning nearby devices";
-        }
+        if (Bluetooth.discovering)
+            return connected > 0 ? String(connected) + " connected, scanning" : "Scanning nearby devices";
 
-        if (connected > 0) {
+        if (connected > 0)
             return connected === 1 ? "1 connected device" : String(connected) + " connected devices";
-        }
 
-        if (Bluetooth.devices.length > 0) {
-            return String(Bluetooth.devices.length) + " known devices";
-        }
+        if (Bluetooth.visibleDeviceCount > 0)
+            return String(Bluetooth.visibleDeviceCount) + " devices available";
 
         return "Ready";
     }
 
-    function _actionLabel(device) {
-        if (!device) return "";
-        if (device.connected) return "Disconnect";
-        if (device.paired) return "Connect";
-        return "Pair";
+    function _deviceIconPath(device) {
+        if (!device)
+            return Theme.iconBluetoothStatus;
+
+        var iconName = device.icon ? String(device.icon).toLowerCase() : "";
+        if (iconName.indexOf("audio") >= 0
+                || iconName.indexOf("headphone") >= 0
+                || iconName.indexOf("headset") >= 0)
+            return Theme.iconHeadphonesStatus;
+
+        return Theme.iconBluetoothStatus;
+    }
+
+    function _deviceDetailText(device) {
+        if (!device)
+            return "";
+
+        var parts = [];
+        if (device.battery !== null && device.battery !== undefined)
+            parts.push(String(device.battery) + "%");
+
+        return parts.join(" ");
     }
 
     function _runPrimaryAction(device) {
-        if (!device || !device.address) return;
+        if (!device || !device.address)
+            return;
 
         if (device.connected) {
             Bluetooth.disconnectDevice(device.address);
@@ -93,7 +109,7 @@ Item {
                     text: "Bluetooth"
                     color: Theme.fgPrimary
                     font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontLabel
+                    font.pixelSize: Theme.fontDisplay
                     font.weight: Theme.weightSemibold
                     Layout.fillWidth: true
                 }
@@ -102,34 +118,34 @@ Item {
                     text: root._subtitle()
                     color: Theme.fgMuted
                     font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontBody
+                    font.pixelSize: Theme.fontSmall
                     elide: Text.ElideRight
                     Layout.fillWidth: true
                 }
             }
 
-            HeaderChip {
-                label: Bluetooth.scanPending
-                       ? (Bluetooth.discovering ? "Stopping" : "Starting")
-                       : Bluetooth.scanBlocked
-                         ? "Paused"
-                       : (Bluetooth.discovering ? "Stop" : "Refresh")
-                iconPath: Bluetooth.discovering ? "lucide/loader-circle.svg" : "lucide/rotate-cw.svg"
-                enabled: Bluetooth.ready && Bluetooth.btAvailable && Bluetooth.btEnabled && !Bluetooth.scanBlocked
-                active: Bluetooth.discovering || Bluetooth.scanPending
-                pending: Bluetooth.scanPending
-                spinning: Bluetooth.discovering
-                onClicked: Bluetooth.toggleScan()
-            }
+            RowLayout {
+                spacing: Theme.spaceXs
 
-            HeaderChip {
-                label: Bluetooth.powerPending
-                       ? (Bluetooth.btEnabled ? "Turning off" : "Turning on")
-                       : (Bluetooth.btEnabled ? "On" : "Off")
-                enabled: Bluetooth.ready && Bluetooth.btAvailable
-                active: Bluetooth.btEnabled || Bluetooth.powerPending
-                pending: Bluetooth.powerPending
-                onClicked: Bluetooth.togglePowered()
+                IconCircleButton {
+                    iconPath: Theme.iconRefreshStatus
+                    enabled: Bluetooth.ready
+                             && Bluetooth.btAvailable
+                             && Bluetooth.btEnabled
+                             && !Bluetooth.scanBlocked
+                             && !Bluetooth.scanPending
+                    active: Bluetooth.discovering || Bluetooth.scanPending
+                    spinning: Bluetooth.discovering || Bluetooth.scanPending
+                    onClicked: Bluetooth.toggleScan()
+                }
+
+                IconCircleButton {
+                    iconPath: Theme.iconPowerStatus
+                    enabled: Bluetooth.ready && Bluetooth.btAvailable
+                    active: Bluetooth.btEnabled || Bluetooth.powerPending
+                    spinning: Bluetooth.powerPending
+                    onClicked: Bluetooth.togglePowered()
+                }
             }
         }
 
@@ -149,7 +165,7 @@ Item {
             text: Bluetooth.scanBlockedReason
             color: Theme.fgMuted
             font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontBody
+            font.pixelSize: Theme.fontSmall
             wrapMode: Text.WordWrap
         }
 
@@ -181,7 +197,7 @@ Item {
             title: Bluetooth.discovering ? "Scanning for devices" : "No devices"
             message: Bluetooth.discovering
                      ? "Nearby devices will appear here."
-                     : "Use Refresh to scan nearby devices."
+                     : "Use refresh to scan nearby devices."
             spinning: Bluetooth.discovering
         }
 
@@ -202,12 +218,13 @@ Item {
                 spacing: Theme.spaceXs
 
                 SectionLabel {
-                    visible: Bluetooth.connectedDevices.length > 0
-                    text: "Connected"
+                    visible: Bluetooth.savedColumnDevices.length > 0
+                    width: parent.width
+                    text: "Saved"
                 }
 
                 Repeater {
-                    model: Bluetooth.connectedDevices
+                    model: Bluetooth.savedColumnDevices
 
                     delegate: DeviceCard {
                         required property var modelData
@@ -217,27 +234,13 @@ Item {
                 }
 
                 SectionLabel {
-                    visible: Bluetooth.pairedDevices.length > 0
-                    text: "Paired"
-                }
-
-                Repeater {
-                    model: Bluetooth.pairedDevices
-
-                    delegate: DeviceCard {
-                        required property var modelData
-                        width: devicesCol.width
-                        device: modelData
-                    }
-                }
-
-                SectionLabel {
-                    visible: Bluetooth.availableDevices.length > 0
+                    visible: Bluetooth.availableColumnDevices.length > 0
+                    width: parent.width
                     text: "Available"
                 }
 
                 Repeater {
-                    model: Bluetooth.availableDevices
+                    model: Bluetooth.availableColumnDevices
 
                     delegate: DeviceCard {
                         required property var modelData
@@ -249,29 +252,44 @@ Item {
         }
     }
 
-    component HeaderChip: Rectangle {
+    component IconCircleButton: Rectangle {
         id: chip
 
-        property string label: ""
         property string iconPath: ""
         property bool enabled: true
         property bool active: false
-        property bool pending: false
         property bool spinning: false
+        property bool danger: false
+        property real buttonSize: Theme.barHeight
 
         signal clicked()
 
-        implicitWidth: chipRow.implicitWidth + Theme.spaceSm * 2
-        implicitHeight: Theme.barHeight - Theme.spaceXs
-        radius: Theme.radiusSm
+        implicitWidth: buttonSize
+        implicitHeight: buttonSize
+        radius: buttonSize / 2
+        readonly property color _activeFill: danger
+                                             ? Theme.overlay(Theme.bgSurfaceRaised, Theme.colorError, 0.16)
+                                             : Theme.surfaceActive
+        readonly property color _activeBorder: danger ? Theme.dangerBorderSoft : Theme.borderAccent
+        readonly property color _iconColor: !enabled
+                                            ? Theme.fgDisabled
+                                            : danger
+                                              ? Theme.colorError
+                                              : (active || spinning)
+                                                ? Theme.accentBlue
+                                                : Theme.fgSecondary
         color: chipMouse.pressed
                ? Theme.surfaceActive
-               : (active || pending)
-                 ? Theme.surfaceActive
+               : (active || spinning)
+                 ? chip._activeFill
                  : chipMouse.containsMouse
                    ? Theme.surfaceHover
                    : Theme.bgSurfaceRaised
-        border.color: (active || pending) ? Theme.borderAccent : Theme.borderSubtle
+        border.color: (active || spinning)
+                      ? chip._activeBorder
+                      : danger
+                        ? Theme.withAlpha(Theme.colorError, 0.24)
+                        : Theme.borderSubtle
         border.width: 1
         opacity: enabled ? 1.0 : 0.45
         scale: chipMouse.pressed ? 0.98 : 1.0
@@ -279,33 +297,18 @@ Item {
         Behavior on color { ColorAnimation { duration: Theme.motionFast } }
         Behavior on scale { NumberAnimation { duration: Theme.motionFast } }
 
-        Row {
-            id: chipRow
+        SvgIcon {
             anchors.centerIn: parent
-            spacing: Theme.spaceXs
+            iconPath: chip.iconPath
+            size: Theme.iconSize - 2
+            color: chip._iconColor
 
-            SvgIcon {
-                id: chipIcon
-                visible: chip.pending || chip.iconPath !== ""
-                iconPath: chip.pending ? "lucide/loader-circle.svg" : chip.iconPath
-                size: Theme.iconSize - 2
-                color: (chip.active || chip.pending) ? Theme.accentBlue : Theme.fgSecondary
-
-                RotationAnimator on rotation {
-                    running: chip.pending || chip.spinning
-                    from: 0
-                    to: 360
-                    duration: 1000
-                    loops: Animation.Infinite
-                }
-            }
-
-            Text {
-                text: chip.label
-                color: (chip.active || chip.pending) ? Theme.fgPrimary : Theme.fgSecondary
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontBody
-                font.weight: Theme.weightMedium
+            RotationAnimator on rotation {
+                running: chip.spinning
+                from: 0
+                to: 360
+                duration: 1000
+                loops: Animation.Infinite
             }
         }
 
@@ -393,82 +396,130 @@ Item {
         required property var device
 
         readonly property string _label: Bluetooth.deviceLabel(device)
-        readonly property string _status: Bluetooth.deviceStatus(device)
-        readonly property bool _hasBattery: device && device.battery !== null && device.battery !== undefined
+        readonly property string _detail: root._deviceDetailText(device)
         readonly property bool _pending: device && Bluetooth.devicePending(device.address)
-        readonly property string _pendingAction: device ? Bluetooth.devicePendingAction(device.address) : ""
+        readonly property bool _hasAddress: device && device.address !== undefined && String(device.address) !== ""
+        readonly property bool _showForget: device && device.paired && !device.connected && !card._pending
+        readonly property bool _primaryActionEnabled: card._hasAddress && !card._pending
+        readonly property bool _forgetActionEnabled: card._hasAddress && !card._pending
+        readonly property bool _showMetaRow: connectedStateIcon.visible
+                                             || savedStateIcon.visible
+                                             || detailText.text.length > 0
+        readonly property real _actionButtonSize: Theme.iconSize + Theme.spaceLg
 
         radius: Theme.radiusSm
-        color: cardHover.containsMouse ? Theme.surfaceHover : Theme.bgSurfaceRaised
+        color: device && device.connected
+               ? Theme.overlay(cardHover.containsMouse ? Theme.surfaceHover : Theme.bgSurfaceRaised,
+                               Theme.accentBlue,
+                               0.14)
+               : cardHover.containsMouse
+                 ? Theme.surfaceHover
+                 : Theme.bgSurfaceRaised
         border.color: device && device.connected ? Theme.borderAccent : Theme.borderSubtle
         border.width: 1
-        implicitHeight: cardRow.implicitHeight + Theme.spaceSm * 2
+        implicitHeight: cardCol.implicitHeight + Theme.spaceSm * 2
 
         HoverHandler { id: cardHover }
 
         Behavior on color { ColorAnimation { duration: Theme.motionFast } }
 
-        RowLayout {
-            id: cardRow
+        ColumnLayout {
+            id: cardCol
             anchors.fill: parent
             anchors.margins: Theme.spaceSm
             spacing: Theme.spaceSm
 
-            Rectangle {
-                Layout.preferredWidth: Theme.iconSize + Theme.spaceSm
-                Layout.preferredHeight: Theme.iconSize + Theme.spaceSm
-                radius: Theme.radiusXs
-                color: device && device.connected ? Theme.surfaceActive : Theme.bgSurface
-
-                SvgIcon {
-                    anchors.centerIn: parent
-                    iconPath: Theme.iconBluetoothStatus
-                    size: Theme.iconSize
-                    color: device && device.connected ? Theme.accentBlue : Theme.fgSecondary
-                }
-            }
-
-            ColumnLayout {
+            RowLayout {
                 Layout.fillWidth: true
-                spacing: 2
+                spacing: Theme.spaceSm
 
-                Text {
-                    text: card._label
-                    color: Theme.fgPrimary
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontBody
-                    font.weight: Theme.weightMedium
-                    elide: Text.ElideRight
-                    Layout.fillWidth: true
+                Rectangle {
+                    Layout.preferredWidth: Theme.iconSize + Theme.spaceSm
+                    Layout.preferredHeight: Theme.iconSize + Theme.spaceSm
+                    radius: Theme.radiusXs
+                    color: device && device.connected ? Theme.surfaceActive : Theme.bgSurface
+
+                    SvgIcon {
+                        anchors.centerIn: parent
+                        iconPath: root._deviceIconPath(device)
+                        size: Theme.iconSize
+                        color: device && device.connected ? Theme.accentBlue : Theme.fgSecondary
+                    }
                 }
 
-                Text {
-                    text: card._status
-                    color: Theme.fgMuted
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontSmall
-                    elide: Text.ElideRight
+                ColumnLayout {
                     Layout.fillWidth: true
+                    spacing: 2
+
+                    Text {
+                        text: card._label
+                        color: Theme.fgPrimary
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontBody
+                        font.weight: Theme.weightMedium
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+
+                    RowLayout {
+                        visible: card._showMetaRow
+                        spacing: Theme.spaceXs
+                        Layout.fillWidth: true
+
+                        SvgIcon {
+                            id: connectedStateIcon
+                            visible: device && device.connected
+                            iconPath: Theme.iconRadioButtonCheckedStatus
+                            size: Theme.fontSmall + 2
+                            color: Theme.accentBlue
+                        }
+
+                        SvgIcon {
+                            id: savedStateIcon
+                            visible: device && !device.connected && device.paired
+                            iconPath: Theme.iconBookmarkStatus
+                            size: Theme.fontSmall + 2
+                            color: Theme.accentBlue
+                        }
+
+                        Text {
+                            id: detailText
+                            visible: text.length > 0
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            text: card._detail
+                            color: Theme.fgMuted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSmall
+                            elide: Text.ElideRight
+                            font.features: { "tnum": 1 }
+                        }
+                    }
                 }
-            }
 
-            Text {
-                visible: card._hasBattery
-                text: String(device.battery) + "%"
-                color: Theme.fgSecondary
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontSmall
-                font.features: { "tnum": 1 }
-            }
+                RowLayout {
+                    spacing: Theme.spaceXs
 
-            HeaderChip {
-                label: card._pending
-                       ? card._pendingAction
-                       : root._actionLabel(card.device)
-                active: card.device && card.device.connected
-                enabled: !card._pending
-                pending: card._pending
-                onClicked: root._runPrimaryAction(card.device)
+                    IconCircleButton {
+                        buttonSize: card._actionButtonSize
+                        iconPath: card._pending
+                                  ? Theme.iconRefreshStatus
+                                  : (device && device.connected ? Theme.iconCloseStatus : Theme.iconCheckStatus)
+                        enabled: card._pending ? false : card._primaryActionEnabled
+                        active: !card._pending
+                        spinning: card._pending
+                        onClicked: root._runPrimaryAction(device)
+                    }
+
+                    IconCircleButton {
+                        visible: card._showForget
+                        buttonSize: card._actionButtonSize
+                        iconPath: Theme.iconDeleteStatus
+                        enabled: card._forgetActionEnabled
+                        danger: true
+                        onClicked: Bluetooth.forgetDevice(device.address)
+                    }
+                }
             }
         }
     }
