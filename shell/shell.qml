@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //@ pragma UseQApplication
+//@ pragma IconTheme breeze-dark
 
 import Quickshell
 import "./bars"
