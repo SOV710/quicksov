@@ -28,11 +28,14 @@ Item {
     }
 
     component TrayItem: Item {
+        id: trayItemRoot
+
         property var trayItem: null
         width:  chip.width
         height: chip.height
 
         readonly property bool _hovered: hoverHandler.hovered
+        readonly property string _iconSource: trayItem && trayItem.icon ? _normalizeIconSource(trayItem.icon) : ""
 
         function openMenu() {
             if (!trayItem || !trayItem.hasMenu || !trayItem.menu)
@@ -45,6 +48,26 @@ Item {
 
             menuAnchor.anchor.rect = root.QsWindow.itemRect(chip);
             menuAnchor.open();
+        }
+
+        function _normalizeIconSource(source) {
+            var text = String(source);
+            var prefix = "image://icon/";
+            if (text.indexOf(prefix) !== 0)
+                return text;
+
+            var rest = text.slice(prefix.length);
+            var queryIndex = rest.indexOf("?");
+            var iconName = queryIndex >= 0 ? rest.slice(0, queryIndex) : rest;
+            if (iconName.indexOf("fcitx_mozc") !== 0)
+                return text;
+
+            var normalizedName = iconName.replace(/_/g, "-");
+            if (!Quickshell.hasThemeIcon(normalizedName))
+                return text;
+
+            var query = queryIndex >= 0 ? rest.slice(queryIndex) : "";
+            return prefix + normalizedName + query;
         }
 
         QsMenuAnchor {
@@ -73,7 +96,7 @@ Item {
                 anchors.centerIn: parent
                 width: Theme.iconSize
                 height: Theme.iconSize
-                source: trayItem && trayItem.icon ? trayItem.icon : ""
+                source: trayItemRoot._iconSource
                 fillMode: Image.PreserveAspectFit
                 visible: status !== Image.Error
                 smooth: true
